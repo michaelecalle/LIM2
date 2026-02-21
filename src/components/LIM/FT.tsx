@@ -1,4 +1,5 @@
 // src/components/LIM/FT.tsx
+import FTScrolling from "./FTScrolling"; // Ajouter cette ligne juste après les autres imports
 import React, { useState, useEffect, useMemo } from "react";
 import {
   FT_LIGNE_PAIR,
@@ -8,14 +9,6 @@ import {
   type CsvSens,
 } from "../../data/ligneFT";
 import { logTestEvent } from "../../lib/testLogger";
-import FTTableLayout from "./FTTableLayout";
-import { extractSpeedTimeline, computeSeedSpeed } from "./FTSpeedTimeline";
-
-import { renderDependenciaCell } from "./FTRenderHelpers";
-import { computeCsvHighlightByIndex } from "./FTCsvHighlight";
-import { useScrollViewport } from "./useScrollViewport";
-import { buildFtRows } from "./FTBuildRows";
-import { useTrainPositionIndicator } from "./useTrainPositionIndicator";
 
 type GpsPosition = {
   lat: number;
@@ -35,6 +28,10 @@ type FTProps = {
 };
 
 export default function FT({ variant = "classic" }: FTProps) {
+  const [visibleRows, setVisibleRows] = React.useState<{ first: number; last: number }>({
+    first: 0,
+    last: 0,
+  });
   // ligne "active" quand on est en mode horaire (play)
   const [activeRowIndex, setActiveRowIndex] = useState<number>(0);
 
@@ -50,31 +47,6 @@ export default function FT({ variant = "classic" }: FTProps) {
   // État GPS pour l'UI (couleur de l'indicateur de position)
   type GpsStateUi = "RED" | "ORANGE" | "GREEN";
   const [gpsStateUi, setGpsStateUi] = useState<GpsStateUi>("RED");
-
-  // -- écoute du bouton play/pause (auto-scroll) venant du TitleBar
-  const [autoScrollEnabled, setAutoScrollEnabled] = useState(false);
-  const autoScrollEnabledRef = React.useRef(false);
-  const referenceModeRef = React.useRef<ReferenceMode>("HORAIRE");
-
-  // ✅✅✅ IMPORTANT : ref GPS DOIT exister avant toute utilisation
-  const lastGpsPositionRef = React.useRef<GpsPosition | null>(null);
-
-  // ✅ Extraction scroll/viewport
-  const {
-    visibleRows,
-    setVisibleRows, // dispo si tu en as besoin ailleurs (sinon on pourra le retirer)
-    scrollContainerRef,
-    setContainerRef,
-    isManualScrollRef,
-    manualScrollTimeoutRef,
-    lastAutoScrollTopRef,
-    isProgrammaticScrollRef,
-    handleScroll,
-  } = useScrollViewport({
-    autoScrollEnabled,
-    autoScrollEnabledRef,
-    referenceModeRef,
-  });
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -102,6 +74,157 @@ export default function FT({ variant = "classic" }: FTProps) {
     };
   }, []);
 
+
+
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    scrollContainerRef.current = el;
+
+    const scrollTop = el.scrollTop;
+
+    const clientHeight = el.clientHeight;
+
+    // --- Gestion scroll manuel vs scroll automatique ---
+    if (autoScrollEnabled) {
+      if (isProgrammaticScrollRef.current) {
+        // Scroll provoqué par notre code (auto-scroll) → on ne déclenche pas le mode manuel
+        isProgrammaticScrollRef.current = false;
+        // On met à jour la position "officielle" de l'auto-scroll
+        lastAutoScrollTopRef.current = scrollTop;
+      } else {
+        // Scroll manuel utilisateur pendant que le mode horaire est actif
+        isManualScrollRef.current = true;
+
+        // On relance un timer de 5s à chaque nouveau mouvement manuel
+        if (manualScrollTimeoutRef.current !== null) {
+          window.clearTimeout(manualScrollTimeoutRef.current);
+        }
+
+        manualScrollTimeoutRef.current = window.setTimeout(() => {
+          manualScrollTimeoutRef.current = null;
+          isManualScrollRef.current = false;
+
+          const container = scrollContainerRef.current;
+          if (!container) return;
+          if (!autoScrollEnabledRef.current) return;
+
+          const target = lastAutoScrollTopRef.current;
+          if (target == null) return;
+
+          // On revient à la position auto d'avant le scroll manuel
+          isProgrammaticScrollRef.current = true;
+          container.scrollTo({
+            top: target,
+            behavior: "auto",
+          });
+        }, 5000);
+      }
+    } else {
+      // Mode horaire coupé → on désactive toute logique de retour auto
+      isManualScrollRef.current = false;
+      if (manualScrollTimeoutRef.current !== null) {
+        window.clearTimeout(manualScrollTimeoutRef.current);
+        manualScrollTimeoutRef.current = null;
+      }
+    }
+
+    // 1) on récupère les lignes principales
+    const rowEls = el.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main");
+    if (!rowEls.length) return;
+
+    // 2) première ligne dont le bas est sous le haut du viewport
+    let firstVisible = 0;
+    for (let i = 0; i < rowEls.length; i++) {
+      const r = rowEls[i];
+      const top = r.offsetTop;
+      const bottom = top + r.offsetHeight;
+      if (bottom >= scrollTop) {
+        firstVisible = i;
+        break;
+      }
+    }
+
+    // 3) dernière ligne dont le haut est encore dans le viewport
+    const viewportBottom = scrollTop + clientHeight;
+    let lastVisible = firstVisible;
+    for (let i = firstVisible; i < rowEls.length; i++) {
+      const r = rowEls[i];
+      const top = r.offsetTop;
+      if (top <= viewportBottom) {
+        lastVisible = i;
+      } else {
+        break;
+      }
+    }
+
+    // 🔎 Debug : mapping "index dans rowEls" -> "data-ft-row"
+    const firstDataAttr = rowEls[firstVisible]?.getAttribute("data-ft-row") ?? "";
+    const lastDataAttr = rowEls[lastVisible]?.getAttribute("data-ft-row") ?? "";
+    const firstDataRow = firstDataAttr ? parseInt(firstDataAttr, 10) : null;
+    const lastDataRow = lastDataAttr ? parseInt(lastDataAttr, 10) : null;
+
+    console.log(
+      "[FT][scroll] scrollTop=",
+      scrollTop,
+      " / clientHeight=",
+      clientHeight,
+      " / rows=",
+      rowEls.length
+    );
+    console.log("[FT][visible-rows] first=", firstVisible, "last=", lastVisible);
+
+    // 🔎 Debug renforcé : on affiche aussi les attributs bruts pour diagnostiquer
+    console.log(
+      "[FT][VISIBLE_ROWS_DATA_ROW]",
+      "firstVisible=",
+      firstVisible,
+      "lastVisible=",
+      lastVisible,
+      "| firstAttr=",
+      firstDataAttr,
+      "lastAttr=",
+      lastDataAttr,
+      "| firstDataRow=",
+      firstDataRow,
+      "lastDataRow=",
+      lastDataRow
+    );
+
+    // log labo
+    logTestEvent("ft:scroll:viewport", {
+      scrollTop,
+      clientHeight,
+      rowCount: rowEls.length,
+      firstVisible,
+      lastVisible,
+
+      // indices "réels" côté data
+      firstDataRow,
+      lastDataRow,
+
+      autoScrollEnabled,
+      referenceMode: referenceModeRef.current,
+      isManualScroll: isManualScrollRef.current,
+      isProgrammaticScroll: isProgrammaticScrollRef.current,
+    });
+
+    // on met à jour le state : ✅ indices "réels" (data-ft-row) si disponibles
+    const nextFirst =
+      typeof firstDataRow === "number" && Number.isFinite(firstDataRow)
+        ? firstDataRow
+        : firstVisible;
+
+    const nextLast =
+      typeof lastDataRow === "number" && Number.isFinite(lastDataRow)
+        ? lastDataRow
+        : lastVisible;
+
+    setVisibleRows({ first: nextFirst, last: nextLast });
+  };
+
+
+
   //
   // ===== 1. NUMÉRO DE TRAIN ET PORTION DE PARCOURS ===================
   //
@@ -110,14 +233,14 @@ export default function FT({ variant = "classic" }: FTProps) {
   //
   const [trainNumber, setTrainNumber] = useState<number | null>(null);
 
-  // ===== FT VIEW MODE (alternance ES/FR, sans fusion) =====
+    // ===== FT VIEW MODE (alternance ES/FR, sans fusion) =====
   type FtViewMode = "AUTO" | "ES" | "FR";
   const [ftViewMode, setFtViewMode] = useState<FtViewMode>("AUTO");
 
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent;
-      const mode = (ce as any)?.detail?.mode;
+      const mode = ce?.detail?.mode;
       if (mode === "AUTO" || mode === "ES" || mode === "FR") {
         setFtViewMode(mode);
       }
@@ -144,7 +267,9 @@ export default function FT({ variant = "classic" }: FTProps) {
     return "ES";
   }, [ftViewMode, trainNumber, FT_FR_WHITELIST]);
 
+
   const [routeStart, setRouteStart] = useState<string>("");
+
   const [routeEnd, setRouteEnd] = useState<string>("");
 
   // 🕐 Heures détectées (reçues via ft:heures)
@@ -162,7 +287,9 @@ export default function FT({ variant = "classic" }: FTProps) {
   const [concParHeure, setConcParHeure] = useState<Record<string, string[]>>({});
   const rcPrintedSegmentsRef = React.useRef<Set<number>>(new Set());
   const vPrintedSegmentsRef = React.useRef<Set<number>>(new Set());
-  const arrivalEventsRef = React.useRef<{ arrivalMin: number; rowIndex: number }[]>([]);
+  const arrivalEventsRef = React.useRef<
+    { arrivalMin: number; rowIndex: number }[]
+  >([]);
 
   // -- écoute du numéro de train
   useEffect(() => {
@@ -189,11 +316,17 @@ export default function FT({ variant = "classic" }: FTProps) {
       handleIncomingTrain(e, "lim:train");
     }
 
-    window.addEventListener("lim:train-change", handlerTrainChange as EventListener);
+    window.addEventListener(
+      "lim:train-change",
+      handlerTrainChange as EventListener
+    );
     window.addEventListener("lim:train", handlerTrain as EventListener);
 
     return () => {
-      window.removeEventListener("lim:train-change", handlerTrainChange as EventListener);
+      window.removeEventListener(
+        "lim:train-change",
+        handlerTrainChange as EventListener
+      );
       window.removeEventListener("lim:train", handlerTrain as EventListener);
     };
   }, []);
@@ -204,6 +337,14 @@ export default function FT({ variant = "classic" }: FTProps) {
       const d = e?.detail || {};
       const odRaw = d.origenDestino ?? d.relation ?? "";
       if (typeof odRaw === "string" && odRaw.trim().length > 0) {
+        // ex: "Barcelona Sants - Can Tunis AV"
+        // ex: "Figueres-Vilafant - Limite ADIF - LFPSA"
+        //
+        // stratégie :
+        // - split UNIQUEMENT sur les séparateurs avec espaces (" - " ou " – ")
+        //   pour ne pas casser des noms comme "Figueres-Vilafant"
+        // - origine = 1er segment
+        // - destination = tout le reste re-joint avec " - "
         const parts = odRaw
           .split(/\s+[-–]\s+/)
           .map((s: string) => s.trim())
@@ -212,7 +353,14 @@ export default function FT({ variant = "classic" }: FTProps) {
         if (parts.length >= 2) {
           const start = parts[0];
           const end = parts.slice(1).join(" - ");
-          console.log("[FT] lim:parsed origenDestino=", odRaw, "=>", start, "→", end);
+          console.log(
+            "[FT] lim:parsed origenDestino=",
+            odRaw,
+            "=>",
+            start,
+            "→",
+            end
+          );
           setRouteStart(start);
           setRouteEnd(end);
         } else {
@@ -223,7 +371,10 @@ export default function FT({ variant = "classic" }: FTProps) {
 
     window.addEventListener("lim:parsed", handlerLimParsed as EventListener);
     return () => {
-      window.removeEventListener("lim:parsed", handlerLimParsed as EventListener);
+      window.removeEventListener(
+        "lim:parsed",
+        handlerLimParsed as EventListener
+      );
     };
   }, []);
 
@@ -238,6 +389,7 @@ export default function FT({ variant = "classic" }: FTProps) {
 
       setHeuresDetectees(heures);
 
+      // Log simple pour validation (aucune modif du tableau à ce stade)
       console.log("[FT] Reçu ft:heures — total=", heures.length, heures);
     }
 
@@ -251,11 +403,17 @@ export default function FT({ variant = "classic" }: FTProps) {
   useEffect(() => {
     function handlerFtCodesC(e: any) {
       const detail = e?.detail ?? {};
-      const flat: string[] = Array.isArray((detail as any).flat) ? (detail as any).flat : [];
-      const byPage: any[] = Array.isArray((detail as any).byPage) ? (detail as any).byPage : [];
+      const flat: string[] = Array.isArray((detail as any).flat)
+        ? (detail as any).flat
+        : [];
+      const byPage: any[] = Array.isArray((detail as any).byPage)
+        ? (detail as any).byPage
+        : [];
 
+      // ➜ Met à jour l'état centralisé pour un usage futur (mapping, affichage)
       setCodesCFlat(flat);
 
+      // Logs de contrôle (on garde un aperçu par page)
       const perPageCounts = byPage.map((p: any) => ({
         page: p?.page,
         count: Array.isArray(p?.values) ? p.values.length : 0,
@@ -292,9 +450,15 @@ export default function FT({ variant = "classic" }: FTProps) {
       console.log("[FT] Reçu ft:codesC:resolved => codesCParHeure =", map);
     }
 
-    window.addEventListener("ft:codesC:resolved", handlerFtCodesCResolved as EventListener);
+    window.addEventListener(
+      "ft:codesC:resolved",
+      handlerFtCodesCResolved as EventListener
+    );
     return () => {
-      window.removeEventListener("ft:codesC:resolved", handlerFtCodesCResolved as EventListener);
+      window.removeEventListener(
+        "ft:codesC:resolved",
+        handlerFtCodesCResolved as EventListener
+      );
     };
   }, []);
 
@@ -317,11 +481,22 @@ export default function FT({ variant = "classic" }: FTProps) {
       console.log("[FT] Reçu ft:conc:resolved => concParHeure =", map);
     }
 
-    window.addEventListener("ft:conc:resolved", handlerFtConcResolved as EventListener);
+    window.addEventListener(
+      "ft:conc:resolved",
+      handlerFtConcResolved as EventListener
+    );
     return () => {
-      window.removeEventListener("ft:conc:resolved", handlerFtConcResolved as EventListener);
+      window.removeEventListener(
+        "ft:conc:resolved",
+        handlerFtConcResolved as EventListener
+      );
     };
   }, []);
+
+  // -- écoute du bouton play/pause (auto-scroll) venant du TitleBar
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(false);
+  const autoScrollEnabledRef = React.useRef(false);
+  const referenceModeRef = React.useRef<ReferenceMode>("HORAIRE");
 
   // =========================
   // Direction attendue (source: TitleBar)
@@ -345,6 +520,7 @@ export default function FT({ variant = "classic" }: FTProps) {
   useEffect(() => {
     referenceModeRef.current = referenceMode;
   }, [referenceMode]);
+
 
   useEffect(() => {
     autoScrollEnabledRef.current = autoScrollEnabled;
@@ -410,13 +586,15 @@ export default function FT({ variant = "classic" }: FTProps) {
     };
   }, []);
 
-  const autoScrollBaseRef = React.useRef<{
-    realMinInt: number; // minutes entières — pour updateFromClock (ligne active)
-    realMinFloat: number; // minutes + secondes — pour interpolation continue (barre rouge)
-    firstHoraMin: number;
-    fixedDelay: number; // minutes (arrondi, pour l'affichage actuel)
-    deltaSec: number; // secondes (signé, exact au moment du Play)
-  } | null>(null);
+
+  const autoScrollBaseRef =
+    React.useRef<{
+      realMinInt: number       // minutes entières — pour updateFromClock (ligne active)
+      realMinFloat: number     // minutes + secondes — pour interpolation continue (barre rouge)
+      firstHoraMin: number
+      fixedDelay: number       // minutes (arrondi, pour l'affichage actuel)
+      deltaSec: number         // secondes (signé, exact au moment du Play)
+    } | null>(null);
 
   // Ligne cible pour un recalage manuel (mode Standby)
   const recalibrateFromRowRef = React.useRef<number | null>(null);
@@ -437,16 +615,319 @@ export default function FT({ variant = "classic" }: FTProps) {
     recalibrateFromRowRef.current = null;
   }, [referenceMode, selectedRowIndex]);
 
-  const { trainPosYpx, getFallbackTrainTopPx } = useTrainPositionIndicator({
-    scrollContainerRef,
-    activeRowIndex: typeof activeRowIndex === "number" ? activeRowIndex : 0,
-    gpsStateUi,
-    referenceModeRef,
-    autoScrollEnabledRef,
-    autoScrollBaseRef,
-    lastGpsPositionRef,
-    // ES par défaut (pk col 3, hora col 6) : pas besoin de surcharger ici
-  });
+  // Référence vers le conteneur scrollable de FTScrolling
+  const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Position verticale "continue" du train (px dans le viewport scrollable)
+  const [trainPosYpx, setTrainPosYpx] = useState<number | null>(null);
+
+  // --- Continuité ORANGE -> RED (ancrage visuel) + anti-retour arrière en RED ---
+  const lastTrainPosYpxRef = React.useRef<number | null>(null);
+  const prevGpsStateUiRef = React.useRef<GpsStateUi>("RED");
+
+  // Pendant RED : on applique un offset à l'horaire pour partir exactement du Y courant
+  const redHoraireAnchorRef = React.useRef<{
+    anchorY: number;        // Y affiché au moment de l'entrée en RED
+    baseHoraireY: number;   // Y horaire calculé au même instant
+    offsetY: number;        // anchorY - baseHoraireY
+  } | null>(null);
+
+  useEffect(() => {
+    const TICK_MS = 250;
+
+    const parsePkFromRow = (tr: HTMLTableRowElement): number | null => {
+      // Sit Km = 3e colonne
+      const td = tr.querySelector<HTMLTableCellElement>("td:nth-child(3)");
+      const txt = td?.textContent?.trim() ?? "";
+      const n = Number(txt.replace(",", "."));
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const rowCenterY = (container: HTMLDivElement, tr: HTMLTableRowElement): number => {
+      const VISUAL_OFFSET_PX = -2;
+      return tr.offsetTop + tr.offsetHeight / 2 - container.scrollTop + VISUAL_OFFSET_PX;
+    };
+
+    const clampInViewportOrKeep = (y: number, h: number): number | null => {
+      // Si hors viewport, on ne force pas à 0 (on garde la dernière valeur)
+      if (y < 0 || y > h) return null;
+      return y;
+    };
+
+    const commitTrainPos = (yCandidate: number | null) => {
+      if (yCandidate == null) return;
+
+      const yRounded = Math.round(yCandidate);
+      const gpsStateNow = gpsStateUi;
+
+      setTrainPosYpx((prev) => {
+        let next = yRounded;
+
+        // ✅ En RED : jamais de retour arrière (monotone)
+        if (gpsStateNow === "RED" && prev != null) {
+          next = Math.max(prev, next);
+        }
+
+        lastTrainPosYpxRef.current = next;
+        return next;
+      });
+    };
+
+    const tick = () => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+
+      const h = container.clientHeight;
+
+      // -------------------------
+      // Détection entrée/sortie RED (ancrage)
+      // -------------------------
+      const gpsStateNow = gpsStateUi;
+      const prevGpsState = prevGpsStateUiRef.current;
+
+      if (prevGpsState !== gpsStateNow) {
+        // Entrée en RED : on prépare l'ancrage (offset calculé au premier y horaire disponible)
+        if (gpsStateNow === "RED") {
+          const anchorY = lastTrainPosYpxRef.current;
+          if (anchorY != null) {
+            // baseHoraireY sera fixé dès qu'on calcule l'horaire (ci-dessous)
+            redHoraireAnchorRef.current = {
+              anchorY,
+              baseHoraireY: anchorY,
+              offsetY: 0,
+            };
+          } else {
+            // pas de Y précédent connu : on initialisera dès qu'on a un y horaire
+            redHoraireAnchorRef.current = null;
+          }
+        } else {
+          // Sortie de RED : on supprime l'offset
+          redHoraireAnchorRef.current = null;
+        }
+
+        prevGpsStateUiRef.current = gpsStateNow;
+      }
+
+      // =========================
+      // 1) GPS : interpolation PK (DOM)
+      // =========================
+      if (referenceModeRef.current === "GPS") {
+        const pkRaw = lastGpsPositionRef.current?.pk;
+        const pkTrain =
+          typeof pkRaw === "number" && Number.isFinite(pkRaw) ? pkRaw : null;
+
+        if (pkTrain != null) {
+          const rows = Array.from(
+            container.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main")
+          );
+
+          const pts: { pk: number; y: number }[] = [];
+          for (const tr of rows) {
+            const td = tr.querySelector<HTMLTableCellElement>("td:nth-child(3)");
+            const txt = td?.textContent?.trim() ?? "";
+            const pk = Number(txt.replace(",", "."));
+            if (!Number.isFinite(pk)) continue;
+
+            const VISUAL_OFFSET_PX = -2;
+            const y = tr.offsetTop + tr.offsetHeight / 2 - container.scrollTop + VISUAL_OFFSET_PX;
+            if (y < 0 || y > h) continue;
+
+            pts.push({ pk, y });
+          }
+
+          if (pts.length >= 2) {
+            pts.sort((a, b) => a.pk - b.pk);
+
+            let a = pts[0];
+            let b = pts[pts.length - 1];
+
+            for (let i = 0; i < pts.length - 1; i++) {
+              const p0 = pts[i];
+              const p1 = pts[i + 1];
+              if (pkTrain >= p0.pk && pkTrain <= p1.pk) {
+                a = p0;
+                b = p1;
+                break;
+              }
+            }
+
+            if (b.pk !== a.pk) {
+              let t = (pkTrain - a.pk) / (b.pk - a.pk);
+              if (t < 0) t = 0;
+              if (t > 1) t = 1;
+
+              const y = a.y + t * (b.y - a.y);
+              commitTrainPos(y);
+              return;
+            } else {
+              commitTrainPos(a.y);
+              return;
+            }
+          }
+        }
+      }
+
+      // =========================================
+      // 2) HORAIRE : interpolation temps (DOM)
+      // =========================================
+      if (referenceModeRef.current === "HORAIRE" && autoScrollEnabledRef.current) {
+        const base = autoScrollBaseRef.current;
+        if (base) {
+          // heure "effective" à la seconde (minutes float)
+          const now = new Date();
+          const nowMinFloat =
+            now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+
+          const effectiveMinFloat =
+            base.firstHoraMin + (nowMinFloat - (base.realMinFloat ?? base.realMinInt));
+
+          const rows = Array.from(
+            container.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main")
+          );
+
+          const parseMinutesFromRow = (tr: HTMLTableRowElement): number | null => {
+            // ✅ Maintenant : on prend AUSSI les heures calculées (gris/italique)
+            // Priorité : heure réelle (noir) -> sinon heure théorique (gris)
+            const dep = tr.querySelector<HTMLSpanElement>(
+              "td:nth-child(6) .ft-hora-depart"
+            );
+            const theo = tr.querySelector<HTMLSpanElement>(
+              "td:nth-child(6) .ft-hora-theo"
+            );
+
+            const txt = ((dep?.textContent ?? theo?.textContent) ?? "").trim();
+
+            // ✅ Accepte HH:MM et HH:MM:SS (mode test)
+            const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(txt);
+            if (!m) return null;
+
+            const hh = Number(m[1]);
+            const mm = Number(m[2]);
+            const ss = m[3] != null ? Number(m[3]) : 0;
+
+            if (!Number.isFinite(hh) || !Number.isFinite(mm) || !Number.isFinite(ss)) return null;
+
+            return hh * 60 + mm + ss / 60;
+          };
+
+          const pts: { m: number; y: number }[] = [];
+          for (const tr of rows) {
+            const m = parseMinutesFromRow(tr);
+            if (m == null) continue;
+
+            const VISUAL_OFFSET_PX = -2;
+            const y = tr.offsetTop + tr.offsetHeight / 2 - container.scrollTop + VISUAL_OFFSET_PX;
+            if (y < 0 || y > h) continue;
+
+            pts.push({ m, y });
+          }
+
+          if (pts.length >= 2) {
+            pts.sort((a, b) => a.m - b.m);
+
+            let a = pts[0];
+            let b = pts[pts.length - 1];
+
+            for (let i = 0; i < pts.length - 1; i++) {
+              const p0 = pts[i];
+              const p1 = pts[i + 1];
+              if (effectiveMinFloat >= p0.m && effectiveMinFloat <= p1.m) {
+                a = p0;
+                b = p1;
+                break;
+              }
+            }
+
+            if (b.m !== a.m) {
+              let t = (effectiveMinFloat - a.m) / (b.m - a.m);
+              if (t < 0) t = 0;
+              if (t > 1) t = 1;
+
+              const yHoraireRaw = a.y + t * (b.y - a.y);
+
+              // ✅ En RED : appliquer un offset calculé à l'entrée en RED pour continuité stricte
+              let yFinal = yHoraireRaw;
+
+              if (gpsStateUi === "RED") {
+                const lastY = lastTrainPosYpxRef.current;
+
+                if (redHoraireAnchorRef.current == null && lastY != null) {
+                  redHoraireAnchorRef.current = {
+                    anchorY: lastY,
+                    baseHoraireY: yHoraireRaw,
+                    offsetY: lastY - yHoraireRaw,
+                  };
+                }
+
+                if (redHoraireAnchorRef.current != null) {
+                  if (redHoraireAnchorRef.current.offsetY === 0 && lastY != null) {
+                    redHoraireAnchorRef.current.baseHoraireY = yHoraireRaw;
+                    redHoraireAnchorRef.current.offsetY = redHoraireAnchorRef.current.anchorY - yHoraireRaw;
+                  }
+
+                  yFinal = yHoraireRaw + redHoraireAnchorRef.current.offsetY;
+                }
+              }
+
+              commitTrainPos(yFinal);
+              return;
+            } else {
+              const yHoraireRaw = a.y;
+
+              let yFinal = yHoraireRaw;
+
+              if (gpsStateUi === "RED") {
+                const lastY = lastTrainPosYpxRef.current;
+
+                if (redHoraireAnchorRef.current == null && lastY != null) {
+                  redHoraireAnchorRef.current = {
+                    anchorY: lastY,
+                    baseHoraireY: yHoraireRaw,
+                    offsetY: lastY - yHoraireRaw,
+                  };
+                }
+
+                if (redHoraireAnchorRef.current != null) {
+                  yFinal = yHoraireRaw + redHoraireAnchorRef.current.offsetY;
+                }
+              }
+
+              commitTrainPos(yFinal);
+              return;
+            }
+          }
+        }
+      }
+
+      // =========================
+      // 3) fallback : ligne active
+      // =========================
+      const tr = container.querySelector<HTMLTableRowElement>(
+        `tr.ft-row-main[data-ft-row="${activeRowIndex}"]`
+      );
+      if (!tr) return;
+
+      const VISUAL_OFFSET_PX = -2;
+      const y = tr.offsetTop + tr.offsetHeight / 2 - container.scrollTop + VISUAL_OFFSET_PX;
+
+      // ✅ Au lieu de geler : on borne dans le viewport
+      const clamped = Math.max(0, Math.min(y, h));
+      commitTrainPos(clamped);
+    };
+
+    tick();
+
+    const id = window.setInterval(tick, TICK_MS);
+    return () => window.clearInterval(id);
+  }, [activeRowIndex, gpsStateUi]);
+
+
+
+
+  
+
+  // Dernière position GPS reçue (mémorisée pour les futurs calculs)
+  const lastGpsPositionRef = React.useRef<GpsPosition | null>(null);
 
   // ===== GPS quality (fresh + freeze) =====
   type GpsState = "RED" | "ORANGE" | "GREEN";
@@ -475,6 +956,7 @@ export default function FT({ variant = "classic" }: FTProps) {
 
       const nowTs = Date.now();
 
+      // timestamp de référence du dernier échantillon connu
       const sampleTs =
         lastGpsSampleAtRef.current > 0
           ? lastGpsSampleAtRef.current
@@ -485,7 +967,8 @@ export default function FT({ variant = "classic" }: FTProps) {
       if (!sampleTs) return;
 
       const hasGpsFix =
-        typeof (last as any).lat === "number" && typeof (last as any).lon === "number";
+        typeof (last as any).lat === "number" &&
+        typeof (last as any).lon === "number";
 
       const onLine = !!(last as any).onLine;
 
@@ -493,16 +976,21 @@ export default function FT({ variant = "classic" }: FTProps) {
       const isStale = ageSec > GPS_FRESH_SEC;
 
       const pkRaw = (last as any).pk as number | null | undefined;
-      const pkFinite = typeof pkRaw === "number" && Number.isFinite(pkRaw) ? pkRaw : null;
+      const pkFinite =
+        typeof pkRaw === "number" && Number.isFinite(pkRaw) ? pkRaw : null;
 
       const pkFreezeElapsedMs =
-        hasGpsFix && onLine && pkFinite != null && lastPkChangeAtRef.current > 0
+        hasGpsFix &&
+        onLine &&
+        pkFinite != null &&
+        lastPkChangeAtRef.current > 0
           ? nowTs - lastPkChangeAtRef.current
           : 0;
 
       const pkFrozenOrange = pkFreezeElapsedMs >= GPS_FREEZE_WINDOW_MS;
       const pkFrozenRed = pkFreezeElapsedMs >= GPS_FREEZE_TO_RED_MS;
 
+      // si le garde-fou "saut de PK" est actif, on reste en RED
       const pkIncoherentNow = pkJumpGuardActiveRef.current === true;
 
       const reasonCodes: string[] = [];
@@ -514,6 +1002,9 @@ export default function FT({ variant = "classic" }: FTProps) {
       else if (pkFrozenOrange) reasonCodes.push("pk_frozen_orange");
       reasonCodes.push("watchdog");
 
+      // -------------------------
+      // 1) Calcul état de base
+      // -------------------------
       let nextState: GpsState = "RED";
       if (!hasGpsFix) {
         nextState = "RED";
@@ -527,6 +1018,9 @@ export default function FT({ variant = "classic" }: FTProps) {
         nextState = "GREEN";
       }
 
+      // -------------------------
+      // 2) ORANGE -> RED global (chrono)
+      // -------------------------
       if (nextState === "ORANGE") {
         if (orangeToRedStartedAtRef.current == null) {
           orangeToRedStartedAtRef.current = nowTs;
@@ -553,6 +1047,7 @@ export default function FT({ variant = "classic" }: FTProps) {
               source: "watchdog",
             });
 
+            // reset chrono pour éviter de refire en boucle
             orangeToRedStartedAtRef.current = null;
           }
         }
@@ -574,6 +1069,9 @@ export default function FT({ variant = "classic" }: FTProps) {
         }
       }
 
+      // -------------------------
+      // 3) Emission vers TitleBar (throttle)
+      // -------------------------
       const emitGpsState = (forced: boolean) => {
         const pkForUi = nextState === "GREEN" ? pkFinite : null;
 
@@ -581,7 +1079,8 @@ export default function FT({ variant = "classic" }: FTProps) {
         const lastEmitPk = lastGpsStateEmitPkRef.current;
 
         const pkChanged =
-          pkForUi != null && (lastEmitPk == null || Math.abs(pkForUi - lastEmitPk) >= 0.05);
+          pkForUi != null &&
+          (lastEmitPk == null || Math.abs(pkForUi - lastEmitPk) >= 0.05);
 
         const timeOk = nowTs - lastEmitAt >= GPS_STATE_EMIT_MIN_INTERVAL_MS;
 
@@ -635,9 +1134,15 @@ export default function FT({ variant = "classic" }: FTProps) {
         }
       }
 
+      // -------------------------
+      // 4) Règle HORAIRE/GPS même sans events GPS
+      // -------------------------
       const stateNow = gpsStateRef.current;
       const currentMode = referenceModeRef.current;
 
+      // ✅ Règle demandée :
+      // - GREEN => GPS
+      // - ORANGE/RED => HORAIRE
       const nextMode: ReferenceMode = stateNow === "GREEN" ? "GPS" : "HORAIRE";
 
       if (currentMode !== nextMode) {
@@ -662,10 +1167,13 @@ export default function FT({ variant = "classic" }: FTProps) {
 
     const id = window.setInterval(tick, WATCHDOG_INTERVAL_MS);
 
+
     return () => {
       window.clearInterval(id);
     };
   }, []);
+
+
 
   // Réglages (ajustables)
   const GPS_FRESH_SEC = 8; // si l'échantillon est plus vieux -> pas "green"
@@ -673,34 +1181,55 @@ export default function FT({ variant = "classic" }: FTProps) {
   const GPS_FREEZE_PK_DELTA_KM = 0.02; // 0.02 km = 20 m
 
   const ORANGE_TIMEOUT_MS = 20_000; // 20s après ORANGE
+  // PK figé : ORANGE à 10s, puis RED à 30s (10s + 20s)
   const GPS_FREEZE_TO_RED_MS = GPS_FREEZE_WINDOW_MS + ORANGE_TIMEOUT_MS;
 
+  // Si le PK figé est proche (<= 1 km) d’une gare commerciale => standby auto
   const STATION_PROX_KM = 1.0;
 
+  // État "GPS OK" (fix + sur la ligne) pour l'hystérésis
   const gpsHealthyRef = React.useRef<boolean>(false);
 
+  // ===== Garde-fou "saut de PK" (PK incohérent) =====
+  // Dernier PK jugé "cohérent" (référence pour détecter un saut)
   const lastCoherentPkRef = React.useRef<number | null>(null);
   const lastCoherentTsRef = React.useRef<number>(0);
 
+  // Quand un saut est détecté, on active une phase ORANGE et on ignore le PK
+  // jusqu’à ce qu’on retrouve un PK cohérent par rapport au PK de référence.
   const pkJumpGuardActiveRef = React.useRef<boolean>(false);
   const pkJumpGuardBasePkRef = React.useRef<number | null>(null);
   const pkJumpGuardBaseTsRef = React.useRef<number>(0);
 
-  const GPS_JUMP_BASE_TOLERANCE_KM = 0.8;
-  const GPS_JUMP_MAX_SPEED_KMH = 420;
-  const GPS_JUMP_MIN_ELAPSED_SEC = 1.0;
+  // Tolérances (généreuses) pour ne bloquer que les gros sauts non physiques
+  const GPS_JUMP_BASE_TOLERANCE_KM = 0.8; // tolérance fixe (km)
+  const GPS_JUMP_MAX_SPEED_KMH = 420; // plafond vitesse plausible (km/h) pour tolérance dynamique
+  const GPS_JUMP_MIN_ELAPSED_SEC = 1.0; // ignore la détection si delta t trop faible
 
-  const DIR_MIN_DELTA_KM = 0.02;
-  const DIR_WINDOW_MS = 15_000;
-  const DIR_MIN_SAMPLES = 6;
-  const DIR_MISMATCH_MIN_RATIO = 0.8;
-  const DIR_MISMATCH_COOLDOWN_MS = 30_000;
+  // ===== Cohérence sens attendu (train) vs sens observé GPS =====
+  const DIR_MIN_DELTA_KM = 0.02; // ignore les micro-variations (<20 m)
+  const DIR_WINDOW_MS = 15_000; // fenêtre glissante
+  const DIR_MIN_SAMPLES = 6; // nombre minimal d'échantillons qualifiés
+  const DIR_MISMATCH_MIN_RATIO = 0.8; // % d'échantillons en sens opposé pour alerter
+  const DIR_MISMATCH_COOLDOWN_MS = 30_000; // anti-spam
 
+  // Timer en cours pour le passage différé en mode HORAIRE
   const orangeTimeoutRef = React.useRef<number | null>(null);
+
+
+  // Timestamp de démarrage de l’hystérésis ORANGE (pour calcul remaining/elapsed)
   const orangeTimeoutStartedAtRef = React.useRef<number | null>(null);
 
-  const orangeToRedTimerRef = React.useRef<number | null>(null);
-  const orangeToRedStartedAtRef = React.useRef<number | null>(null);
+  // ✅ ORANGE -> RED (général) : si on reste ORANGE trop longtemps (quelque soit la cause)
+const orangeToRedTimerRef = React.useRef<number | null>(null);
+const orangeToRedStartedAtRef = React.useRef<number | null>(null);
+
+
+  // Suivi du scroll manuel pendant que le mode horaire est actif
+  const isManualScrollRef = React.useRef(false);
+  const manualScrollTimeoutRef = React.useRef<number | null>(null);
+  const lastAutoScrollTopRef = React.useRef<number | null>(null);
+  const isProgrammaticScrollRef = React.useRef(false);
 
   useEffect(() => {
     function handlerAutoScroll(e: any) {
@@ -708,18 +1237,26 @@ export default function FT({ variant = "classic" }: FTProps) {
       const enabled = !!detail.enabled;
       const standby = !!detail.standby;
 
+      // 🎯 Cas spécial : 1er clic sur Play -> Standby initial + sélection 1ʳᵉ ligne
       if (enabled && standby && !initialStandbyDoneRef.current) {
         const idx = firstNonNoteIndexRef.current;
         if (typeof idx === "number" && idx >= 0) {
           initialStandbyDoneRef.current = true;
 
-          console.log("[FT] Premier Play reçu, passage en Standby initial sur la ligne", idx);
+          console.log(
+            "[FT] Premier Play reçu, passage en Standby initial sur la ligne",
+            idx
+          );
 
+          // Sélection visuelle (cadre rouge)
           setSelectedRowIndex(idx);
+          // Base de recalage pour le futur démarrage réel
           recalibrateFromRowRef.current = idx;
 
+          // On NE démarre PAS l'auto-scroll : autoScrollEnabled reste false
           setAutoScrollEnabled(false);
 
+          // On signale à la TitleBar qu'on est en mode horaire Standby (🕑 orange)
           window.dispatchEvent(
             new CustomEvent("lim:hourly-mode", {
               detail: { enabled: false, standby: true },
@@ -730,10 +1267,17 @@ export default function FT({ variant = "classic" }: FTProps) {
         }
       }
 
-      console.log("[FT] ft:auto-scroll-change reçu, enabled =", enabled, "/ standby =", standby);
+      console.log(
+        "[FT] ft:auto-scroll-change reçu, enabled =",
+        enabled,
+        "/ standby =",
+        standby
+      );
 
+      // 👉 Le bouton Play/Pause ne pilote QUE l'auto-scroll, pas le mode de référence
       setAutoScrollEnabled(enabled);
 
+      // On informe la TitleBar de l'état horaire / standby
       window.dispatchEvent(
         new CustomEvent("lim:hourly-mode", {
           detail: { enabled, standby },
@@ -741,23 +1285,33 @@ export default function FT({ variant = "classic" }: FTProps) {
       );
     }
 
-    window.addEventListener("ft:auto-scroll-change", handlerAutoScroll as EventListener);
+    window.addEventListener(
+      "ft:auto-scroll-change",
+      handlerAutoScroll as EventListener
+    );
 
     return () => {
-      window.removeEventListener("ft:auto-scroll-change", handlerAutoScroll as EventListener);
+      window.removeEventListener(
+        "ft:auto-scroll-change",
+        handlerAutoScroll as EventListener
+      );
     };
   }, []);
 
+    // ✅ Replay / Simulation : sélection et recalage "déterministes" sans clic DOM
+  // Le player peut injecter : window.dispatchEvent(new CustomEvent("ft:standby:set", { detail: { rowIndex } }))
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<any>;
       const d = ce?.detail ?? {};
 
       const raw = d.rowIndex;
-      const rowIndex = typeof raw === "number" ? raw : parseInt(String(raw ?? ""), 10);
+      const rowIndex =
+        typeof raw === "number" ? raw : parseInt(String(raw ?? ""), 10);
 
       if (!Number.isFinite(rowIndex)) return;
 
+      // Sélection visuelle + base de recalage (comme un clic sur la ligne)
       setSelectedRowIndex(rowIndex);
       recalibrateFromRowRef.current = rowIndex;
     };
@@ -768,10 +1322,16 @@ export default function FT({ variant = "classic" }: FTProps) {
     };
   }, []);
 
+
+  // quand le mode auto-scroll (play) s'allume/s'éteint
   useEffect(() => {
     if (!autoScrollEnabled) {
+      // on NE TOUCHE PLUS au delta horaire :
+      // - on garde la dernière valeur affichée dans la TitleBar
+      // - la base interne est simplement réinitialisée
       autoScrollBaseRef.current = null;
 
+      // On désactive tout éventuel scroll manuel en cours
       isManualScrollRef.current = false;
       if (manualScrollTimeoutRef.current !== null) {
         window.clearTimeout(manualScrollTimeoutRef.current);
@@ -780,12 +1340,14 @@ export default function FT({ variant = "classic" }: FTProps) {
       return;
     }
 
+    // helpers
     const toMinutes = (s: string) => {
       const m = /^(\d{1,2}):(\d{2})$/.exec(s);
       if (!m) return NaN;
       return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
     };
     const minutesToHHMM = (mins: number) => {
+      // on replie sur 24h si besoin
       const total = ((mins % (24 * 60)) + (24 * 60)) % (24 * 60);
       const hh = Math.floor(total / 60)
         .toString()
@@ -794,22 +1356,31 @@ export default function FT({ variant = "classic" }: FTProps) {
       return `${hh}:${mm}`;
     };
 
-    const computeFixedDelay = (now: Date, ftMinutes: number) => {
-      const nowTotalSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    // ➜ nouvel helper : delta arrondi à la minute la plus proche
+const computeFixedDelay = (now: Date, ftMinutes: number) => {
+  const nowTotalSec =
+    now.getHours() * 3600 +
+    now.getMinutes() * 60 +
+    now.getSeconds()
 
-      const ftTotalSec = ftMinutes * 60;
+  const ftTotalSec = ftMinutes * 60
 
-      const deltaSec = nowTotalSec - ftTotalSec;
-      const fixedDelayMin = Math.round(deltaSec / 60);
+  const deltaSec = nowTotalSec - ftTotalSec
 
-      return { fixedDelayMin, deltaSec };
-    };
+  // arrondi à la minute entière la plus proche (affichage actuel)
+  const fixedDelayMin = Math.round(deltaSec / 60)
 
+  return { fixedDelayMin, deltaSec }
+}
+
+
+    // Base "classique" : à partir de la première heure FT dispo
     const captureBaseFromFirstRow = () => {
       const now = new Date();
       const nowMin = now.getHours() * 60 + now.getMinutes();
       const nowMinFloat = nowMin + now.getSeconds() / 60;
 
+      // première minute dispo (heure réelle ou théorique) sur la portion affichée
       let firstHoraMin: number | null = null;
       for (let i = 0; i < horaTheoMinutesByIndex.length; i++) {
         const m = horaTheoMinutesByIndex[i];
@@ -821,22 +1392,27 @@ export default function FT({ variant = "classic" }: FTProps) {
 
       if (firstHoraMin == null) return null;
 
-      const { fixedDelayMin: fixedDelay, deltaSec } = computeFixedDelay(now, firstHoraMin);
+      const { fixedDelayMin: fixedDelay, deltaSec } = computeFixedDelay(now, firstHoraMin)
       return { realMinInt: nowMin, realMinFloat: nowMinFloat, firstHoraMin, fixedDelay, deltaSec };
     };
 
-    const captureBaseFromRowIndex = (rowIndex: number) => {
-      const now = new Date();
-      const nowMin = now.getHours() * 60 + now.getMinutes();
-      const nowMinFloat = nowMin + now.getSeconds() / 60;
 
-      const rowMin = horaTheoMinutesByIndex[rowIndex];
-      if (typeof rowMin !== "number" || !Number.isFinite(rowMin)) return null;
+  // Base "mode Standby" : à partir de la ligne sélectionnée
+  const captureBaseFromRowIndex = (rowIndex: number) => {
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const nowMinFloat = nowMin + now.getSeconds() / 60;
 
-      const { fixedDelayMin: fixedDelay, deltaSec } = computeFixedDelay(now, rowMin);
-      return { realMinInt: nowMin, realMinFloat: nowMinFloat, firstHoraMin: rowMin, fixedDelay, deltaSec };
-    };
+    const rowMin = horaTheoMinutesByIndex[rowIndex];
+    if (typeof rowMin !== "number" || !Number.isFinite(rowMin)) return null;
 
+    const { fixedDelayMin: fixedDelay, deltaSec } = computeFixedDelay(now, rowMin);
+    return { realMinInt: nowMin, realMinFloat: nowMinFloat, firstHoraMin: rowMin, fixedDelay, deltaSec };
+  };
+
+
+
+    // ✅ Choix de la base : soit ligne sélectionnée (Standby), soit première ligne
     const forcedIndex = recalibrateFromRowRef.current;
     if (forcedIndex != null) {
       autoScrollBaseRef.current = captureBaseFromRowIndex(forcedIndex);
@@ -845,6 +1421,7 @@ export default function FT({ variant = "classic" }: FTProps) {
       autoScrollBaseRef.current = captureBaseFromFirstRow();
     }
 
+    // On mémorise la position de scroll actuelle comme "base"
     if (scrollContainerRef.current) {
       lastAutoScrollTopRef.current = scrollContainerRef.current.scrollTop;
     }
@@ -852,20 +1429,23 @@ export default function FT({ variant = "classic" }: FTProps) {
     if (autoScrollBaseRef.current) {
       const fixed = autoScrollBaseRef.current.fixedDelay;
       const deltaSec = autoScrollBaseRef.current.deltaSec;
-      const text = fixed === 0 ? "0 min" : fixed > 0 ? `+ ${fixed} min` : `- ${-fixed} min`;
+      const text =
+        fixed === 0 ? "0 min" : fixed > 0 ? `+ ${fixed} min` : `- ${-fixed} min`;
 
       window.dispatchEvent(
         new CustomEvent("lim:schedule-delta", {
           detail: {
             text,
             isLargeDelay: Math.abs(fixed) >= 5,
-            deltaSec,
+            deltaSec, // delta signé en secondes (depuis la base)
           },
         })
       );
     }
 
+
     const updateFromClock = (forcedHHMM?: string) => {
+      // si heure forcée (console), on garde l'ancien comportement
       if (forcedHHMM && /^\d{1,2}:\d{2}$/.test(forcedHHMM)) {
         const mainRows = document.querySelectorAll<HTMLTableRowElement>(
           "table.ft-table tbody tr.ft-row-main"
@@ -898,24 +1478,33 @@ export default function FT({ variant = "classic" }: FTProps) {
           }
         }
 
-        const picked = exactDataIndex ?? lastPastDataIndex ?? firstValidDataIndex ?? 0;
+        const picked =
+          exactDataIndex ?? lastPastDataIndex ?? firstValidDataIndex ?? 0;
 
         setActiveRowIndex(picked);
         return;
+
       }
 
       const base = autoScrollBaseRef.current;
       if (!base) return;
 
+      // heure réelle actuelle
       const now = new Date();
       const nowMin = now.getHours() * 60 + now.getMinutes();
+
+      // minutes écoulées depuis l’activation
       const elapsed = nowMin - base.realMinInt;
 
+      // heure FT qu’on veut suivre
       const effectiveMin = base.firstHoraMin + elapsed;
       const effectiveHHMM = minutesToHHMM(effectiveMin);
 
+      // on met dans la console exactement ce que tu veux regarder
       console.log(
-        `[FT][auto] heure réelle = ${minutesToHHMM(nowMin)} | première heure FT = ${minutesToHHMM(
+        `[FT][auto] heure réelle = ${minutesToHHMM(
+          nowMin
+        )} | première heure FT = ${minutesToHHMM(
           base.firstHoraMin
         )} | diff (minutes depuis activation) = ${elapsed} | heure EFFECTIVE utilisée pour le '>' = ${effectiveHHMM}`
       );
@@ -928,10 +1517,13 @@ export default function FT({ variant = "classic" }: FTProps) {
         fixedDelay: base.fixedDelay ?? null,
       });
 
+      // 🔁 PAUSE AUTOMATIQUE SUR HEURE D’ARRIVÉE
       if (referenceModeRef.current === "HORAIRE") {
         const arrivalList = arrivalEventsRef.current || [];
         if (Array.isArray(arrivalList) && arrivalList.length > 0) {
-          const matchingArrival = arrivalList.find((ev) => ev.arrivalMin === effectiveMin);
+          const matchingArrival = arrivalList.find(
+            (ev) => ev.arrivalMin === effectiveMin
+          );
 
           if (matchingArrival) {
             console.log(
@@ -947,11 +1539,13 @@ export default function FT({ variant = "classic" }: FTProps) {
               effectiveHHMM,
             });
 
+            // On place la ligne active et la sélection sur cette arrivée
             setActiveRowIndex(matchingArrival.rowIndex);
 
             setSelectedRowIndex(matchingArrival.rowIndex);
             recalibrateFromRowRef.current = matchingArrival.rowIndex;
 
+            // 👉 NOUVEAU : on recale immédiatement la FT sur cette ligne
             const container = scrollContainerRef.current;
             if (container) {
               const activeRow = document.querySelector<HTMLTableRowElement>(
@@ -987,6 +1581,7 @@ export default function FT({ variant = "classic" }: FTProps) {
               }
             }
 
+            // On coupe l’auto-scroll et on passe en Standby (même logique que clic)
             window.dispatchEvent(
               new CustomEvent("ft:auto-scroll-change", {
                 detail: { enabled: false },
@@ -999,12 +1594,14 @@ export default function FT({ variant = "classic" }: FTProps) {
               })
             );
 
+            // On s’arrête là pour cette minute : plus de recalage auto
             return;
           }
         }
       }
 
-      const mainRows = document.querySelectorAll<HTMLTableRowElement>(
+      // on cherche la ligne FT la plus proche de cette heure effective
+          const mainRows = document.querySelectorAll<HTMLTableRowElement>(
         "table.ft-table tbody tr.ft-row-main"
       );
       if (!mainRows.length) return;
@@ -1032,13 +1629,23 @@ export default function FT({ variant = "classic" }: FTProps) {
         }
       }
 
-      let dataIndex = exactDataIndex ?? lastPastDataIndex ?? firstValidDataIndex ?? 0;
+      let dataIndex =
+        exactDataIndex ?? lastPastDataIndex ?? firstValidDataIndex ?? 0;
 
-      if (referenceModeRef.current === "HORAIRE" && elapsed === 0 && firstValidDataIndex != null) {
+      // ✅ Tick 0 : on évite le "saut" au démarrage (on reste sur la 1ère ligne)
+      if (
+        referenceModeRef.current === "HORAIRE" &&
+        elapsed === 0 &&
+        firstValidDataIndex != null
+      ) {
         dataIndex = firstValidDataIndex;
       }
 
+      // 👉 Le moteur horaire ne pilote la ligne active que si on est en mode HORAIRE
       if (referenceModeRef.current === "HORAIRE") {
+
+        // ✅ Tick 0 : on évite le "saut" visuel dû au recalage scroll auto
+        // (on bloque le scroll programmatique très brièvement)
         if (elapsed === 0) {
           isManualScrollRef.current = true;
           window.setTimeout(() => {
@@ -1049,8 +1656,10 @@ export default function FT({ variant = "classic" }: FTProps) {
         setActiveRowIndex(dataIndex);
       }
 
+      // pour la TitleBar : on renvoie le décalage figé au moment du play
       const fixed = base.fixedDelay ?? 0;
-      const text = fixed === 0 ? "0 min" : fixed > 0 ? `+ ${fixed} min` : `- ${-fixed} min`;
+      const text =
+        fixed === 0 ? "0 min" : fixed > 0 ? `+ ${fixed} min` : `- ${-fixed} min`;
       window.dispatchEvent(
         new CustomEvent("lim:schedule-delta", {
           detail: {
@@ -1061,15 +1670,17 @@ export default function FT({ variant = "classic" }: FTProps) {
       );
     };
 
+    // premier calage immédiat
     updateFromClock();
 
+    // recalcule chaque minute (heure réelle)
     const timer = setInterval(() => {
       updateFromClock();
     }, 60_000);
 
     const handleForceTime = (e: Event) => {
       const ce = e as CustomEvent;
-      const time = (ce as any)?.detail?.time as string | undefined;
+      const time = ce?.detail?.time as string | undefined;
       if (time) {
         console.log("[FT] heure forcée =", time);
         updateFromClock(time);
@@ -1079,10 +1690,17 @@ export default function FT({ variant = "classic" }: FTProps) {
 
     return () => {
       clearInterval(timer);
-      window.removeEventListener("ft:force-time", handleForceTime as EventListener);
+      window.removeEventListener(
+        "ft:force-time",
+        handleForceTime as EventListener
+      );
     };
   }, [autoScrollEnabled]);
 
+  // avance auto de la ligne active tant qu'on est en play :
+  // on ajuste le scroll pour rapprocher la ligne active de la ligne rouge
+  // (on autorise désormais le scroll à monter OU descendre),
+  // quel que soit le mode de référence (HORAIRE ou GPS).
   useEffect(() => {
     if (!autoScrollEnabled) return;
     if (activeRowIndex == null) return;
@@ -1100,13 +1718,19 @@ export default function FT({ variant = "classic" }: FTProps) {
     const rowRect = activeRow.getBoundingClientRect();
     const refRect = refLine.getBoundingClientRect();
 
+    // Centre vertical de la ligne active (en coordonnées écran)
     const rowCenterY = rowRect.top + rowRect.height / 2;
+    // Position verticale de la ligne rouge (milieu)
     const refCenterY = refRect.top + refRect.height / 2;
 
+    // delta > 0 : la ligne est sous la ligne rouge → on monte le tableau
+    // delta < 0 : la ligne est au-dessus de la ligne rouge → on descend le tableau
     const delta = rowCenterY - refCenterY;
 
+    // Si la ligne est déjà parfaitement alignée, on ne fait rien
     if (delta === 0) return;
 
+    // Si l'utilisateur est en train de scroller manuellement, on ne touche pas au scroll
     if (isManualScrollRef.current) {
       return;
     }
@@ -1114,12 +1738,14 @@ export default function FT({ variant = "classic" }: FTProps) {
     const currentScrollTop = container.scrollTop;
     let targetScrollTop = currentScrollTop + delta;
 
+    // On borne proprement dans [0 ; maxScrollTop]
     const maxScrollTop = container.scrollHeight - container.clientHeight;
     if (maxScrollTop < 0) return;
 
     if (targetScrollTop < 0) targetScrollTop = 0;
     if (targetScrollTop > maxScrollTop) targetScrollTop = maxScrollTop;
 
+    // Si après bornage la valeur n'a pas changé, inutile de scroller
     if (targetScrollTop === currentScrollTop) return;
 
     isProgrammaticScrollRef.current = true;
@@ -1143,9 +1769,13 @@ export default function FT({ variant = "classic" }: FTProps) {
     return isOdd ? "IMPAIR" : "PAIR";
   }, [isOdd]);
 
+    // ===== Expose le contexte train à la TitleBar (sens + disponibilité FT France) =====
   useEffect(() => {
     if (trainNumber === null || isOdd === null || currentCsvSens === null) return;
 
+    // ⚠️ Ici, on suit la convention ACTUELLE de ton FT.tsx :
+    // isOdd === true  -> "IMPAIR (Espagne→France)" (cf tes logs)
+    // isOdd === false -> "PAIR  (France→Espagne)"
     const direction: "FR_ES" | "ES_FR" = isOdd ? "ES_FR" : "FR_ES";
 
     const hasFranceFt = FT_FR_WHITELIST.has(trainNumber);
@@ -1292,19 +1922,29 @@ export default function FT({ variant = "classic" }: FTProps) {
       isNoteOnly: (lastEntry as any).isNoteOnly,
     });
 
+    // Vérification si la destination est "Barcelona Sants"
     if (routeEnd === "Barcelona Sants") {
+      // Vérifier si la dernière ligne est bien 621.0
       const lastLineIs621_0 = (lastEntry as any).pk === "621.0";
+
+      // Affichage dans la console pour le débogage
       console.log(`Dernière ligne détectée, 621.0 : ${lastLineIs621_0 ? "Oui" : "Non"}`);
     }
 
-    console.log("[FT] Aperçu (5 premières lignes après tronquage):", snapshot);
+    console.log(
+      "[FT] Aperçu (5 premières lignes après tronquage):",
+      snapshot
+    );
 
     return visibleEntries;
   }, [isOdd, trainNumber, routeStart, routeEnd]);
 
+  // Trouve l'index de la ligne FT correspondant au PK GPS,
+  // en prenant la dernière ligne "atteinte" (en amont) dans le sens du parcours.
   function findRowIndexFromPk(targetPk: number | null): number | null {
     if (targetPk == null || !Number.isFinite(targetPk)) return null;
 
+    // Déterminer le sens PK croissant / décroissant sur la portion affichée
     let firstPkNum: number | null = null;
     let lastPkNum: number | null = null;
 
@@ -1326,32 +1966,39 @@ export default function FT({ variant = "classic" }: FTProps) {
       break;
     }
 
-    const ascending = firstPkNum != null && lastPkNum != null ? firstPkNum <= lastPkNum : true;
+    const ascending =
+      firstPkNum != null && lastPkNum != null
+        ? firstPkNum <= lastPkNum
+        : true;
 
     let candidateIndex: number | null = null;
 
     if (ascending) {
+      // PK croissants : on prend la DERNIÈRE ligne avec PK <= PK GPS (déjà atteinte)
       for (let i = 0; i < rawEntries.length; i++) {
         const e = rawEntries[i];
         if (e.isNoteOnly || !e.pk) continue;
         const pkNum = Number(e.pk);
         if (!Number.isFinite(pkNum)) continue;
         if (pkNum <= targetPk) {
-          candidateIndex = i;
+          candidateIndex = i; // on garde la plus récente "en amont"
         }
       }
     } else {
+      // PK décroissants : on prend la DERNIÈRE ligne avec PK >= PK GPS (déjà atteinte)
       for (let i = 0; i < rawEntries.length; i++) {
         const e = rawEntries[i];
         if (e.isNoteOnly || !e.pk) continue;
         const pkNum = Number(e.pk);
         if (!Number.isFinite(pkNum)) continue;
         if (pkNum >= targetPk) {
-          candidateIndex = i;
+          candidateIndex = i; // idem, la plus récente "en amont"
         }
       }
     }
 
+    // Si on n'a rien trouvé "en amont" (PK GPS avant le début ou après la fin),
+    // on retombe sur la ligne la plus proche.
     if (candidateIndex == null) {
       let bestIndex: number | null = null;
       let bestDelta = Number.POSITIVE_INFINITY;
@@ -1380,11 +2027,13 @@ export default function FT({ variant = "classic" }: FTProps) {
     const entry = rawEntries[rowIndex];
     if (!entry) return "";
 
+    // 1) Hora directe issue de la FT, si présente
     const directHora = (entry as any).hora ?? "";
     if (typeof directHora === "string" && directHora.trim().length > 0) {
       return directHora.trim();
     }
 
+    // 2) Sinon, on reconstruit le mapping "ligne éligible" ↔ heuresDetectees
     const eligibleIndices: number[] = [];
 
     for (let i = 0; i < rawEntries.length; i++) {
@@ -1409,6 +2058,7 @@ export default function FT({ variant = "classic" }: FTProps) {
 
   // -- écoute des positions GPS projetées (évènement gps:position)
   useEffect(() => {
+    // --- helper : trouver la gare commerciale la plus proche (via arrivalEventsRef) ---
     const findNearestCommercialStopRowIndex = (
       targetPk: number,
       maxDeltaKm: number
@@ -1420,7 +2070,7 @@ export default function FT({ variant = "classic" }: FTProps) {
       let bestDelta = Number.POSITIVE_INFINITY;
 
       for (const s of stops) {
-        const rowIndex = (s as any)?.rowIndex;
+        const rowIndex = s?.rowIndex;
         if (typeof rowIndex !== "number") continue;
 
         const entry = rawEntries[rowIndex];
@@ -1446,36 +2096,52 @@ export default function FT({ variant = "classic" }: FTProps) {
       const ce = e as CustomEvent<any>;
       const detail = ce.detail || {};
 
+      // On mémorise brut pour l'instant (lat, lon, pk, etc.)
       lastGpsPositionRef.current = detail as GpsPosition;
 
       console.log("[FT][gps] position reçue =", detail);
       console.log("[FT][gps] rawEntries.length =", rawEntries.length);
 
-      const pkRaw = (detail as any).pk as number | null | undefined;
-      let pk: number | null = typeof pkRaw === "number" && Number.isFinite(pkRaw) ? pkRaw : null;
+// PK brut reçu
+const pkRaw = (detail as any).pk as number | null | undefined;
+// PK "utilisable" (peut être forcé à null par le garde-fou)
+let pk: number | null =
+  typeof pkRaw === "number" && Number.isFinite(pkRaw) ? pkRaw : null;
 
-      const acceptedMode = (detail as any)?.pkDecision?.acceptedMode ?? null;
-      const isRelock = acceptedMode === "relock";
+// ✅ info moteur PK : permet d’ignorer le garde-fou FT lors d’une bascule de référentiel
+const acceptedMode = (detail as any)?.pkDecision?.acceptedMode ?? null;
+const isRelock = acceptedMode === "relock";
 
+
+      // --- Qualité GPS + machine d'états (RED / ORANGE / GREEN) + hystérésis ---
       const nowTs = Date.now();
 
       const hasGpsFix =
-        typeof (detail as any).lat === "number" && typeof (detail as any).lon === "number";
+        typeof (detail as any).lat === "number" &&
+        typeof (detail as any).lon === "number";
 
       const onLine = !!(detail as any).onLine;
 
-      const sampleTs = typeof (detail as any).timestamp === "number" ? (detail as any).timestamp : nowTs;
+      // Fraîcheur : on prend le timestamp fourni si dispo, sinon "maintenant"
+      const sampleTs =
+        typeof (detail as any).timestamp === "number"
+          ? (detail as any).timestamp
+          : nowTs;
 
       lastGpsSampleAtRef.current = sampleTs;
 
       const ageSec = Math.max(0, (nowTs - sampleTs) / 1000);
       const isStale = ageSec > GPS_FRESH_SEC;
 
+      // ===== GARDE-FOU "SAUT DE PK" =====
+      // Objectif : si un saut énorme arrive, on ne pilote plus la FT avec ce PK.
+      // On force ORANGE et on attend de retrouver une cohérence.
       const speedKmPerSec = GPS_JUMP_MAX_SPEED_KMH / 3600;
 
       const lastCoherentPk = lastCoherentPkRef.current;
       const lastCoherentTs = lastCoherentTsRef.current;
 
+      // Détection uniquement si on a un point cohérent précédent, un PK courant, et un fix sur la ligne non-stale.
       let pkJumpSuspect = false;
 
       if (
@@ -1487,22 +2153,31 @@ export default function FT({ variant = "classic" }: FTProps) {
         lastCoherentPk != null &&
         lastCoherentTs > 0
       ) {
-        const dtSecRaw = Math.max(0, (sampleTs - lastCoherentTs) / 1000);
-        const dtSec = Math.max(dtSecRaw, GPS_JUMP_MIN_ELAPSED_SEC);
+        const dtSecRaw = Math.max(0, (sampleTs - lastCoherentTs) / 1000)
+        // ✅ On évite le “trou” à 0.99s : on détecte quand même,
+        // en bornant juste le dt utilisé pour la tolérance.
+        const dtSec = Math.max(dtSecRaw, GPS_JUMP_MIN_ELAPSED_SEC)
 
-        const maxDeltaKm = GPS_JUMP_BASE_TOLERANCE_KM + speedKmPerSec * dtSec;
-        const dPk = Math.abs(pk - lastCoherentPk);
+        const maxDeltaKm = GPS_JUMP_BASE_TOLERANCE_KM + speedKmPerSec * dtSec
+        const dPk = Math.abs(pk - lastCoherentPk)
 
         if (dPk > maxDeltaKm) {
-          pkJumpSuspect = true;
+          pkJumpSuspect = true
         }
       }
 
-      if (pkJumpSuspect && !pkJumpGuardActiveRef.current && lastCoherentPk != null) {
+
+      // Entrée en garde-fou : on se base sur le DERNIER PK cohérent
+      if (
+        pkJumpSuspect &&
+        !pkJumpGuardActiveRef.current &&
+        lastCoherentPk != null
+      ) {
         pkJumpGuardActiveRef.current = true;
         pkJumpGuardBasePkRef.current = lastCoherentPk;
         pkJumpGuardBaseTsRef.current = sampleTs;
 
+        // 📌 enrichissement log : tout le contexte utile au diagnostic
         const dtSecSinceLast =
           lastCoherentTs > 0 ? Math.max(0, (sampleTs - lastCoherentTs) / 1000) : null;
 
@@ -1511,54 +2186,66 @@ export default function FT({ variant = "classic" }: FTProps) {
             ? GPS_JUMP_BASE_TOLERANCE_KM + speedKmPerSec * dtSecSinceLast
             : null;
 
-        const dPkSinceLast = pk != null && lastCoherentPk != null ? Math.abs(pk - lastCoherentPk) : null;
+        const dPkSinceLast =
+          pk != null && lastCoherentPk != null ? Math.abs(pk - lastCoherentPk) : null;
 
         logTestEvent("gps:pk-jump-guard:enter", {
+          // --- brut GPS / projection ---
           lat: typeof (detail as any).lat === "number" ? (detail as any).lat : null,
           lon: typeof (detail as any).lon === "number" ? (detail as any).lon : null,
           accuracyM: typeof (detail as any).accuracy === "number" ? (detail as any).accuracy : null,
-          distanceRibbonM: typeof (detail as any).distance_m === "number" ? (detail as any).distance_m : null,
+          distanceRibbonM:
+            typeof (detail as any).distance_m === "number" ? (detail as any).distance_m : null,
           s_km: typeof (detail as any).s_km === "number" ? (detail as any).s_km : null,
 
+          // --- timestamps / fraîcheur ---
           sampleTs,
           nowTs,
           ageSec,
           isStale,
 
+          // --- PK ---
           pkRaw: pkRaw ?? null,
-          pkCandidate: pk,
+          pkCandidate: pk, // PK qui a déclenché le suspect
           pkLastCoherent: lastCoherentPk,
 
+          // --- calculs de détection ---
           dtSecSinceLast,
           dPkSinceLast,
           maxDeltaKmSinceLast,
           minElapsedSec: GPS_JUMP_MIN_ELAPSED_SEC,
 
+          // --- contexte app ---
           onLine,
           hasGpsFix,
           referenceMode: referenceModeRef.current,
           autoScrollEnabled: autoScrollEnabledRef.current,
 
+          // --- paramètres garde-fou ---
           baseToleranceKm: GPS_JUMP_BASE_TOLERANCE_KM,
           maxSpeedKmh: GPS_JUMP_MAX_SPEED_KMH,
         });
       }
 
+      // Si le garde-fou est actif : on reste ORANGE tant qu’on n’a pas récupéré un PK cohérent
       if (pkJumpGuardActiveRef.current) {
         const basePk = pkJumpGuardBasePkRef.current;
         const baseTs = pkJumpGuardBaseTsRef.current;
 
         if (pk != null && basePk != null && baseTs > 0) {
           const dtSecFromBase = Math.max(0, (sampleTs - baseTs) / 1000);
-          const recoverMaxDeltaKm = GPS_JUMP_BASE_TOLERANCE_KM + speedKmPerSec * dtSecFromBase;
+          const recoverMaxDeltaKm =
+            GPS_JUMP_BASE_TOLERANCE_KM + speedKmPerSec * dtSecFromBase;
 
           const dBase = Math.abs(pk - basePk);
 
           if (dBase <= recoverMaxDeltaKm) {
+            // Sortie garde-fou : PK redevenu cohérent
             pkJumpGuardActiveRef.current = false;
             pkJumpGuardBasePkRef.current = null;
             pkJumpGuardBaseTsRef.current = 0;
 
+            // ce PK redevient la nouvelle référence cohérente
             lastCoherentPkRef.current = pk;
             lastCoherentTsRef.current = sampleTs;
 
@@ -1573,16 +2260,52 @@ export default function FT({ variant = "classic" }: FTProps) {
               hasGpsFix,
             });
           } else {
+            // Toujours incohérent -> on ignore le PK
+            // ✅ Log enrichi : tout ce qu'il faut pour diagnostiquer le "saut"
+            const lcPk = lastCoherentPkRef.current;
+            const lcTs = lastCoherentTsRef.current;
+            const dtSecFromLastCoherent =
+              lcTs > 0 ? Math.max(0, (sampleTs - lcTs) / 1000) : null;
+
+            // Tolérance "théorique" par rapport au dernier PK cohérent (si dispo)
+            const maxDeltaFromLastCoherentKm =
+              dtSecFromLastCoherent != null
+                ? GPS_JUMP_BASE_TOLERANCE_KM + speedKmPerSec * dtSecFromLastCoherent
+                : null;
+
+            const dPkFromLastCoherentKm =
+              typeof pk === "number" &&
+              Number.isFinite(pk) &&
+              typeof lcPk === "number" &&
+              Number.isFinite(lcPk)
+                ? Math.abs(pk - lcPk)
+                : null;
+
             logTestEvent("gps:pk-jump-guard:reject", {
+              // valeurs brutes / utilisées
               pkRaw: pkRaw ?? null,
               pkRejected: typeof pk === "number" && Number.isFinite(pk) ? pk : null,
 
+              // base du garde-fou
               basePk,
               baseTs,
               dtSecFromBase,
               recoverMaxDeltaKm,
               dBase,
 
+              // dernière référence cohérente
+              lastCoherentPk: typeof lcPk === "number" && Number.isFinite(lcPk) ? lcPk : null,
+              lastCoherentTs: lcTs > 0 ? lcTs : null,
+              dtSecFromLastCoherent,
+
+              // comparaison “classique” (avant garde-fou) pour comprendre le déclenchement
+              maxDeltaFromLastCoherentKm,
+              dPkFromLastCoherentKm,
+              jumpBaseToleranceKm: GPS_JUMP_BASE_TOLERANCE_KM,
+              jumpMaxSpeedKmh: GPS_JUMP_MAX_SPEED_KMH,
+              jumpMinElapsedSec: GPS_JUMP_MIN_ELAPSED_SEC,
+
+              // contexte GPS
               sampleTs,
               nowTs,
               ageSec,
@@ -1591,47 +2314,528 @@ export default function FT({ variant = "classic" }: FTProps) {
               isStale,
               gpsState: gpsStateRef.current,
               referenceMode: referenceModeRef.current,
+
+              // contexte utile (si tu lis le log après coup)
+              pkJumpSuspectNow: pkJumpSuspect,
+              pkJumpGuardActive: pkJumpGuardActiveRef.current,
             });
 
             pk = null;
           }
         } else {
+          // Pas de PK exploitable => on ignore
           pk = null;
         }
       }
 
-      if (!pkJumpGuardActiveRef.current && hasGpsFix && onLine && !isStale && pk != null) {
+      // Si on n’est PAS en garde-fou, et que tout est sain, on met à jour la référence cohérente
+      if (
+        !pkJumpGuardActiveRef.current &&
+        hasGpsFix &&
+        onLine &&
+        !isStale &&
+        pk != null
+      ) {
         lastCoherentPkRef.current = pk;
         lastCoherentTsRef.current = sampleTs;
       }
 
+      // ===== Vérif cohérence sens attendu (train) vs sens observé (GPS) =====
+      const expectedDir = expectedDirRef.current;
+      if (
+        expectedDir &&
+        hasGpsFix &&
+        onLine &&
+        !isStale &&
+        pk != null &&
+        !pkJumpGuardActiveRef.current
+      ) {
+        const prevPk = dirLastPkRef.current;
+
+        if (typeof prevPk === "number" && Number.isFinite(prevPk)) {
+          const dPk = pk - prevPk;
+
+          // ignore micro-variations / immobilité
+          if (Math.abs(dPk) >= DIR_MIN_DELTA_KM) {
+            const observedDir: "UP" | "DOWN" = dPk > 0 ? "UP" : "DOWN";
+
+            // fenêtre glissante
+            const w = dirWindowRef.current;
+            if (w.startTs <= 0) {
+              w.startTs = nowTs;
+              w.sample = 0;
+              w.mismatch = 0;
+            }
+            if (nowTs - w.startTs > DIR_WINDOW_MS) {
+              w.startTs = nowTs;
+              w.sample = 0;
+              w.mismatch = 0;
+            }
+
+            w.sample += 1;
+            if (observedDir !== expectedDir) w.mismatch += 1;
+
+            const ratio = w.sample > 0 ? w.mismatch / w.sample : 0;
+
+            // alerte si incohérence persistante (anti-spam)
+            if (
+              w.sample >= DIR_MIN_SAMPLES &&
+              ratio >= DIR_MISMATCH_MIN_RATIO &&
+              nowTs - dirLastMismatchEmitAtRef.current >= DIR_MISMATCH_COOLDOWN_MS
+            ) {
+              dirLastMismatchEmitAtRef.current = nowTs;
+
+              logTestEvent("direction:mismatch", {
+                train: expectedDirTrainRef.current,
+                expectedDir,
+                observedDir,
+                sampleCount: w.sample,
+                mismatchCount: w.mismatch,
+                mismatchRatio: ratio,
+                source: expectedDirSourceRef.current,
+                pk,
+                prevPk,
+              });
+
+              // event UI (TitleBar pourra afficher une invite "confirmer le sens")
+              window.dispatchEvent(
+                new CustomEvent("lim:direction-mismatch", {
+                  detail: {
+                    train: expectedDirTrainRef.current,
+                    expectedDir,
+                    observedDir,
+                    sampleCount: w.sample,
+                    mismatchCount: w.mismatch,
+                    mismatchRatio: ratio,
+                    hint: "Vérifier le sens (flèche) dans la TitleBar",
+                  },
+                })
+              );
+            }
+
+            // mise à jour du PK de référence direction
+            dirLastPkRef.current = pk;
+          }
+        } else {
+          // première référence direction
+          dirLastPkRef.current = pk;
+        }
+      }
+
+      const distRibbonM =
+
+        typeof (detail as any).distance_m === "number"
+          ? (detail as any).distance_m
+          : null;
+
+      const accuracyM =
+        typeof (detail as any).accuracy === "number"
+          ? (detail as any).accuracy
+          : null;
+
+      // --- Détection "PK figé" ---
+      if (typeof pk === "number" && Number.isFinite(pk)) {
+        const prevPk = lastPkRef.current;
+        if (typeof prevPk === "number" && Number.isFinite(prevPk)) {
+          const dPk = Math.abs(pk - prevPk);
+          if (dPk >= GPS_FREEZE_PK_DELTA_KM) {
+            lastPkChangeAtRef.current = nowTs;
+            lastPkRef.current = pk;
+          }
+        } else {
+          lastPkRef.current = pk;
+          lastPkChangeAtRef.current = nowTs;
+        }
+      }
+
+      const pkFreezeElapsedMs =
+        hasGpsFix &&
+        onLine &&
+        typeof pk === "number" &&
+        Number.isFinite(pk) &&
+        lastPkChangeAtRef.current > 0
+          ? nowTs - lastPkChangeAtRef.current
+          : 0;
+
+      // PK figé : ORANGE à 10s, puis RED à 30s total
+      const pkFrozenOrange = pkFreezeElapsedMs >= GPS_FREEZE_WINDOW_MS;
+      const pkFrozenRed = pkFreezeElapsedMs >= GPS_FREEZE_TO_RED_MS;
+
+      const reasonCodes: string[] = [];
+      if (!hasGpsFix) reasonCodes.push("no_fix");
+      if (hasGpsFix && !onLine) reasonCodes.push("off_line");
+      if (hasGpsFix && onLine && isStale) reasonCodes.push("stale_fix");
+      if (pkJumpGuardActiveRef.current) reasonCodes.push("pk_jump_guard");
+      if (pkFrozenRed) reasonCodes.push("pk_frozen_red");
+      else if (pkFrozenOrange) reasonCodes.push("pk_frozen_orange");
+
+      // ✅ on mémorise l'état précédent pour détecter "entrée en RED"
       const prevGpsState = gpsStateRef.current;
 
-      // ... (ton code GPS continue inchangé jusqu’au recalage horaire)
+      // PK incohérent (garde-fou) => on force ORANGE (et PAS RED)
+      // Objectif : éviter le rouge à chaque tunnel ; on garde le GPS "présent mais douteux"
+      const pkIncoherentNow = pkJumpSuspect || pkJumpGuardActiveRef.current;
+      if (pkIncoherentNow) {
+        if (!reasonCodes.includes("pk_incoherent")) {
+          reasonCodes.push("pk_incoherent");
+        }
+      }
+
+      let nextState: "RED" | "ORANGE" | "GREEN" = "RED";
+
+      if (!hasGpsFix) {
+        nextState = "RED";
+      } else if (pkFrozenRed) {
+        // GPS figé trop longtemps => RED
+        nextState = "RED";
+      } else if (pkIncoherentNow) {
+        // ✅ PK incohérent => ORANGE (pas RED)
+        nextState = "ORANGE";
+      } else if (!onLine || isStale || pkFrozenOrange) {
+        nextState = "ORANGE";
+      } else {
+        nextState = "GREEN";
+      }
+
+      // ✅ vrai uniquement AU MOMENT où on bascule en RED à cause du figeage
+      const enteredRedFromFreeze =
+        prevGpsState !== "RED" && nextState === "RED" && pkFrozenRed === true;
+
+      // ✅ utile pour log : entrée ORANGE provoquée par PK incohérent
+      const enteredOrangeFromPkIncoherent =
+        prevGpsState !== "ORANGE" && nextState === "ORANGE" && pkIncoherentNow === true;
+
+
+      const emitGpsStateToTitleBar = (forced: boolean) => {
+        // throttle léger pour éviter le spam si watchPosition "mitraille"
+        const now = nowTs;
+
+        const pkFinite =
+          typeof pk === "number" && Number.isFinite(pk) ? pk : null;
+
+        // On n'affiche un PK que si GREEN (TitleBar attend ça)
+        const pkForUi = nextState === "GREEN" ? pkFinite : null;
+
+        const lastEmitAt = lastGpsStateEmitAtRef.current;
+        const lastEmitPk = lastGpsStateEmitPkRef.current;
+
+        const pkChanged =
+          pkForUi != null &&
+          (lastEmitPk == null || Math.abs(pkForUi - lastEmitPk) >= 0.05); // seuil ~50m
+
+        const timeOk = now - lastEmitAt >= GPS_STATE_EMIT_MIN_INTERVAL_MS;
+
+        // forced = changement d'état, sinon seulement si PK change ou throttle OK
+        if (!forced && !pkChanged && !timeOk) return;
+
+        lastGpsStateEmitAtRef.current = now;
+        lastGpsStateEmitPkRef.current = pkForUi;
+
+        window.dispatchEvent(
+          new CustomEvent("lim:gps-state", {
+            detail: {
+              state: nextState, // "RED" | "ORANGE" | "GREEN"
+              reasonCodes,
+              pk: pkForUi,
+              pkRaw: pkRaw ?? null,
+              hasFix: hasGpsFix,
+              onLine,
+              isStale,
+              ageSec,
+            },
+          })
+        );
+      };
+
+      if (gpsStateRef.current !== nextState) {
+        const prevState = gpsStateRef.current;
+        gpsStateRef.current = nextState;
+
+        // 🔊 Source de vérité GPS (FT) -> TitleBar (FORCÉ si changement d'état)
+        emitGpsStateToTitleBar(true);
+
+        logTestEvent("gps:state-change", {
+          prevState,
+          nextState,
+          reasonCodes,
+          ageSec,
+          distRibbonM,
+          accuracyM,
+          pk: typeof pk === "number" && Number.isFinite(pk) ? pk : null,
+          onLine,
+
+          // ✅ paramètres utiles pour interpréter le state
+          gpsFreshSec: GPS_FRESH_SEC,
+          gpsFreezeWindowMs: GPS_FREEZE_WINDOW_MS,
+          gpsFreezeToRedMs: GPS_FREEZE_TO_RED_MS,
+          gpsFreezePkDeltaKm: GPS_FREEZE_PK_DELTA_KM,
+          orangeTimeoutMs: ORANGE_TIMEOUT_MS,
+          stationProxKm: STATION_PROX_KM,
+        });
+
+        // ✅ log dédié : entrée en ORANGE provoquée par PK incohérent
+        if (enteredOrangeFromPkIncoherent) {
+          logTestEvent("gps:orange:pk-incoherent", {
+            pkRaw: pkRaw ?? null,
+            pkUsed: typeof pk === "number" && Number.isFinite(pk) ? pk : null,
+            pkJumpSuspect,
+            pkJumpGuardActive: pkJumpGuardActiveRef.current,
+
+            lastCoherentPk:
+              typeof lastCoherentPkRef.current === "number" &&
+              Number.isFinite(lastCoherentPkRef.current)
+                ? lastCoherentPkRef.current
+                : null,
+            lastCoherentTs: lastCoherentTsRef.current > 0 ? lastCoherentTsRef.current : null,
+
+            sampleTs,
+            nowTs,
+            ageSec,
+            onLine,
+            hasGpsFix,
+            isStale,
+
+            prevGpsState,
+            nextState,
+            reasonCodes,
+          });
+        }
+      }
+      // 🔄 Même si l'état ne change pas, on met à jour le PK affiché en TitleBar quand on est GREEN
+      if (nextState === "GREEN") {
+        emitGpsStateToTitleBar(false);
+      }
+
+      const isHealthy = nextState === "GREEN";
+
+      // On met à jour l'état "GPS OK" (conservé pour les logs / debug)
+      gpsHealthyRef.current = isHealthy;
+
+      // --- Mode de référence (HORAIRE / GPS) ---
+      // Nouvelle règle : on reste en GPS tant que l'état n'est pas RED.
+      // On bascule en HORAIRE uniquement si GPS = RED (pas de fix OU figeage rouge).
+      const isRed = gpsStateRef.current === "RED";
+
+      // ⚠️ IMPORTANT : dans ce handler, on s’appuie sur l’état React `referenceMode`
+      // (fiable car ce useEffect dépend de `referenceMode`) et on garde le ref synchronisé
+      // immédiatement pour éviter les “ratés” entre deux events GPS.
+      referenceModeRef.current = referenceMode;
+
+      // On n'utilise plus l'hystérésis ORANGE : si un timer traîne, on le coupe.
+      if (orangeTimeoutRef.current !== null) {
+        const startedAt = orangeTimeoutStartedAtRef.current;
+        const now = Date.now();
+
+        const elapsedMs =
+          typeof startedAt === "number" ? Math.max(0, now - startedAt) : null;
+
+        window.clearTimeout(orangeTimeoutRef.current);
+        orangeTimeoutRef.current = null;
+        orangeTimeoutStartedAtRef.current = null;
+
+        logTestEvent("gps:orange-hysteresis-abort", {
+          reason: "rule_changed_no_hysteresis",
+          state: gpsStateRef.current,
+          elapsedMs,
+          orangeTimeoutMs: ORANGE_TIMEOUT_MS,
+          mode: referenceModeRef.current,
+        });
+      }
+logTestEvent("gps:mode-check", {
+  gpsState: gpsStateRef.current,
+  referenceModeState: referenceMode,
+  referenceModeRef: referenceModeRef.current,
+});
+
+      if (isRed) {
+        // RED => bascule immédiate en HORAIRE
+        if (referenceMode !== "HORAIRE") {
+          console.log("[FT][gps] GPS RED -> mode HORAIRE");
+
+          const redReason = pkIncoherentNow
+            ? "gps_red_pk_incoherent"
+            : pkFrozenRed
+            ? "gps_red_pk_frozen"
+            : !hasGpsFix
+            ? "gps_red_no_fix"
+            : !onLine
+            ? "gps_red_off_line"
+            : isStale
+            ? "gps_red_stale_fix"
+            : "gps_red_other";
+
+          logTestEvent("gps:mode-change", {
+            prevMode: referenceModeRef.current,
+            nextMode: "HORAIRE",
+            reason: redReason,
+            state: gpsStateRef.current,
+            reasonCodes,
+            hasGpsFix,
+            onLine,
+            isStale,
+            ageSec,
+            pkRaw: pkRaw ?? null,
+            pkUsed: typeof pk === "number" && Number.isFinite(pk) ? pk : null,
+            pkJumpGuardActive: pkJumpGuardActiveRef.current,
+            gpsFreshSec: GPS_FRESH_SEC,
+            gpsFreezeWindowMs: GPS_FREEZE_WINDOW_MS,
+            gpsFreezeToRedMs: GPS_FREEZE_TO_RED_MS,
+            gpsFreezePkDeltaKm: GPS_FREEZE_PK_DELTA_KM,
+            orangeTimeoutMs: ORANGE_TIMEOUT_MS,
+          });
+
+          // 🔒 synchro immédiate du ref pour les events suivants
+          referenceModeRef.current = "HORAIRE";
+          setReferenceMode("HORAIRE");
+        }
+      } else {
+        // GREEN ou ORANGE => mode GPS
+        if (referenceMode !== "GPS") {
+          console.log("[FT][gps] GPS non-RED -> mode GPS");
+
+          logTestEvent("gps:mode-change", {
+            prevMode: referenceModeRef.current,
+            nextMode: "GPS",
+            reason: "gps_not_red",
+            state: gpsStateRef.current,
+            gpsFreshSec: GPS_FRESH_SEC,
+            gpsFreezeWindowMs: GPS_FREEZE_WINDOW_MS,
+            gpsFreezeToRedMs: GPS_FREEZE_TO_RED_MS,
+            gpsFreezePkDeltaKm: GPS_FREEZE_PK_DELTA_KM,
+            orangeTimeoutMs: ORANGE_TIMEOUT_MS,
+          });
+
+          // 🔒 synchro immédiate du ref pour les events suivants
+          referenceModeRef.current = "GPS";
+          setReferenceMode("GPS");
+        }
+      }
+
+
+      // ✅ CAS SPÉCIAL ARRÊT EN GARE :
+      // Si on ENTRE en RED suite à PK figé >= 30s, et si le PK figé est proche d'une gare commerciale,
+      // alors on passe automatiquement en Standby horaire avec cette gare sélectionnée.
+      if (enteredRedFromFreeze && typeof pk === "number" && Number.isFinite(pk)) {
+        // ✅ Log "entrée en RED depuis freeze" (avant décision proximité gare)
+        logTestEvent("gps:freeze-red:entered", {
+          pk,
+          pkFreezeElapsedMs,
+          lastPkChangeAt: lastPkChangeAtRef.current,
+          stationProxKm: STATION_PROX_KM,
+          prevGpsState,
+          nextState,
+          ageSec,
+          hasGpsFix,
+          onLine,
+          reasonCodes,
+        });
+
+        console.log("[FT][gps] ENTER RED (freeze)", {
+          pk,
+          pkFreezeElapsedMs,
+          lastPkChangeAt: lastPkChangeAtRef.current,
+          stationProxKm: STATION_PROX_KM,
+          prevGpsState,
+          nextState,
+          ageSec,
+          hasGpsFix,
+          onLine,
+          reasonCodes,
+        });
+
+        const nearest = findNearestCommercialStopRowIndex(pk, STATION_PROX_KM);
+
+        if (nearest) {
+          const { rowIndex, deltaKm } = nearest;
+
+          console.log(
+            "[FT][gps] RED sur figeage + proche gare commerciale -> Standby auto sur rowIndex=",
+            rowIndex,
+            "deltaKm=",
+            deltaKm,
+            "pk=",
+            pk
+          );
+
+          logTestEvent("gps:freeze-red:station-standby", {
+            rowIndex,
+            deltaKm,
+            pk,
+            state: gpsStateRef.current,
+            reason: "pk_frozen_red_near_commercial_stop",
+            stationProxKm: STATION_PROX_KM,
+          });
+
+          // Visuel + base de recalage (comme un clic Standby)
+          setSelectedRowIndex(rowIndex);
+          recalibrateFromRowRef.current = rowIndex;
+
+          // Optionnel mais cohérent : mettre aussi la ligne active sur cette gare
+          setActiveRowIndex(rowIndex);
+
+          // On coupe l’auto-scroll et on passe en Standby (🕑 orange)
+          window.dispatchEvent(
+            new CustomEvent("ft:auto-scroll-change", {
+              detail: { enabled: false },
+            })
+          );
+
+          window.dispatchEvent(
+            new CustomEvent("lim:hourly-mode", {
+              detail: { enabled: false, standby: true },
+            })
+          );
+        } else {
+          // Pas de gare commerciale proche => on ne fait rien (comportement normal)
+          logTestEvent("gps:freeze-red:station-standby-skip", {
+            pk,
+            reason: "no_near_commercial_stop",
+            stationProxKm: STATION_PROX_KM,
+          });
+        }
+      }
 
       // --- Suite : projection PK -> ligne FT + recalage horaire (inchangé dans l'esprit) ---
       if (pk != null) {
         const idx = findRowIndexFromPk(pk);
         if (idx != null) {
           const entry = rawEntries[idx];
+          console.log(
+            "[FT][gps] pk≈",
+            pk,
+            " → ligne FT index=",
+            idx,
+            " pk=",
+            entry?.pk,
+            " dependencia=",
+            entry?.dependencia
+          );
 
+          // 🧭 En mode GPS calé sur la ligne → la ligne active est pilotée par le PK
           const currentRefMode = referenceModeRef.current;
 
           if (hasGpsFix && onLine && currentRefMode === "GPS") {
+            // Ligne active = ligne GPS (PK projeté)
             setActiveRowIndex(idx);
 
+            // 📌 On ne recalcule le delta qu'au passage à un *nouveau* point d'ancrage
             const lastIdx = lastAnchoredRowRef.current;
             const isNewAnchor = lastIdx == null || lastIdx !== idx;
 
             if (!isNewAnchor) {
+              // même ligne FT que la dernière ancre GPS → pas de recalage horaire
               return;
             }
 
+            // On mémorise cette ligne comme nouveau point d'ancrage GPS
             lastAnchoredRowRef.current = idx;
 
+            // Heure de départ (FT brute ou mapping S&D)
             const departHoraText = resolveHoraForRowIndex(idx);
             const departMinutes = parseHoraToMinutes(departHoraText);
 
+            // En mode GPS : si une heure d'arrivée a été calculée pour cette ligne,
+            // on l'utilise pour le calcul du delta (objectif "à l'heure à l'arrivée").
             let usedMinutes: number | null = departMinutes;
             let usedHoraText: string = departHoraText;
             let usedSource: "DEPART" | "ARRIVEE" = "DEPART";
@@ -1649,10 +2853,15 @@ export default function FT({ variant = "classic" }: FTProps) {
               usedSource = "ARRIVEE";
             }
 
+            // Si on a une heure utilisable, on recale le delta
             if (usedMinutes != null) {
+              // 1) On note la ligne pour les futurs démarrages du mode horaire
               recalibrateFromRowRef.current = idx;
 
+              // 2) On recalcule le delta réel (maintenant - heure utilisée)
+              // ✅ cohérent avec le "play" : prend les secondes et arrondit à la minute la plus proche
               const now = new Date();
+
               const nowMinutes = now.getHours() * 60 + now.getMinutes();
               const nowTotalSec = nowMinutes * 60 + now.getSeconds();
 
@@ -1661,17 +2870,21 @@ export default function FT({ variant = "classic" }: FTProps) {
 
               const fixedDelay = Math.round(deltaSec / 60);
 
-              // ✅✅✅ CORRECTION : respecter le type (realMinInt/realMinFloat + deltaSec)
+              // 3) On recale la base interne du mode horaire sur cette ligne
               autoScrollBaseRef.current = {
-                realMinInt: nowMinutes,
-                realMinFloat: nowMinutes + now.getSeconds() / 60,
+                realMin: nowMinutes,
                 firstHoraMin: usedMinutes,
                 fixedDelay,
-                deltaSec,
               };
 
+
+              // 4) On met à jour immédiatement le delta affiché dans la TitleBar
               const text =
-                fixedDelay === 0 ? "0 min" : fixedDelay > 0 ? `+ ${fixedDelay} min` : `- ${-fixedDelay} min`;
+                fixedDelay === 0
+                  ? "0 min"
+                  : fixedDelay > 0
+                  ? `+ ${fixedDelay} min`
+                  : `- ${-fixedDelay} min`;
 
               window.dispatchEvent(
                 new CustomEvent("lim:schedule-delta", {
@@ -1710,16 +2923,29 @@ export default function FT({ variant = "classic" }: FTProps) {
                 pk: entry?.pk ?? null,
                 dependencia: entry?.dependencia ?? null,
 
+                // ✅ détails recalage
                 usedSource,
                 usedHora: usedHoraText,
                 usedMinutes,
 
+                // ✅ debug
                 departHora: departHoraText || null,
                 departMinutes: departMinutes ?? null,
                 arrivalMinutes,
               });
+            } else {
+              console.log(
+                "[FT][gps] Ligne GPS sans heure utilisable (départ/arrivée) -> pas de recalage",
+                { idx, departHoraText, arrivalMinutes }
+              );
             }
           }
+        } else {
+          console.log(
+            "[FT][gps] pk≈",
+            pk,
+            " → aucune ligne FT correspondante trouvée"
+          );
         }
       }
     };
@@ -1727,6 +2953,7 @@ export default function FT({ variant = "classic" }: FTProps) {
     window.addEventListener("gps:position", handler as EventListener);
     return () => {
       window.removeEventListener("gps:position", handler as EventListener);
+      // On nettoie aussi le timer d'hystérésis au démontage
       if (orangeTimeoutRef.current !== null) {
         window.clearTimeout(orangeTimeoutRef.current);
         orangeTimeoutRef.current = null;
@@ -1735,13 +2962,144 @@ export default function FT({ variant = "classic" }: FTProps) {
     };
   }, [rawEntries, referenceMode, heuresDetectees]);
 
+  //
+  // ===== 4. HELPERS REMARQUES ROUGES =================================
+  //
+  function renderRedNoteLine(line: string) {
+    const firstSpace = line.indexOf(" ");
+    const firstToken = firstSpace === -1 ? line : line.slice(0, firstSpace);
+    const rest = firstSpace === -1 ? "" : line.slice(firstSpace + 1);
+
+    return (
+      <div className="ft-rednote-line">
+        <span className="ft-rednote-strong">{firstToken}</span>
+        {rest ? " " + rest : ""}
+      </div>
+    );
+  }
+
+  function renderDependenciaCell(entry: FTEntry) {
+    const hasNotesArray =
+      Array.isArray(entry.notes) && entry.notes.length > 0;
+    const hasSingleNote = entry.note && entry.note.trim() !== "";
+
+    if (entry.isNoteOnly) {
+      return (
+        <div className="ft-dependencia-cell">
+          {hasNotesArray
+            ? entry.notes!.map((line, idx) => (
+                <div key={idx}>{renderRedNoteLine(line)}</div>
+              ))
+            : hasSingleNote
+            ? renderRedNoteLine(entry.note!)
+            : null}
+        </div>
+      );
+    }
+
+    return (
+      <div className="ft-dependencia-cell">
+        <div>{entry.dependencia ?? ""}</div>
+
+        {hasNotesArray
+          ? entry.notes!.map((line, idx) => (
+              <div key={idx}>{renderRedNoteLine(line)}</div>
+            ))
+          : hasSingleNote
+          ? renderRedNoteLine(entry.note!)
+          : null}
+      </div>
+    );
+  }
+
+  //
+  // ===== 5. TIMELINE VITESSE / POINTS DE RUPTURE ======================
+  //
+  type SpeedInfo = { v: number; highlight: boolean };
+
+  function extractSpeedTimeline(
+    entries: FTEntry[],
+    seed: SpeedInfo | null
+  ): {
+    speedMap: Record<string, SpeedInfo>;
+    breakpointsArr: string[];
+  } {
+    const speedMap: Record<string, SpeedInfo> = {};
+    const breakpointsArr: string[] = [];
+
+    let currentSpeed: number | null = seed ? seed.v : null;
+    let currentHighlight = seed ? seed.highlight : false;
+
+    for (const e of entries) {
+      if (e.isNoteOnly) continue;
+
+      const pk = e.pk;
+
+      if ((e as any).vmax_bar && pk) {
+        breakpointsArr.push(pk);
+      }
+
+      if (typeof e.vmax === "number" && !isNaN(e.vmax)) {
+        currentSpeed = e.vmax;
+        currentHighlight = !!(e as any).vmax_highlight;
+      }
+
+      if (pk && currentSpeed !== null) {
+        speedMap[pk] = {
+          v: currentSpeed,
+          highlight: currentHighlight,
+        };
+      }
+    }
+
+    return {
+      speedMap,
+      breakpointsArr,
+    };
+  }
+
   const firstVisiblePk = useMemo(() => {
     const e = rawEntries.find((e) => !e.isNoteOnly && e.pk);
     return e?.pk ?? null;
   }, [rawEntries]);
 
+  function computeSeedSpeed(
+    pkStart: string | null,
+    isOddFlag: boolean | null
+  ): SpeedInfo | null {
+    if (!pkStart || isOddFlag === null) return null;
+
+    let baseOriented: FTEntry[];
+    if (isOddFlag) {
+      baseOriented = FT_LIGNE_PAIR;
+    } else {
+      baseOriented = [...FT_LIGNE_IMPAIR].reverse();
+    }
+
+    const idxStart = baseOriented.findIndex(
+      (e) => !e.isNoteOnly && e.pk === pkStart
+    );
+    if (idxStart <= 0) {
+      return null;
+    }
+
+    let currentSpeed: number | null = null;
+    let currentHighlight = false;
+
+    for (let i = 0; i < idxStart; i++) {
+      const e = baseOriented[i];
+      if (typeof e.vmax === "number" && !isNaN(e.vmax)) {
+        currentSpeed = e.vmax;
+        currentHighlight = !!(e as any).vmax_highlight;
+      }
+    }
+
+    if (currentSpeed === null) return null;
+    return { v: currentSpeed, highlight: currentHighlight };
+  }
+
   const seedSpeed = useMemo(
-    () => computeSeedSpeed(firstVisiblePk, isOdd, FT_LIGNE_PAIR, FT_LIGNE_IMPAIR),
+    () => computeSeedSpeed(firstVisiblePk, isOdd),
     [firstVisiblePk, isOdd]
   );
 
@@ -1750,7 +3108,10 @@ export default function FT({ variant = "classic" }: FTProps) {
     [rawEntries, seedSpeed]
   );
 
-  const breakpointsSet = useMemo(() => new Set<string>(breakpointsArr), [breakpointsArr]);
+  const breakpointsSet = useMemo(
+    () => new Set<string>(breakpointsArr),
+    [breakpointsArr]
+  );
 
   const firstPk = useMemo(() => {
     const e = rawEntries.find((e) => !e.isNoteOnly && e.pk);
@@ -1767,6 +3128,11 @@ export default function FT({ variant = "classic" }: FTProps) {
     return null;
   }, [rawEntries]);
 
+  //
+  // ===== 6. CONSTRUCTION DU TBODY ====================================
+  //
+  const rows: JSX.Element[] = [];
+
   function isEligible(e: FTEntry): boolean {
     if ((e as any).isNoteOnly) return false;
     const s = (e.pk ?? "").toString().trim();
@@ -1774,23 +3140,213 @@ export default function FT({ variant = "classic" }: FTProps) {
     return s.length > 0 && d.length > 0;
   }
 
-  const firstNonNoteIndex = useMemo(() => {
-    for (let i = 0; i < rawEntries.length; i++) {
-      if (!rawEntries[i]?.isNoteOnly) return i;
-    }
-    return -1;
-  }, [rawEntries]);
+  const eligibleIndices: number[] = [];
 
-  const lastNonNoteIndex = useMemo(() => {
-    for (let i = rawEntries.length - 1; i >= 0; i--) {
-      if (!rawEntries[i]?.isNoteOnly) return i;
+  // --- Pré-calcul des segments de vitesse ---
+  const speedSegmentIndex: number[] = [];
+  const segmentPkLists = new Map<number, string[]>();
+
+  let currentSegmentId = 0;
+
+  for (let i = 0; i < rawEntries.length; i++) {
+    const e = rawEntries[i];
+
+    if (!e.isNoteOnly && e.pk) {
+      const pk = e.pk;
+      const isBreakpoint =
+        breakpointsSet.has(pk) && pk !== firstPk && pk !== lastPk;
+
+      if (currentSegmentId === 0) {
+        currentSegmentId = 1;
+      }
+
+      if (isBreakpoint && i !== 0) {
+        currentSegmentId++;
+      }
+
+      speedSegmentIndex[i] = currentSegmentId;
+
+      if (!segmentPkLists.has(currentSegmentId)) {
+        segmentPkLists.set(currentSegmentId, []);
+      }
+      segmentPkLists.get(currentSegmentId)!.push(pk);
+    } else {
+      speedSegmentIndex[i] = currentSegmentId;
+    }
+  }
+
+  const segmentLabelRowIndex = new Map<number, number>();
+  const segmentSpeed = new Map<number, SpeedInfo>();
+
+  {
+    for (let i = 0; i < rawEntries.length; i++) {
+      const segId = speedSegmentIndex[i] ?? 0;
+      if (segId <= 0) continue;
+
+      if (segmentLabelRowIndex.has(segId)) continue;
+
+      const e = rawEntries[i];
+      if (e.isNoteOnly || !e.pk) continue;
+
+      segmentLabelRowIndex.set(segId, i);
+    }
+
+    for (const [segId, pkList] of segmentPkLists.entries()) {
+      let info: SpeedInfo | null = null;
+      for (const pk of pkList) {
+        const s = speedMap[pk];
+        if (s) {
+          info = s;
+          break;
+        }
+      }
+      if (info) {
+        segmentSpeed.set(segId, info);
+      }
+    }
+  }
+
+  // --- Pré-calcul du type de surlignage CSV (zones par PK) ---
+  const csvHighlightByIndex: ("none" | "full" | "top" | "bottom")[] = [];
+
+  // Par défaut : aucun surlignage
+  for (let i = 0; i < rawEntries.length; i++) {
+    csvHighlightByIndex[i] = "none";
+  }
+
+  for (let i = 0; i < rawEntries.length; i++) {
+    const e = rawEntries[i];
+    if (!e.pk || e.isNoteOnly) continue;
+
+    const pkNum = Number(e.pk);
+    if (Number.isNaN(pkNum)) continue;
+
+    // Ici, ajoute ta logique pour les autres zones CSV comme avant
+    // ...
+  }
+
+  if (currentCsvSens) {
+    // On traite chaque zone CSV correspondant au sens courant
+    for (const zone of CSV_ZONES) {
+      if (zone.sens !== currentCsvSens) continue;
+
+      const a = Math.min(zone.pkFrom, zone.pkTo);
+      const b = Math.max(zone.pkFrom, zone.pkTo);
+
+      const indicesDansZone: number[] = [];
+
+      for (let i = 0; i < rawEntries.length; i++) {
+        const e = rawEntries[i];
+        if (!e.pk || e.isNoteOnly) continue;
+
+        const pkNum = Number(e.pk);
+        if (Number.isNaN(pkNum)) continue;
+
+        if (pkNum >= a && pkNum <= b) {
+          indicesDansZone.push(i);
+        }
+      }
+
+      if (indicesDansZone.length === 0) continue;
+
+      const first = indicesDansZone[0];
+      const last = indicesDansZone[indicesDansZone.length - 1];
+
+      // Nouvelle logique : vérifier si la première zone affichée
+      const isFirstZone = first === 0; // Vérification si c'est la première ligne affichée
+
+      for (const idx of indicesDansZone) {
+        if (isFirstZone) {
+          // Ne pas surligner la première zone
+          csvHighlightByIndex[idx] = "none";
+        } else if (first === last) {
+          csvHighlightByIndex[idx] = "full";
+        } else if (idx === first) {
+          csvHighlightByIndex[idx] = "bottom";
+        } else if (idx === last) {
+          csvHighlightByIndex[idx] = "top";
+        } else {
+          csvHighlightByIndex[idx] = "full";
+        }
+      }
+    }
+    // Logique conditionnelle : si on est sur la ligne 621.0 et qu'elle est la dernière ligne affichée
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e = rawEntries[i];
+      if (!e.pk || e.isNoteOnly) continue;
+
+      const pkNum = Number(e.pk);
+      if (Number.isNaN(pkNum)) continue;
+
+      // Appliquer le surlignage complet à la ligne 621.0 si c'est la dernière ligne affichée
+      if (e.pk === "621.0" && i === rawEntries.length - 1) {
+        csvHighlightByIndex[i] = "full"; // Surbrillance complète pour la dernière ligne
+      }
+    }
+
+    // 🔁 Post-traitement : remplir les cases ENTRE les barres
+    // On cherche chaque paire "bottom" -> "top" et on met "full"
+    // sur toutes les lignes intermédiaires.
+    let zoneStartIndex: number | null = null;
+
+    for (let i = 0; i < csvHighlightByIndex.length; i++) {
+      const kind = csvHighlightByIndex[i];
+
+      if (kind === "bottom") {
+        // début de zone : on mémorise l'index de la ligne contenant la barre du haut
+        zoneStartIndex = i;
+      } else if (kind === "top" && zoneStartIndex !== null) {
+        // fin de zone : on remplit tout ce qu’il y a entre les deux
+        for (let j = zoneStartIndex + 1; j < i; j++) {
+          if (csvHighlightByIndex[j] === "none") {
+            csvHighlightByIndex[j] = "full";
+          }
+        }
+        zoneStartIndex = null;
+      }
+    }
+  }
+
+  for (let i = 0; i < rawEntries.length; i++) {
+    const e = rawEntries[i];
+    if (isEligible(e)) eligibleIndices.push(i);
+  }
+
+  const totalEligible = eligibleIndices.length;
+  const assignedCount = Math.min(heuresDetectees.length, totalEligible);
+  console.log(
+    "[FT] Mapping heures -> lignes éligibles (S&D):",
+    `${assignedCount}/${totalEligible}`,
+    {
+      eligibleIndices: eligibleIndices.slice(0, 30),
+      heures: heuresDetectees.slice(0, assignedCount),
+    }
+  );
+
+  let heuresDetecteesCursor = 0;
+  let previousHoraForConc: string | null = null;
+
+  const firstNonNoteIndex = (() => {
+    for (let i = 0; i < rawEntries.length; i++) {
+      if (!rawEntries[i].isNoteOnly) return i;
     }
     return -1;
-  }, [rawEntries]);
+  })();
+
+  useEffect(() => {
+    firstNonNoteIndexRef.current = firstNonNoteIndex;
+  }, [firstNonNoteIndex]);
+
+  const lastNonNoteIndex = (() => {
+    for (let i = rawEntries.length - 1; i >= 0; i--) {
+      if (!rawEntries[i].isNoteOnly) return i;
+    }
+    return -1;
+  })();
 
   function parseHoraToMinutes(h?: string | null): number | null {
     if (!h) return null;
-    const m = /^(\d{1,2}):(\d{2})$/.exec(String(h).trim());
+    const m = /^(\d{1,2}):(\d{2})$/.exec(h.trim());
     if (!m) return null;
     const hh = Number(m[1]);
     const mm = Number(m[2]);
@@ -1804,74 +3360,2014 @@ export default function FT({ variant = "classic" }: FTProps) {
     if (t < 0) t += minutesInDay;
     const hh = Math.floor(t / 60);
     const mm = t % 60;
-    return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    return `${pad(hh)}:${pad(mm)}`;
   }
 
-  const horaTheoSecondsByIndex = useMemo(() => {
-    return new Array<number | null>(rawEntries.length).fill(null);
-  }, [rawEntries]);
+    // ============================================================
+  // Export heures Figueres (départ + arrivée) depuis la FT Espagne
+  // ============================================================
+  const figueresTimes = useMemo(() => {
+    // 1) trouver l'index de FIGUERES-VILAFANT
+    let figIdx: number | null = null;
 
-  // ⚠️ horaTheoMinutesByIndex est utilisé plus haut : on garde ton comportement (tel que dans ton fichier réel)
-  // (je ne le recrée pas ici pour éviter d’inventer une logique)
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e = rawEntries[i] as any;
+      if (e?.isNoteOnly) continue;
 
-  const { rows, arrivalEvents } = buildFtRows({
+      const depNorm = (e?.dependencia ?? "")
+        .toUpperCase()
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (depNorm === "FIGUERES-VILAFANT") {
+        figIdx = i;
+        break;
+      }
+    }
+
+    if (figIdx == null) {
+      return { departureHhmm: null as string | null, arrivalHhmm: null as string | null };
+    }
+
+    // 2) heure de départ (même logique que l’affichage)
+    const departure = resolveHoraForRowIndex(figIdx);
+    const departureHhmm = departure && departure.trim() ? departure.trim() : null;
+
+    // 3) heure d’arrivée = départ - COM (même logique que l’affichage)
+    let arrivalHhmm: string | null = null;
+
+    const isOriginOrTerminus = figIdx === firstNonNoteIndex || figIdx === lastNonNoteIndex;
+
+    if (departureHhmm && !isOriginOrTerminus) {
+      const codesPourHeure = codesCParHeure[departureHhmm] ?? [];
+      const firstCode = codesPourHeure[0];
+      const n = Number(firstCode);
+
+      if (Number.isFinite(n) && n > 0) {
+        const depMinutes = parseHoraToMinutes(departureHhmm);
+        if (depMinutes != null) {
+          const arrMinutes = depMinutes - n;
+          arrivalHhmm = formatMinutesToHora(arrMinutes);
+        }
+      }
+    }
+
+    return { departureHhmm, arrivalHhmm };
+  }, [
     rawEntries,
-    isEligible,
-
-    visibleRows,
-    selectedRowIndex,
-    setSelectedRowIndex,
-    recalibrateFromRowRef,
-    autoScrollEnabled,
-    referenceModeRef,
-
-    currentCsvSens,
-    CSV_ZONES,
-
-    heuresDetectees,
     codesCParHeure,
-
+    heuresDetectees,
     firstNonNoteIndex,
     lastNonNoteIndex,
-    parseHoraToMinutes,
-    formatMinutesToHora,
+  ]);
 
-    breakpointsSet,
-    firstPk,
-    lastPk,
-    speedMap,
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("ft:figueres-hhmm", {
+        detail: {
+          departureHhmm: figueresTimes.departureHhmm,
+          arrivalHhmm: figueresTimes.arrivalHhmm,
+        },
+      })
+    );
 
-    testModeEnabled,
-    horaTheoSecondsByIndex,
-  });
+    // Debug léger (tu peux enlever après validation)
+    console.log("[FT] ft:figueres-hhmm", figueresTimes);
+  }, [figueresTimes.departureHhmm, figueresTimes.arrivalHhmm]);
 
+  // ===== Horaires théoriques (interpolation PK ↔ temps) =====
+  // ✅ Règle : entre A -> B, on interpole de :
+  // - départ(A)
+  // - arrivée(B) si elle existe, sinon départ(B)
+  const horaTheoMinutesByIndex = useMemo(() => {
+    // 1) Reconstruire les heures de DÉPART par index (même logique que l'affichage)
+    const departMinutesByIndex: Array<number | null> = new Array(rawEntries.length).fill(null);
+    const departHoraTextByIndex: Array<string | null> = new Array(rawEntries.length).fill(null);
+
+    let cursor = 0;
+
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e = rawEntries[i];
+      if ((e as any).isNoteOnly) continue;
+
+      const eligible = isEligible(e);
+
+      const horaStr =
+        eligible && cursor < heuresDetectees.length
+          ? heuresDetectees[cursor]
+          : ((e as any).hora ?? "");
+
+      if (eligible && cursor < heuresDetectees.length) cursor++;
+
+      const horaText = typeof horaStr === "string" ? horaStr.trim() : "";
+      departHoraTextByIndex[i] = horaText.length > 0 ? horaText : null;
+      departMinutesByIndex[i] = parseHoraToMinutes(horaText);
+    }
+
+    // 2) Calculer les minutes d'ARRIVÉE pour B si possible (arrivée = départ - COM)
+    const arrivalMinutesByIndex: Array<number | null> = new Array(rawEntries.length).fill(null);
+
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e = rawEntries[i];
+      if ((e as any).isNoteOnly) continue;
+
+      const depMin = departMinutesByIndex[i];
+      const horaText = departHoraTextByIndex[i];
+      if (depMin == null || !horaText) continue;
+
+      const depNorm = (e.dependencia ?? "")
+        .toUpperCase()
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const isVoyageursStop =
+        depNorm === "BARCELONA SANTS" ||
+        depNorm === "LA SAGRERA AV" ||
+        depNorm === "GIRONA" ||
+        depNorm === "FIGUERES-VILAFANT";
+
+      const isOriginOrTerminus = i === firstNonNoteIndex || i === lastNonNoteIndex;
+
+      if (!isVoyageursStop || isOriginOrTerminus) continue;
+
+      const codesPourHeure = codesCParHeure[horaText] ?? [];
+      const firstCode = codesPourHeure[0];
+      const n = Number(firstCode);
+
+      if (Number.isFinite(n) && n > 0) {
+        arrivalMinutesByIndex[i] = depMin - n;
+      }
+    }
+
+    // 3) Interpoler entre ancres consécutives (PK + minute de départ)
+    const out: Array<number | null> = [...departMinutesByIndex];
+
+    const getPkNum = (idx: number): number | null => {
+      const pkStr = rawEntries[idx]?.pk;
+      const pkNum =
+        typeof pkStr === "string" || typeof pkStr === "number" ? Number(pkStr) : NaN;
+      return Number.isFinite(pkNum) ? pkNum : null;
+    };
+
+    let lastAnchorIndex: number | null = null;
+
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e = rawEntries[i];
+      if ((e as any).isNoteOnly) continue;
+
+      const depB = departMinutesByIndex[i];
+      const pkB = getPkNum(i);
+      if (depB == null || pkB == null) continue;
+
+      if (lastAnchorIndex == null) {
+        lastAnchorIndex = i;
+        continue;
+      }
+
+      const a = lastAnchorIndex;
+      const depA = departMinutesByIndex[a];
+      const pkA = getPkNum(a);
+
+      if (depA == null || pkA == null) {
+        lastAnchorIndex = i;
+        continue;
+      }
+
+      // ✅ fin de segment = arrivée(B) si dispo, sinon départ(B)
+      const endB = arrivalMinutesByIndex[i] ?? depB;
+
+      const denom = pkB - pkA;
+      if (denom === 0) {
+        lastAnchorIndex = i;
+        continue;
+      }
+
+      for (let k = a + 1; k < i; k++) {
+        if ((rawEntries[k] as any)?.isNoteOnly) continue;
+        if (out[k] != null) continue;
+
+        const pkK = getPkNum(k);
+        if (pkK == null) continue;
+
+        let t = (pkK - pkA) / denom; // 0 à A, 1 à B
+        if (t < 0) t = 0;
+        if (t > 1) t = 1;
+
+        const mk = depA + t * (endB - depA);
+
+        // ✅ garde-fou : ne jamais dépasser les bornes du segment (arrondi inclus)
+        const lo = Math.min(depA, endB);
+        const hi = Math.max(depA, endB);
+        const mkClamped = Math.min(Math.max(mk, lo), hi);
+
+        out[k] = Math.round(mkClamped);
+      }
+
+
+      lastAnchorIndex = i;
+    }
+
+    return out;
+  }, [rawEntries, heuresDetectees, codesCParHeure]);
+
+  // ===== Horaires théoriques en SECONDES (pondérés par Vmax) — mode test =====
+  // Objectif : progression plus réaliste quand Vmax varie + suppression des doublons HH:MM
+  // ===== Horaires théoriques en SECONDES (pondérés par Vmax) — mode test =====
+  // Objectif : progression plus réaliste quand Vmax varie + suppression des doublons HH:MM
+  const horaTheoSecondsByIndex = useMemo(() => {
+    if (!testModeEnabled) {
+      return new Array<number | null>(rawEntries.length).fill(null);
+    }
+
+    const clamp = (x: number, lo: number, hi: number) => Math.min(Math.max(x, lo), hi);
+
+    const getPkNum = (idx: number): number | null => {
+      const pkStr = rawEntries[idx]?.pk;
+      const pkNum =
+        typeof pkStr === "string" || typeof pkStr === "number" ? Number(pkStr) : NaN;
+      return Number.isFinite(pkNum) ? pkNum : null;
+    };
+
+    const getVmaxForIndex = (idx: number): number | null => {
+      const e = rawEntries[idx] as any;
+      const v = typeof e?.vmax === "number" ? e.vmax : null;
+      return v != null && Number.isFinite(v) && v > 0 ? v : null;
+    };
+
+    // --------
+    // 1) Recalcul des ancres uniquement (départs + arrivées possibles)
+    //    (copie contrôlée de la logique de horaTheoMinutesByIndex)
+    // --------
+    const departMinutesByIndex: Array<number | null> = new Array(rawEntries.length).fill(null);
+    const departHoraTextByIndex: Array<string | null> = new Array(rawEntries.length).fill(null);
+
+    let cursor = 0;
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e = rawEntries[i] as any;
+      if (e?.isNoteOnly) continue;
+
+      const eligible = isEligible(rawEntries[i]);
+
+      const horaStr =
+        eligible && cursor < heuresDetectees.length
+          ? heuresDetectees[cursor]
+          : (e?.hora ?? "");
+
+      if (eligible && cursor < heuresDetectees.length) cursor++;
+
+      const horaText = typeof horaStr === "string" ? horaStr.trim() : "";
+      departHoraTextByIndex[i] = horaText.length > 0 ? horaText : null;
+
+      // parseHoraToMinutes existe déjà dans ton fichier
+      departMinutesByIndex[i] = parseHoraToMinutes(horaText);
+    }
+
+    const arrivalMinutesByIndex: Array<number | null> = new Array(rawEntries.length).fill(null);
+
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e = rawEntries[i] as any;
+      if (e?.isNoteOnly) continue;
+
+      const depMin = departMinutesByIndex[i];
+      const horaText = departHoraTextByIndex[i];
+      if (depMin == null || !horaText) continue;
+
+      const depNorm = (rawEntries[i].dependencia ?? "")
+        .toUpperCase()
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const isVoyageursStop =
+        depNorm === "BARCELONA SANTS" ||
+        depNorm === "LA SAGRERA AV" ||
+        depNorm === "GIRONA" ||
+        depNorm === "FIGUERES-VILAFANT";
+
+      const isOriginOrTerminus = i === firstNonNoteIndex || i === lastNonNoteIndex;
+      if (!isVoyageursStop || isOriginOrTerminus) continue;
+
+      const codesPourHeure = codesCParHeure[horaText] ?? [];
+      const firstCode = codesPourHeure[0];
+      const n = Number(firstCode);
+
+      if (Number.isFinite(n) && n > 0) {
+        arrivalMinutesByIndex[i] = depMin - n;
+      }
+    }
+
+    // --------
+    // 2) Construire les ancres en secondes (UNIQUEMENT sur les vrais points)
+    //    - l’ancre i porte depMin (départ) en secondes
+    //    - et pour la borne de segment B, on utilisera arrival(B) si dispo sinon depart(B)
+    // --------
+    const anchorSecByIndex: Array<number | null> = new Array(rawEntries.length).fill(null);
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e = rawEntries[i] as any;
+      if (e?.isNoteOnly) continue;
+
+      const depMin = departMinutesByIndex[i];
+      const pk = getPkNum(i);
+      if (depMin == null || pk == null) continue;
+
+      anchorSecByIndex[i] = Math.round(depMin * 60);
+    }
+
+    // --------
+    // 3) Remplissage pondéré Vmax entre ancres successives
+    // --------
+    const out: Array<number | null> = new Array(rawEntries.length).fill(null);
+
+    let lastAnchorIndex: number | null = null;
+
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e = rawEntries[i] as any;
+      if (e?.isNoteOnly) continue;
+
+      const depB = departMinutesByIndex[i];
+      const pkB = getPkNum(i);
+      if (depB == null || pkB == null) continue;
+
+      if (lastAnchorIndex == null) {
+        // première ancre rencontrée
+        out[i] = Math.round(depB * 60);
+        lastAnchorIndex = i;
+        continue;
+      }
+
+      const a = lastAnchorIndex;
+
+      const depA = departMinutesByIndex[a];
+      const pkA = getPkNum(a);
+      if (depA == null || pkA == null) {
+        lastAnchorIndex = i;
+        continue;
+      }
+
+      // borne B = arrivée(B) si dispo, sinon départ(B)
+      const endB = arrivalMinutesByIndex[i] ?? depB;
+
+      const secA = Math.round(depA * 60);
+      const secB = Math.round(endB * 60);
+
+            // 🔎 DEBUG (uniquement 1er segment) : comprendre les "téléportations" au début
+      if (a === lastAnchorIndex && a === 0) {
+        try {
+          const pkA_dbg = getPkNum(a);
+          const pkB_dbg = getPkNum(i);
+
+          const arrB_dbg = arrivalMinutesByIndex[i];
+
+          const fmtMin = (m: number | null) => {
+            if (m == null) return null;
+            const hh = Math.floor((((m % (24 * 60)) + (24 * 60)) % (24 * 60)) / 60);
+            const mm = (((m % (24 * 60)) + (24 * 60)) % (24 * 60)) % 60;
+            const pad = (n: number) => n.toString().padStart(2, "0");
+            return `${pad(hh)}:${pad(mm)}`;
+          };
+
+          console.log(
+            "[FT][horaTheoSeconds][SEG0_JSON]",
+            JSON.stringify(
+              {
+                A: { idx: a, pk: pkA_dbg, depA_raw: depA, secA },
+                B: { idx: i, pk: pkB_dbg, depB_raw: depB, endB_raw: endB, secB },
+                arrivalB_raw: arrB_dbg,
+                deltaSec: secB - secA,
+              },
+              null,
+              0
+            )
+          );
+
+        } catch (err) {
+          console.warn("[FT][horaTheoSeconds][SEG0] debug failed", err);
+        }
+      }
+
+
+      out[a] = secA;
+      out[i] = Math.round(depB * 60); // on garde l’affichage “départ B” sur la ligne B (cohérent avec ta colonne)
+
+      const totalSec = secB - secA;
+      const totalAbs = Math.abs(totalSec);
+      if (totalAbs === 0) {
+        lastAnchorIndex = i;
+        continue;
+      }
+
+      // segments entre a -> i (uniquement sur les points PK valides)
+      type Seg = { idxTo: number; w: number };
+      const segs: Seg[] = [];
+
+      // 1) Liste des indices ayant un PK exploitable entre a..i
+      const idxPts: number[] = [];
+      for (let k = a; k <= i; k++) {
+        const ee = rawEntries[k] as any;
+        if (ee?.isNoteOnly) continue;
+        const pkK = getPkNum(k);
+        if (pkK == null) continue;
+        idxPts.push(k);
+      }
+
+      // 2) Construire les segments entre points successifs valides
+      for (let j = 0; j < idxPts.length - 1; j++) {
+        const k0 = idxPts[j];
+        const k1 = idxPts[j + 1];
+
+        const pk0 = getPkNum(k0);
+        const pk1 = getPkNum(k1);
+        if (pk0 == null || pk1 == null) continue;
+
+        const dKm = Math.abs(pk1 - pk0);
+        if (!Number.isFinite(dKm) || dKm <= 0) continue;
+
+        // Vmax applicable : priorité au "début" du segment
+        const v = getVmaxForIndex(k0) ?? getVmaxForIndex(k1) ?? 120;
+        const w = dKm / v;
+
+        segs.push({ idxTo: k1, w });
+      }
+
+      const W = segs.reduce((s, it) => s + it.w, 0);
+
+      // fallback linéaire PK si W invalide
+      if (!Number.isFinite(W) || W <= 0) {
+        const denom = pkB - pkA;
+        if (denom === 0) {
+          lastAnchorIndex = i;
+          continue;
+        }
+
+        for (let k = a + 1; k < i; k++) {
+          const ee = rawEntries[k] as any;
+          if (ee?.isNoteOnly) continue;
+          if (out[k] != null) continue;
+
+          const pkK = getPkNum(k);
+          if (pkK == null) continue;
+
+          let t = (pkK - pkA) / denom;
+          t = clamp(t, 0, 1);
+
+          const sk = secA + t * (secB - secA);
+          const lo = Math.min(secA, secB);
+          const hi = Math.max(secA, secB);
+          out[k] = Math.round(clamp(sk, lo, hi));
+        }
+
+        lastAnchorIndex = i;
+        continue;
+      }
+
+      // cumul pondéré
+      let cum = 0;
+      const cumByIndex = new Map<number, number>();
+      for (const seg of segs) {
+        cum += seg.w;
+        cumByIndex.set(seg.idxTo, cum);
+      }
+
+      // remplissage
+      for (let k = a + 1; k < i; k++) {
+        const ee = rawEntries[k] as any;
+        if (ee?.isNoteOnly) continue;
+        if (out[k] != null) continue;
+
+        const cumK = cumByIndex.get(k);
+        if (cumK == null) continue;
+
+        const t = clamp(cumK / W, 0, 1);
+        const sk = secA + t * (secB - secA);
+        const lo = Math.min(secA, secB);
+        const hi = Math.max(secA, secB);
+        out[k] = Math.round(clamp(sk, lo, hi));
+      }
+
+      lastAnchorIndex = i;
+    }
+
+    // Si certaines cases restent null (avant la première ancre), on laisse null.
+    return out;
+  }, [testModeEnabled, rawEntries, heuresDetectees, codesCParHeure, firstNonNoteIndex, lastNonNoteIndex]);
+
+
+  // Gestion RC
+  let rcCurrentSegmentId = 0;
+  const rcPrintedSegments = new Set<number>();
+
+  // Gestion VMax (scroll intelligent)
+  const vPrintedSegments = new Set<number>();
+
+  // Debug : index de ligne visuelle (toutes les <tr> rendues)
+  let renderedRowIndex = 0;
+
+  // CSV : état "zone ouverte" entre un bottom et un top
+  let csvZoneOpen = false;
+  // compteur des VRAIES lignes principales (<tr className="ft-row-main">)
+  let mainRowCounter = 0;
+  // radio : on veut l'afficher une seule fois dans le viewport
+  let radioPrintedInThisRender = false;
+  // bloqueo : on veut l'afficher une seule fois dans le viewport
+  let bloqueoPrintedInThisRender = false;
+
+  const arrivalEvents: { arrivalMin: number; rowIndex: number }[] = [];
+
+  // Gestion des clics sur le corps de la FT :
+  // - 1er clic en mode horaire : sélection de la ligne la plus proche => Standby
+  // - 2ᵉ clic en Standby : relance du mode horaire
+  const handleBodyClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // En mode GPS, le clic sur la fiche train ne doit jamais déclencher Standby / recalage
+    if (referenceModeRef.current === "GPS") {
+      return;
+    }
+
+    const container = e.currentTarget;
+    const clickY = e.clientY;
+
+    const isStandby =
+      !autoScrollEnabled &&
+      recalibrateFromRowRef.current !== null &&
+      selectedRowIndex !== null;
+
+    // 2ᵉ clic : on est en Standby -> on relance le mode horaire
+    if (isStandby) {
+      // on enlève la sélection visuelle (stop clignotement)
+      setSelectedRowIndex(null);
+
+      // on relance le mode horaire
+      window.dispatchEvent(
+        new CustomEvent("ft:auto-scroll-change", {
+          detail: { enabled: true },
+        })
+      );
+      return;
+    }
+
+    // Si on n'est pas en auto-scroll (avant Play ou en pause "normale"),
+    // on ne déclenche pas le Standby / la sélection.
+    if (!autoScrollEnabled) {
+      return;
+    }
+
+    const mainRows =
+      container.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main");
+    if (!mainRows.length) return;
+
+    let bestRow: HTMLTableRowElement | null = null;
+    let bestIndex = -1;
+    let bestDist = Number.POSITIVE_INFINITY;
+
+    for (let idx = 0; idx < mainRows.length; idx++) {
+      const tr = mainRows[idx];
+
+      // On ne considère que les lignes "calibrables" : horaire + dependencia présents
+      const horaSpan = tr.querySelector<HTMLSpanElement>(
+        "td:nth-child(6) .ft-hora-depart"
+      );
+      const horaText = horaSpan?.textContent?.trim() || "";
+
+      const depCell =
+        tr.querySelector<HTMLDivElement>(".ft-dependencia-cell");
+      const depText = depCell?.textContent?.trim() || "";
+
+      const hasHoraAndDep = !!horaText && !!depText;
+      if (!hasHoraAndDep) {
+        continue;
+      }
+
+      const rect = tr.getBoundingClientRect();
+      const centerY = rect.top + rect.height / 2;
+      const dist = Math.abs(clickY - centerY);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestRow = tr;
+        bestIndex = idx;
+      }
+    }
+
+    // Aucune ligne "valide" (avec horaire + dependencia) trouvée à proximité
+    if (!bestRow) {
+      return;
+    }
+
+    const dataIndexAttr = bestRow.getAttribute("data-ft-row");
+    const rowIndex = dataIndexAttr ? parseInt(dataIndexAttr, 10) : bestIndex;
+
+    // Visuel : ligne sélectionnée (cadre rouge clignotant)
+    setSelectedRowIndex(rowIndex);
+    // Fonctionnel : base de recalage horaire à partir de cette ligne
+    recalibrateFromRowRef.current = rowIndex;
+
+    // On coupe l'auto-scroll (équivalent d'un clic sur Pause)
+    window.dispatchEvent(
+      new CustomEvent("ft:auto-scroll-change", {
+        detail: { enabled: false },
+      })
+    );
+
+    // On signale le mode Standby à la TitleBar (🕑 orange)
+    window.dispatchEvent(
+      new CustomEvent("lim:hourly-mode", {
+        detail: { enabled: false, standby: true },
+      })
+    );
+  };
+
+  for (let i = 0; i < rawEntries.length; i++) {
+    const entry = rawEntries[i];
+
+    const isSelected = selectedRowIndex === i;
+
+    if (entry.isNoteOnly) {
+      continue;
+    }
+
+    const nextEntry = rawEntries[i + 1];
+    const hasNoteAfter = nextEntry && nextEntry.isNoteOnly === true;
+
+    const sitKm = entry.isNoteOnly ? "" : entry.pk ?? "";
+
+    const eligible = isEligible(entry);
+    const horaAssigned =
+      eligible && heuresDetecteesCursor < heuresDetectees.length
+        ? heuresDetectees[heuresDetecteesCursor]
+        : (entry as any).hora ?? "";
+    const hora = horaAssigned;
+
+    const depNorm = (entry.dependencia ?? "")
+      .toUpperCase()
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const isVoyageursStop =
+      depNorm === "BARCELONA SANTS" ||
+      depNorm === "LA SAGRERA AV" ||
+      depNorm === "GIRONA" ||
+      depNorm === "FIGUERES-VILAFANT";
+
+    let com = "";
+    let comMinutes: number | null = null;
+
+    const isOriginOrTerminus =
+      !entry.isNoteOnly &&
+      (i === firstNonNoteIndex || i === lastNonNoteIndex);
+
+    // Origine / destination utilisée pour le surlignage
+    const isLimiteAdifLfspa = depNorm === "LIMITE ADIF - LFPSA";
+    const isOriginOrDestinationForHighlight =
+      isOriginOrTerminus && !isLimiteAdifLfspa;
+
+    if (hora && isVoyageursStop && !isOriginOrTerminus) {
+      const codesPourHeure = codesCParHeure[hora] ?? [];
+      if (codesPourHeure.length > 0) {
+        com = codesPourHeure.join(" ");
+
+        const firstCode = codesPourHeure[0];
+        const n = Number(firstCode);
+        if (Number.isFinite(n)) {
+          comMinutes = n;
+        } else {
+          console.warn(
+            "[FT] Impossible de parser COM en minutes pour l'heure",
+            hora,
+            "code=",
+            firstCode
+          );
+        }
+
+        if (codesPourHeure.length > 1) {
+          console.warn(
+            "[FT] Plusieurs codes C détectés pour la même heure",
+            hora,
+            codesPourHeure
+          );
+        }
+      }
+    }
+
+    if (eligible && heuresDetecteesCursor < heuresDetectees.length) {
+      heuresDetecteesCursor++;
+    }
+
+    const tecnico = (entry as any).tecnico ?? "";
+
+    let conc = (entry as any).conc ?? "";
+
+    // Heure d'arrivée calculée
+    let horaArrivee: string | null = null;
+    if (hora && comMinutes != null && comMinutes > 0) {
+      const depMinutes = parseHoraToMinutes(hora);
+      if (depMinutes != null) {
+        const arrMinutes = depMinutes - comMinutes;
+        horaArrivee = formatMinutesToHora(arrMinutes);
+
+        // On mémorise cet événement d'arrivée pour l'auto-scroll horaire
+        arrivalEvents.push({
+          arrivalMin: arrMinutes,
+          rowIndex: i,
+        });
+      }
+    }
+
+    const prevHoraStr = previousHoraForConc;
+    const currentHoraStr = hora;
+
+    const prevMinutes = parseHoraToMinutes(prevHoraStr);
+    const currentMinutes = parseHoraToMinutes(currentHoraStr);
+
+    if (prevMinutes != null && currentMinutes != null) {
+      const comForThisRow = comMinutes ?? 0;
+      const diff = currentMinutes - prevMinutes - comForThisRow;
+
+      if (diff >= 0 && diff < 6 * 60) {
+        conc = String(diff);
+      } else {
+        console.warn(
+          "[FT] CONC calculé aberrant pour la ligne",
+          i,
+          "prevHora=",
+          prevHoraStr,
+          "hora=",
+          currentHoraStr,
+          "com=",
+          comForThisRow,
+          "diff=",
+          diff
+        );
+      }
+    }
+
+    const radio = (entry as any).radio ?? "";
+    const bloqueo = (entry as any).bloqueo ?? "";
+
+    // Arrêt : ligne principale avec COM ou TECN non vide
+    const hasComOrTecnico =
+      (com && com.trim() !== "") || (tecnico && tecnico.trim() !== "");
+    const isStopMainForHighlight = !!(hora && hasComOrTecnico);
+
+    // Flag final pour le surlignage (origine/destination ou arrêt)
+    const shouldHighlightRow =
+      isOriginOrDestinationForHighlight || isStopMainForHighlight;
+
+    if (hora) {
+      previousHoraForConc = hora;
+    }
+
+    // visibilité de la ligne principale dans le viewport
+    const isCurrentlyVisible =
+      i >= visibleRows.first && i <= visibleRows.last;
+
+    // RC
+    const isRcBreakpointHere =
+      !!(entry as any).rc_bar && i !== firstNonNoteIndex;
+
+    // avance dans les segments RC
+    if (rcCurrentSegmentId === 0) {
+      rcCurrentSegmentId = 1;
+    } else if (isRcBreakpointHere) {
+      rcCurrentSegmentId++;
+    }
+
+    const rawRamp =
+      typeof (entry as any).rc === "number"
+        ? (entry as any).rc.toString()
+        : "";
+
+    let ramp = "";
+
+    // lignes principales visibles
+    const visibleStart = visibleRows.first;
+    const visibleEnd = visibleRows.last;
+    const targetVisible = visibleStart + 1; // on vise la 2e ligne principale visible
+
+    const isTargetVisibleRow =
+      mainRowCounter >= targetVisible && mainRowCounter <= visibleEnd;
+
+    if (
+      !isRcBreakpointHere &&
+      rawRamp !== "" &&
+      rcCurrentSegmentId > 0 &&
+      !rcPrintedSegments.has(rcCurrentSegmentId) &&
+      isTargetVisibleRow
+    ) {
+      ramp = rawRamp;
+      rcPrintedSegments.add(rcCurrentSegmentId);
+    }
+
+    const showRcBar = isRcBreakpointHere && i !== rawEntries.length - 1;
+
+    // (on remet la ligne qui manquait)
+    const nivel = (entry as any).etcs ?? "①";
+
+    // --- Vitesse par segment ---
+    const segId = speedSegmentIndex[i] ?? 0;
+    const labelRowIndex =
+      segId > 0 ? segmentLabelRowIndex.get(segId) ?? null : null;
+    const speedInfo =
+      segId > 0 ? segmentSpeed.get(segId) ?? null : null;
+
+    const currentSpeedText =
+      speedInfo && typeof speedInfo.v === "number"
+        ? String(speedInfo.v)
+        : "";
+
+    const isLabelRow = labelRowIndex === i;
+
+    // diagnostic VMAX (comme avant)
+    if (isLabelRow && segId > 0) {
+      const segIsVisible =
+        i >= visibleRows.first && i <= visibleRows.last;
+
+      console.log(
+        "[SCROLL INTELLIGENT VMAX]",
+        "segment",
+        segId,
+        "| ligne principale =",
+        i,
+        "| visibleRows =",
+        visibleRows.first, "→", visibleRows.last,
+        "| segmentVisible =",
+        segIsVisible,
+        "| v =",
+        currentSpeedText || "(aucune)"
+      );
+    }
+
+    // est-ce qu'il y a une barre de V sur CETTE ligne principale ?
+    const isBreakpointRow =
+      entry.pk &&
+      breakpointsSet.has(entry.pk) &&
+      entry.pk !== firstPk &&
+      entry.pk !== lastPk;
+
+    const showVBar = !!isBreakpointRow;
+
+    // Contenu qui sera vraiment rendu plus bas
+    let mainRowSpeedContent = "";
+    let speedSpacerContent = "";
+
+    // 1) CAS NORMAL : on est sur la ligne-label du segment
+    if (isLabelRow && currentSpeedText) {
+      if (showVBar) {
+        // ligne label + barre → on met la Vmax dans la petite ligne
+        speedSpacerContent = currentSpeedText;
+      } else {
+        // ligne label sans barre → on peut la mettre dans la cellule
+        mainRowSpeedContent = currentSpeedText;
+      }
+    }
+    // 2) CAS "SCROLL INTELLIGENT" : la vraie ligne du segment est sortie de l’écran
+    else if (
+      segId > 0 &&
+      currentSpeedText &&
+      !vPrintedSegments.has(segId)
+    ) {
+      // zone visible actuelle (sur les lignes PRINCIPALES)
+      const visibleStart2 = visibleRows.first;
+      const visibleEnd2 = visibleRows.last;
+
+      // est-ce que la ligne-label de ce segment est visible ?
+      const labelIsVisible =
+        labelRowIndex !== null &&
+        labelRowIndex >= visibleStart2 &&
+        labelRowIndex <= visibleEnd2;
+
+      // on ne réaffiche que si la ligne-label n'est plus visible
+      if (!labelIsVisible) {
+        // est-ce que cette ligne principale est dans le viewport ?
+        const segStillVisible = i >= visibleStart2 && i <= visibleEnd2;
+
+        // comme pour RC : on évite de coller la valeur sur la première ligne visible
+        const targetVisible2 = visibleStart2 + 1;
+        const isGoodSpot =
+          mainRowCounter >= targetVisible2 && mainRowCounter <= visibleEnd2;
+
+        if (segStillVisible && isGoodSpot) {
+          speedSpacerContent = currentSpeedText;
+          vPrintedSegments.add(segId);
+
+          console.log(
+            "[SCROLL INTELLIGENT VMAX] réaffiché sur ligne",
+            i,
+            "(mainRowCounter =",
+            mainRowCounter,
+            ") pour segment",
+            segId,
+            "valeur",
+            currentSpeedText
+          );
+        }
+      }
+    }
+
+    const showSpeedSpacer =
+      speedSpacerContent && speedSpacerContent.trim() !== "";
+    const showArrivalSpacer =
+      horaArrivee && horaArrivee.trim() !== "";
+
+    // CSV : surlignage de la cellule V Max selon la classification calculée plus haut
+    const highlightKind = csvHighlightByIndex[i];
+    const isCsvStart = highlightKind === "bottom";
+    const isCsvEnd = highlightKind === "top";
+
+    let vmaxHighlightClass = "";
+    if (highlightKind === "full") {
+      vmaxHighlightClass = " ft-v-csv-full";
+    } else if (highlightKind === "top") {
+      vmaxHighlightClass = " ft-v-csv-top";
+    } else if (highlightKind === "bottom") {
+      vmaxHighlightClass = " ft-v-csv-bottom";
+    }
+
+    // Debug CSV : vérifier le mapping index -> kind -> PK / dependencia
+    const pkForLog = entry.pk ?? "";
+    const dependenciaForLog = entry.dependencia ?? "";
+    console.log(
+      "[CSV HIGHLIGHT]",
+      "i=",
+      i,
+      "kind=",
+      highlightKind,
+      "pk=",
+      pkForLog,
+      "dependencia=",
+      dependenciaForLog
+    );
+
+    // 1) INTERLIGNES (remarque rouge + heure d'arrivée) AVANT la ligne principale
+    //    - Trains PAIRS : remarque rouge + heure d'arrivée sur la même ligne, puis heure de départ (ligne principale)
+    //    - Autres cas   : heure d'arrivée seule au-dessus de la ligne principale (comportement inchangé)
+    const shouldRenderArrivalSpacer =
+      showArrivalSpacer &&
+      !(hasNoteAfter && i < rawEntries.length - 1);
+
+    if (!isOdd && hasNoteAfter && i < rawEntries.length - 1) {
+      // 👇 Remarque rouge (ligne noteOnly) en premier pour les trains PAIRS
+      const vmaxClassForNote = csvZoneOpen ? " ft-v-csv-full" : "";
+
+      rows.push(
+        <tr className="ft-row-inter" key={`note-before-${i}`}>
+          {(() => {
+            renderedRowIndex++;
+            return <td className="ft-td"></td>;
+          })()}
+
+          <td className={"ft-td ft-v-cell" + vmaxClassForNote}>
+            <div className="ft-v-inner text-center"></div>
+          </td>
+
+          <td className="ft-td" />
+
+          <td className="ft-td">
+            {renderDependenciaCell(nextEntry as FTEntry)}
+          </td>
+
+          {/* Com vide */}
+          <td className="ft-td" />
+
+          {/* Hora d'arrivée sur la même ligne que les remarques rouges,
+              alignée en bas de la cellule */}
+          <td className="ft-td ft-hora-cell">
+            {showArrivalSpacer && horaArrivee && (
+              <span className="ft-hora-arrivee">{horaArrivee}</span>
+            )}
+          </td>
+
+          {/* Técn / Conc / Radio vides */}
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td ft-rc-cell" />
+          <td className="ft-td ft-td-nivel" />
+        </tr>
+      );
+    } else if (shouldRenderArrivalSpacer) {
+      // Cas général (IMPAIR ou sans remarque rouge) : heure d'arrivée seule au-dessus de la ligne principale
+      const vmaxClassForArrival = csvZoneOpen ? " ft-v-csv-full" : "";
+
+      rows.push(
+        <tr className="ft-row-spacer" key={`arrival-${i}`}>
+          <td className="ft-td"></td>
+
+          <td className={"ft-td ft-v-cell" + vmaxClassForArrival}>
+            <div className="ft-v-inner text-center"></div>
+          </td>
+
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td" />
+
+          <td className="ft-td ft-hora-cell">
+            <span className="ft-hora-arrivee">{horaArrivee}</span>
+          </td>
+
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td ft-rc-cell" />
+          <td className="ft-td ft-td-nivel" />
+        </tr>
+      );
+
+      renderedRowIndex++;
+    }
+
+    // 2) LIGNE PRINCIPALE (toujours)
+    rows.push(
+      <tr
+        className={
+          "ft-row-main" +
+          (isCurrentlyVisible ? " ft-row-visible" : "") +
+          (isSelected ? " ft-row-selected" : "")
+        }
+        key={`main-${i}`}
+        data-ft-row={i}
+onClick={() => {
+          // En mode GPS, le clic sur une ligne est inopérant (pas de Standby / recalage)
+          if (referenceModeRef.current === "GPS") {
+            return;
+          }
+
+          // on ne sélectionne que les lignes qui ont bien une dependencia et une heure
+          if (!hora || !depNorm) return;
+
+          const isAlreadySelected = selectedRowIndex === i;
+
+          // 🟢 Cas 1 : on est à l'arrêt (autoScrollEnabled === false)
+          // ET on reclique sur LA MÊME ligne déjà sélectionnée => on relance le mode horaire
+          if (!autoScrollEnabled && isAlreadySelected) {
+            // ✅ log rejouable : relance depuis standby + recalage sur cette ligne
+            logTestEvent("ui:standby:resume", {
+              rowIndex: i,
+              hora,
+              pk: entry?.pk ?? null,
+              dependencia: entry?.dependencia ?? null,
+              source: "ft:row-click",
+            });
+
+            // on recale explicitement la base sur cette ligne
+            recalibrateFromRowRef.current = i;
+
+            // équivalent d’un clic sur Play : on (re)met ft:auto-scroll à true
+            window.dispatchEvent(
+              new CustomEvent("ft:auto-scroll-change", {
+                detail: { enabled: true },
+              })
+            );
+
+            return;
+          }
+
+          // 🟠 Cas 2 : première sélection de la ligne (ou changement de ligne)
+          // -> sélection visuelle + préparation du recalage manuel
+          setSelectedRowIndex(i);
+          recalibrateFromRowRef.current = i;
+
+          // ✅ log rejouable : sélection / entrée standby (préparation recalage)
+          logTestEvent("ui:standby:enter", {
+            rowIndex: i,
+            hora,
+            pk: entry?.pk ?? null,
+            dependencia: entry?.dependencia ?? null,
+            autoScrollWasEnabled: autoScrollEnabled,
+            source: "ft:row-click",
+          });
+
+          // 🔴 Si le mode horaire était en cours, on le coupe et on bascule en standby (icône 🕑 orange)
+          if (autoScrollEnabled) {
+            window.dispatchEvent(
+              new CustomEvent("ft:auto-scroll-change", {
+                detail: { enabled: false },
+              })
+            );
+
+            window.dispatchEvent(
+              new CustomEvent("lim:hourly-mode", {
+                detail: { enabled: false, standby: true },
+              })
+            );
+          }
+        }}
+
+      >
+        {(() => {
+          renderedRowIndex++;
+
+          // 1) cas normal : la toute première vraie ligne est visible
+          const isFirstRow = i === firstNonNoteIndex;
+          const isFirstRowVisible =
+            i >= visibleRows.first && i <= visibleRows.last;
+
+          if (isFirstRow && isFirstRowVisible) {
+            bloqueoPrintedInThisRender = true;
+            return <td className="ft-td">{bloqueo}</td>;
+          }
+
+          // 2) sinon, on le repose sur la 2e ligne principale visible
+          const visibleStart3 = visibleRows.first;
+          const visibleEnd3 = visibleRows.last;
+          const targetVisible3 = visibleStart3 + 1; // même logique que Radio / VMax
+          const isGoodSpot =
+            mainRowCounter >= targetVisible3 && mainRowCounter <= visibleEnd3;
+
+          if (!bloqueoPrintedInThisRender && isGoodSpot) {
+            bloqueoPrintedInThisRender = true;
+            return <td className="ft-td">{bloqueo}</td>;
+          }
+
+          // 3) sinon, rien
+          return <td className="ft-td"></td>;
+        })()}
+
+        <td className={"ft-td ft-v-cell" + vmaxHighlightClass}>
+          <div className="ft-v-inner">{mainRowSpeedContent}</div>
+          {showVBar && <div className="ft-v-bar" />}
+        </td>
+
+        {/* Sit Km (surlignable) */}
+        <td
+          className={
+            "ft-td" + (shouldHighlightRow ? " ft-highlight-cell" : "")
+          }
+        >
+          {sitKm}
+        </td>
+
+        {/* Dependencia (surlignable) */}
+        <td
+          className={
+            "ft-td" + (shouldHighlightRow ? " ft-highlight-cell" : "")
+          }
+        >
+          {renderDependenciaCell(entry)}
+        </td>
+
+        {/* Com (surlignable) */}
+        <td
+          className={
+            "ft-td" + (shouldHighlightRow ? " ft-highlight-cell" : "")
+          }
+        >
+          {com}
+        </td>
+
+   {/* Hora */}
+        <td
+          className={
+            "ft-td ft-hora-main" +
+            (shouldHighlightRow ? " ft-highlight-cell" : "")
+          }
+        >
+          {hora ? (
+            <span className="ft-hora-depart">{hora}</span>
+          ) : testModeEnabled && typeof horaTheoSecondsByIndex[i] === "number" ? (
+            <span className="ft-hora-theo">
+              {(() => {
+                const sec = horaTheoSecondsByIndex[i] as number
+                const minutesInDay = 24 * 60 * 60
+                let t = sec % minutesInDay
+                if (t < 0) t += minutesInDay
+                const hh = Math.floor(t / 3600)
+                const mm = Math.floor((t % 3600) / 60)
+                const ss = Math.floor(t % 60)
+                const pad = (n: number) => n.toString().padStart(2, "0")
+                return `${pad(hh)}:${pad(mm)}:${pad(ss)}`
+              })()}
+            </span>
+          ) : null}
+
+        </td>
+
+
+        <td className="ft-td">{tecnico}</td>
+        <td className="ft-td">{conc}</td>
+
+        <td className="ft-td">
+          {(() => {
+            // 1) cas normal : la toute première vraie ligne est visible
+            const isFirstRow = i === firstNonNoteIndex;
+            const isFirstRowVisible =
+              i >= visibleRows.first && i <= visibleRows.last;
+
+            if (isFirstRow && isFirstRowVisible) {
+              // on affiche là, et on note qu'on l'a fait
+              radioPrintedInThisRender = true;
+              return radio;
+            }
+
+            // 2) sinon, on la repose sur la 2e ligne principale visible
+            const visibleStart4 = visibleRows.first;
+            const visibleEnd4 = visibleRows.last;
+            const targetVisible4 = visibleStart4 + 1; // comme VMax
+            const isGoodSpot =
+              mainRowCounter >= targetVisible4 && mainRowCounter <= visibleEnd4;
+
+            if (!radioPrintedInThisRender && isGoodSpot) {
+              radioPrintedInThisRender = true;
+              return radio;
+            }
+
+            // 3) sinon, rien
+            return "";
+          })()}
+        </td>
+
+        <td className="ft-td ft-rc-cell" id={`rc-cell-${i}`}>
+          {showRcBar ? (
+            <div className="ft-rc-bar" />
+          ) : (
+            <div className="ft-rc-value">{ramp}</div>
+          )}
+        </td>
+
+        <td className="ft-td ft-td-nivel">{nivel}</td>
+      </tr>
+    );
+
+    // ✅ IMPORTANT : on compte cette vraie ligne principale
+    mainRowCounter++;
+
+    // Mise à jour de l'état de zone CSV après la ligne principale :
+    // - bottom  => on ouvre la zone (les lignes suivantes seront "full")
+    // - top     => on ferme la zone (les lignes suivantes sont hors zone)
+    if (isCsvStart) {
+      csvZoneOpen = true;
+    } else if (isCsvEnd) {
+      csvZoneOpen = false;
+    }
+
+    // Vérifier si c'est la dernière ligne d'une zone CSV
+    if (isCsvEnd) {
+      // Si c'est la dernière ligne à surligner, on étend le surlignage à toute la ligne
+      csvHighlightByIndex[i] = "full";
+    }
+
+    // 3) LIGNE INTERMÉDIAIRE POUR LA VITESSE (sous la ligne principale)
+    if (showSpeedSpacer) {
+      // Si la zone CSV est ouverte, cette ligne est "entre deux barres" => full
+      const vmaxClassForSpeed = csvZoneOpen ? " ft-v-csv-full" : "";
+
+      rows.push(
+        <tr className="ft-row-spacer" key={`speed-${i}`}>
+          {(() => {
+            renderedRowIndex++;
+            return <td className="ft-td"></td>;
+          })()}
+
+          <td className={"ft-td ft-v-cell" + vmaxClassForSpeed}>
+            <div className="ft-v-inner text-center">{speedSpacerContent}</div>
+          </td>
+
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td" />
+
+          {/* Pas d'heure ici, on laisse la cellule vide */}
+          <td className="ft-td ft-hora-cell" />
+
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td ft-rc-cell" />
+          <td className="ft-td ft-td-nivel" />
+        </tr>
+      );
+    }
+
+    // 4) LIGNE INTERMÉDIAIRE POUR LES REMARQUES ROUGES (noteOnly) SOUS la ligne principale
+    // ➜ désormais seulement pour les trains IMPAIR (isOdd === true)
+    if (isOdd && hasNoteAfter && i < rawEntries.length - 1) {
+      // Si on est dans une zone CSV, la ligne de note est aussi "dans la zone" => full
+      const vmaxClassForNote = csvZoneOpen ? " ft-v-csv-full" : "";
+
+      rows.push(
+        <tr className="ft-row-inter" key={`note-${i}`}>
+          {(() => {
+            renderedRowIndex++;
+            return <td className="ft-td"></td>;
+          })()}
+
+          <td className={"ft-td ft-v-cell" + vmaxClassForNote}>
+            <div className="ft-v-inner text-center"></div>
+          </td>
+
+          <td className="ft-td" />
+
+          <td className="ft-td">
+            {renderDependenciaCell(nextEntry as FTEntry)}
+          </td>
+
+          {/* Com vide */}
+          <td className="ft-td" />
+
+          {/* Hora d'arrivée sur la même ligne que les remarques rouges */}
+          <td className="ft-td ft-hora-cell">
+            {showArrivalSpacer && horaArrivee && (
+              <span className="ft-hora-arrivee">{horaArrivee}</span>
+            )}
+          </td>
+
+          {/* Técn / Conc / Radio vides */}
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td ft-rc-cell" />
+          <td className="ft-td ft-td-nivel" />
+        </tr>
+      );
+
+      // on consomme la ligne noteOnly
+      i++;
+    }
+  }
+
+  // On expose la liste des heures d'arrivée calculées pour le moteur d'auto-scroll
   arrivalEventsRef.current = arrivalEvents;
 
   //
   // ===== 7. RENDU FINAL ==============================================
   //
 
-  const handleBodyClick = () => {
-    // clic hors ligne => on désélectionne (standby manuel)
-    if (selectedRowIndex !== null) setSelectedRowIndex(null);
-
-    // on supprime une éventuelle base "forcée" de recalage
-    recalibrateFromRowRef.current = null;
-  };
-
   return (
-    <FTTableLayout
-      variant={variant}
-      effectiveFtView={effectiveFtView}
-      referenceMode={referenceMode}
-      gpsStateUi={gpsStateUi}
-      trainPosYpx={trainPosYpx}
-      activeRowIndex={typeof activeRowIndex === "number" ? activeRowIndex : 0}
-      getFallbackTrainTopPx={getFallbackTrainTopPx}
-      onScroll={handleScroll}
-      onContainerRef={setContainerRef}
-      onBodyClick={handleBodyClick}
-      rows={rows}
-    />
+    <section className="ft-wrap h-full">
+      <style>{`
+        /* ===================== FT (Feuille de Train) ===================== */
+
+        .ft-wrap {
+          background: transparent;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+
+        }
+
+        .ft-scroll-x {
+          width: 100%;
+          height: 100%;
+          max-height: 100%;
+          display: flex;
+          flex-direction: column;
+          overflow-x: auto;
+          overflow-y: hidden;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        .ft-body-scroll {
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        .ft-table {
+          border-collapse: separate;
+          border-spacing: 0;
+          width: 100%;
+          min-width: 700px;
+          table-layout: fixed;
+          border: 2px solid #000;
+          background: #fff;
+          color: #000;
+          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        }
+
+        .ft-table th:nth-child(1),
+        .ft-table td:nth-child(1) { width: 13%; }
+
+        .ft-table th:nth-child(2),
+        .ft-table td:nth-child(2) { width: 5%; }
+
+        .ft-table th:nth-child(3),
+        .ft-table td:nth-child(3) { width: 9%; }
+
+        .ft-table th:nth-child(4),
+        .ft-table td:nth-child(4) { width: 35%; }
+
+        .ft-table th:nth-child(5),
+        .ft-table td:nth-child(5) { width: 5%; }
+
+        .ft-table th:nth-child(6),
+        .ft-table td:nth-child(6) { width: 7%; }
+
+        .ft-table th:nth-child(7),
+        .ft-table td:nth-child(7) { width: 5%; }
+
+        .ft-table th:nth-child(8),
+        .ft-table td:nth-child(8) { width: 5%; }
+
+        .ft-table th:nth-child(9),
+        .ft-table td:nth-child(9) { width: 6%; }
+
+        .ft-table th:nth-child(10),
+        .ft-table td:nth-child(10) { width: 6%; }
+
+        .ft-table th:nth-child(11),
+        .ft-table td:nth-child(11) { width: 4%; }
+
+        .dark .ft-table {
+          border: 2px solid #fff;
+          background: #000;
+          color: #fff;
+        }
+
+        .ft-th {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          border: 2px solid #000;
+          background: linear-gradient(180deg, #ffff00 0%, #fffda6 100%);
+          color: #000;
+          font-size: 0.8rem;
+          line-height: 1.2;
+          font-weight: 600;
+          text-align: center;
+          padding: 4px 6px;
+          vertical-align: middle;
+          white-space: nowrap;
+        }
+
+        .dark .ft-th {
+          border: 2px solid #fff;
+          background: rgba(234,179,8,0.4);
+          color: #fff;
+        }
+
+        .ft-th-n {
+          background: transparent !important;
+          color: transparent !important;
+          border-top: none !important;
+          border-right: none !important;
+          border-bottom: none !important;
+          border-left: none !important;
+        }
+        .dark .ft-th-n {
+          background: transparent !important;
+          color: transparent !important;
+          border-top: none !important;
+          border-right: none !important;
+          border-bottom: none !important;
+          border-left: none !important;
+        }
+
+        .ft-table thead .ft-th {
+          border-left: 2px solid #000;
+          border-right: 2px solid #000;
+        }
+
+        .dark .ft-table thead .ft-th {
+          border-left: 2px solid #fff;
+          border-right: 2px solid #fff;
+        }
+
+        .ft-td {
+          border-left: 1px solid #000;
+          border-right: 1px solid #000;
+          /* pointillés de débug retirés temporairement */
+          background: #fff;
+          color: #000;
+          font-size: 16px;
+          line-height: 1.2;
+          font-weight: 600;
+          text-align: center;
+          padding: 4px 6px;
+          vertical-align: middle;
+        }
+        .dark .ft-td {
+          background: #000;
+          color: #fff;
+          border-left: 1px solid #fff;
+          border-right: 1px solid #fff;
+          /* pointillés de débug retirés temporairement */
+        }
+
+        .dark .ft-row-spacer .ft-td,
+        .dark .ft-row-inter .ft-td {
+          background: #000;
+          color: #fff;
+        }
+        .dark .ft-highlight-cell {
+          background: linear-gradient(180deg, #ffff00 0%, #fffda6 100%);
+          color: #000;
+        }
+
+        /* Surlignage jaune (même esprit que InfoPanel) */
+        .ft-highlight-cell {
+          background: linear-gradient(180deg, #ffff00 0%, #fffda6 100%);
+        }
+
+        /* Surlignage spécifique V max (ancienne version, conservée au cas où) */
+        .ft-v-highlight {
+          background: #ffc000;
+        }
+        .dark .ft-v-highlight {
+          background: #ffc000;
+        }
+
+        /* Préparation CSV : surlignage V max par demi-cellule */
+        .ft-v-cell.ft-v-csv-full {
+          background: #ffc000;
+        }
+
+        .ft-v-cell.ft-v-csv-top {
+          background: linear-gradient(
+            to bottom,
+            #ffc000 0,
+            #ffc000 50%,
+            transparent 50%,
+            transparent 100%
+          );
+        }
+
+        .ft-v-cell.ft-v-csv-bottom {
+          background: linear-gradient(
+            to bottom,
+            transparent 0,
+            transparent 50%,
+            #ffc000 50%,
+            #ffc000 100%
+          );
+        }
+
+        .dark .ft-v-cell.ft-v-csv-full {
+          background: #ffc000;
+        }
+        .dark .ft-v-cell.ft-v-csv-top {
+          background: linear-gradient(
+            to bottom,
+            #ffc000 0,
+            #ffc000 50%,
+            transparent 50%,
+            transparent 100%
+          );
+        }
+        .dark .ft-v-cell.ft-v-csv-bottom {
+          background: linear-gradient(
+            to bottom,
+            transparent 0,
+            transparent 50%,
+            #ffc000 50%,
+            #ffc000 100%
+          );
+        }
+
+        /* Dark mode : garder le texte noir dans les Vmax surlignées */
+        .dark .ft-v-cell.ft-v-csv-full,
+        .dark .ft-v-cell.ft-v-csv-top,
+        .dark .ft-v-cell.ft-v-csv-bottom {
+          color: #000;
+        }
+
+        /* Surlignage jaune type InfoPanel */
+        .ft-hl {
+          background: linear-gradient(180deg,#ffff00 0%,#fffda6 100%);
+        }
+
+        .dark .ft-hl {
+          background: linear-gradient(180deg,#ffff00 0%,#fffda6 100%);
+        }
+
+        .ft-table tbody tr:first-child .ft-td {
+          border-top: 2px solid #000;
+        }
+
+        .dark .ft-table tbody tr:first-child .ft-td {
+          border-top: 2px solid #fff;
+        }
+
+        .ft-table td:nth-child(4) {
+          text-align: left;
+        }
+        .ft-table th:nth-child(4) {
+          text-align: center;
+        }
+
+        .ft-table td:nth-child(6):not(.ft-hora-cell) {
+          vertical-align: middle;
+        }
+
+        .ft-table td:nth-child(9) {
+          font-size: 10px;
+        }
+
+        .ft-td-nivel {
+          text-align: center;
+        }
+
+        .ft-v-cell {
+          position: relative;
+        }
+        .ft-v-inner {
+          position: relative;
+          z-index: 1;
+        }
+        .ft-v-bar {
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: 50%;
+          transform: translateY(-50%);
+          height: 2px;
+          background: #000;
+        }
+        .dark .ft-v-bar {
+          background: #fff;
+        }
+
+        .ft-rc-cell {
+          position: relative;
+        }
+        .ft-rc-bar {
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: 50%;
+          transform: translateY(-50%);
+          height: 2px;
+          background: #000;
+        }
+        .dark .ft-rc-bar {
+          background: #fff;
+        }
+        .ft-rc-value {
+          position: relative;
+          z-index: 1;
+          text-align: center;
+        }
+
+        .ft-dependencia-cell {
+          line-height: 1.2;
+          font-weight: 600;
+          font-size: 16px;
+        }
+
+        .ft-hora-cell {
+          position: relative;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+          height: 1.2em;
+          line-height: 1.1;
+          font-size: 0.75rem;
+          padding: 0 4px 2px;
+        }
+        .ft-hora-arrivee {
+          font-style: italic;
+          opacity: 0.6;
+        }
+        .ft-hora-depart {
+          font-weight: 600;
+        }
+               /* Heures calculées (interpolées) : affichage gris + italique */
+        .ft-hora-theo {
+          font-style: italic;
+          color: #6b7280;
+          opacity: 0.85;
+
+          /* ✅ iPad : hh:mm:ss -> réduction nette + prioritaire */
+          font-size: 0.72em !important;
+          line-height: 1.0 !important;
+          white-space: nowrap;
+        }
+        .dark .ft-hora-theo {
+          color: #9ca3af;
+          opacity: 0.9;
+        }
+
+        .ft-rednote-line {
+          font-size: 0.7rem;
+          line-height: 1.2;
+          font-style: italic;
+          font-weight: 400;
+          color: #dc2626;
+        }
+        .dark .ft-rednote-line {
+          color: #f87171;
+        }
+        .ft-rednote-strong {
+          font-weight: 700;
+          font-style: normal;
+        }
+
+        .ft-row-spacer .ft-td {
+          line-height: 0.4;
+          font-weight: 400;
+          height: 4px;
+          padding: 2px 4px;
+        }
+
+        .ft-row-spacer .ft-td:not(.ft-hora-cell):not(:first-child) {
+          font-size: 0;
+        }
+
+        .ft-row-spacer .ft-hora-cell {
+          display: table-cell;
+          text-align: center;
+          vertical-align: bottom;
+          font-size: 0.75rem;
+          line-height: 1.1;
+          height: 1.2em;
+          padding: 0 4px 2px;
+        }
+
+        /* Lignes de remarques rouges : on veut la même logique que pour les spacers,
+           mais sur toute la hauteur de la ligne (même bas que le texte rouge) */
+        .ft-row-inter .ft-hora-cell {
+          display: table-cell;
+          text-align: center;
+          vertical-align: bottom;
+          font-size: 0.75rem;
+          line-height: 1.1;
+          padding: 0 4px 2px;
+        }
+
+        .ft-row-spacer .ft-rc-bar,
+        .ft-row-spacer .ft-rc-value,
+        .ft-row-spacer .ft-v-bar {
+          display: none;
+        }
+        .ft-row-spacer .ft-v-inner {
+          font-size: 16px;
+          line-height: 1.1;
+          font-weight: 600;
+          text-align: center;
+          color: inherit;
+        }
+
+        .ft-row-inter .ft-rc-bar,
+        .ft-row-inter .ft-rc-value,
+        .ft-row-inter .ft-v-bar {
+          display: none;
+        }
+        .ft-row-inter .ft-v-inner {
+          text-align: center;
+        }
+
+        @media print {
+          .ft-th {
+            font-size: 0.75rem;
+            line-height: 1.1;
+            padding: 3px 4px;
+          }
+          .ft-td {
+            font-size: 0.8rem;
+            line-height: 1.15;
+            padding: 3px 4px;
+          }
+          .ft-rednote-line {
+            font-size: 0.6rem;
+          }
+          .ft-row-spacer .ft-td {
+            height: 3px;
+            padding: 2px 3px;
+          }
+        }
+
+        .ft-wrap {
+          position: relative;
+        }
+
+        .ft-bloqueo-overlay {
+          position: absolute;
+          left: 0;
+          top: 50%;
+          width: 13%;
+          transform: translateY(-50%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 700;
+          font-size: 1rem;
+          color: #000;
+          pointer-events: none;
+          z-index: 5;
+        }
+
+        .ft-radio-overlay {
+          position: absolute;
+          left: 84%;
+          top: 50%;
+          width: 6%;
+          transform: translateY(-50%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 600;
+          font-size: 0.75rem;
+          letter-spacing: 0.03em;
+          color: #000;
+          pointer-events: none;
+          z-index: 5;
+        }
+
+        .dark .ft-bloqueo-overlay {
+          color: #fff;
+        }
+
+        .dark .ft-radio-overlay {
+          color: #fff;
+        }
+
+.ft-active-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 40%;
+  height: 2px;
+  background: transparent; /* invisible mais garde la boîte */
+  pointer-events: none;
+  z-index: 6;
+}
+
+        /* Couleur du '>' de la ligne active (debug) */
+        .ft-active-marker-gps {
+          color: #16a34a; /* vert GPS */
+        }
+
+        .ft-active-marker-horaire {
+          color: #2563eb; /* bleu HORAIRE */
+        }
+
+        .dark .ft-active-marker-gps {
+          color: #4ade80;
+        }
+
+        .dark .ft-active-marker-horaire {
+          color: #60a5fa;
+        }
+
+        /* Ligne sélectionnée pour recalage manuel : cadre rouge clignotant S + D + C + H */
+        .ft-row-main.ft-row-selected td:nth-child(3),
+        .ft-row-main.ft-row-selected td:nth-child(4),
+        .ft-row-main.ft-row-selected td:nth-child(5),
+        .ft-row-main.ft-row-selected td:nth-child(6) {
+          border-top: 2px solid red;
+          border-bottom: 2px solid red;
+          animation: ft-selection-blink 1s step-start infinite;
+        }
+
+        .ft-row-main.ft-row-selected td:nth-child(3) {
+          border-left: 2px solid red;
+        }
+
+        .ft-row-main.ft-row-selected td:nth-child(6) {
+          border-right: 2px solid red;
+        }
+
+        @keyframes ft-selection-blink {
+          0%, 50% {
+            border-color: red;
+          }
+          50.01%, 100% {
+            border-color: transparent;
+          }
+        }
+
+      `}</style>
+
+      <div className="ft-active-line" aria-hidden="true" />
+
+      {/* FT FR (alternatif) — placeholder pour cette étape */}
+      <div
+        style={{ display: effectiveFtView === "FR" ? "block" : "none" }}
+        className="p-3"
+      >
+        <div className="text-sm font-semibold">FT France</div>
+        <div className="text-xs opacity-70">
+          Mode FR activé. (Table France Perpignan→Figueres à brancher ensuite.)
+        </div>
+      </div>
+
+      {/* FT ES (moteur existant, inchangé) */}
+      <div
+        style={{ display: effectiveFtView === "ES" ? "block" : "none" }}
+        className={
+          "ft-scroll-x " +
+          (variant === "modern" ? "ft-modern-wrap" : "ft-classic-wrap")
+        }
+      >
+
+        {/* En-tête fixe */}
+        <table className="ft-table">
+          <thead>
+            <tr className="whitespace-nowrap">
+              <th className="ft-th">Bloqueo</th>
+              <th className="ft-th">V Max</th>
+              <th className="ft-th">Sit Km</th>
+              <th className="ft-th">Dependencia</th>
+              <th className="ft-th">Com</th>
+              <th className="ft-th">Hora</th>
+              <th className="ft-th">Técn</th>
+              <th className="ft-th">Conc</th>
+              <th className="ft-th">Radio</th>
+              <th className="ft-th">
+                Ramp<br />Caract
+              </th>
+              <th className="ft-th ft-th-n"></th>
+            </tr>
+          </thead>
+        </table>
+
+        {/* Corps scrollable */}
+        <FTScrolling
+          onScroll={handleScroll}
+          onContainerRef={(el) => {
+            scrollContainerRef.current = el;
+          }}
+          overlay={
+            (() => {
+              const color =
+                referenceMode === "HORAIRE"
+                  ? "red"
+                  : gpsStateUi === "GREEN"
+                  ? "#16a34a" // vert (proche de tes codes GPS)
+                  : gpsStateUi === "ORANGE"
+                  ? "#f97316" // orange
+                  : "red"; // GPS RED
+
+              return (
+                <div
+                  style={{
+                    position: "absolute",
+
+                    // ✅ Étape 4-2b : top piloté par le state (timer) si dispo
+                    top:
+                      typeof trainPosYpx === "number" && Number.isFinite(trainPosYpx)
+                        ? `${trainPosYpx}px`
+                        : (() => {
+                            const container = scrollContainerRef.current;
+                            if (!container) return "40vh";
+
+                            const row = container.querySelector<HTMLTableRowElement>(
+                              `tr.ft-row-main[data-ft-row="${activeRowIndex}"]`
+                            );
+                            if (!row) return "40vh";
+
+                            const VISUAL_OFFSET_PX = -2;
+                            const y =
+                              row.offsetTop +
+                              row.offsetHeight / 2 -
+                              container.scrollTop +
+                              VISUAL_OFFSET_PX;
+
+                            const clamped = Math.max(0, Math.min(y, container.clientHeight));
+                            return `${Math.round(clamped)}px`;
+                          })(),
+
+
+
+                    left: "13%", // début colonne V Max (après Bloqueo 13%)
+                    width: "14%", // V Max (5%) + Sit Km (9%)
+                    display: "flex",
+                    alignItems: "center",
+                    pointerEvents: "none",
+                    zIndex: 999,
+                  }}
+                >
+                  {/* Triangle gauche (pointe vers l’intérieur = vers la droite) */}
+                  <div
+                    style={{
+                      width: 0,
+                      height: 0,
+                      borderTop: "6px solid transparent",
+                      borderBottom: "6px solid transparent",
+                      borderLeft: `10px solid ${color}`,
+                    }}
+                  />
+                  {/* Barre */}
+                  <div
+                    style={{
+                      flex: 1,
+                      height: "2px",
+                      background: color,
+                    }}
+                  />
+                  {/* Triangle droite (pointe vers l’intérieur = vers la gauche) */}
+                  <div
+                    style={{
+                      width: 0,
+                      height: 0,
+                      borderTop: "6px solid transparent",
+
+                      borderBottom: "6px solid transparent",
+                      borderRight: `10px solid ${color}`,
+                    }}
+                  />
+                </div>
+              );
+            })()
+          }
+        >
+          <div className="ft-body-scroll" onClick={handleBodyClick}>
+            <table className="ft-table">
+              <tbody>{rows}</tbody>
+            </table>
+          </div>
+        </FTScrolling>
+
+
+      </div>
+    </section>
   );
 }

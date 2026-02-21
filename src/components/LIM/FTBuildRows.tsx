@@ -164,6 +164,67 @@ export function buildFtRows(params: BuildFtRowsParams): {
     }
   );
 
+  // ------------------------------------------------------------------
+  // ✅ Reconstruction locale d'une table horaire "théo" complète :
+  // - On part des points existants (horaTheoSecondsByIndex sur lignes éligibles)
+  // - On interpole sur les lignes intermédiaires (entre deux points connus)
+  // Objectif : ré-afficher des heures intermédiaires ET fournir une source continue
+  // pour l'autoscroll horaire (td.ft-hora-cell).
+  // ------------------------------------------------------------------
+  const horaTheoSecondsByIndexFull: Array<number | null> = (() => {
+    const out = horaTheoSecondsByIndex.slice(); // copie
+
+    const pkNum = (idx: number): number | null => {
+      const pkRaw = (rawEntries[idx] as any)?.pk;
+      const n =
+        typeof pkRaw === "number" || typeof pkRaw === "string" ? Number(pkRaw) : NaN;
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const isNum = (v: any): v is number => typeof v === "number" && Number.isFinite(v);
+
+    // indices "ancres" = là où on a déjà une heure (typiquement les 13 arrêts)
+    const anchors: number[] = [];
+    for (let i = 0; i < out.length; i++) {
+      if (isNum(out[i])) anchors.push(i);
+    }
+    if (anchors.length < 2) return out;
+
+    // Remplit chaque "trou" entre deux ancres successives
+    for (let a = 0; a < anchors.length - 1; a++) {
+      const i0 = anchors[a];
+      const i1 = anchors[a + 1];
+
+      const t0 = out[i0] as number;
+      const t1 = out[i1] as number;
+
+      const pk0 = pkNum(i0);
+      const pk1 = pkNum(i1);
+
+      const denomPk =
+        pk0 != null && pk1 != null ? Math.abs(pk1 - pk0) : null;
+
+      for (let i = i0 + 1; i < i1; i++) {
+        if (isNum(out[i])) continue; // déjà rempli
+
+        let ratio: number;
+
+        const pki = pkNum(i);
+        if (denomPk != null && denomPk > 0 && pki != null && pk0 != null) {
+          ratio = Math.abs(pki - pk0) / denomPk;
+        } else {
+          // fallback : interpolation par index si PK indisponible
+          ratio = (i - i0) / (i1 - i0);
+        }
+
+        // interpolation linéaire en secondes
+        out[i] = t0 + (t1 - t0) * ratio;
+      }
+    }
+
+    return out;
+  })();
+
   let heuresDetecteesCursor = 0;
   let previousHoraForConc: string | null = null;
 
@@ -644,17 +705,20 @@ export function buildFtRows(params: BuildFtRowsParams): {
         <td className={"ft-td ft-hora-main" + (shouldHighlightRow ? " ft-highlight-cell" : "")}>
           {hora ? (
             <span className="ft-hora-depart">{hora}</span>
-          ) : testModeEnabled && typeof horaTheoSecondsByIndex[i] === "number" ? (
+          ) : typeof horaTheoSecondsByIndexFull[i] === "number" ? (
             <span className="ft-hora-theo">
               {(() => {
-                const sec = horaTheoSecondsByIndex[i] as number;
-                const minutesInDay = 24 * 60 * 60;
-                let t = sec % minutesInDay;
-                if (t < 0) t += minutesInDay;
+                const sec = horaTheoSecondsByIndexFull[i] as number;
+                const secondsInDay = 24 * 60 * 60;
+
+                let t = sec % secondsInDay;
+                if (t < 0) t += secondsInDay;
+
                 const hh = Math.floor(t / 3600);
                 const mm = Math.floor((t % 3600) / 60);
                 const ss = Math.floor(t % 60);
-                const pad = (n: number) => n.toString().padStart(2, "0");
+
+                const pad = (n: number) => String(n).padStart(2, "0");
                 return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
               })()}
             </span>
