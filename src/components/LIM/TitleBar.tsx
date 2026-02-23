@@ -50,9 +50,7 @@ export default function TitleBar() {
   const [autoScroll, setAutoScroll] = useState(false)
   const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const [hourlyMode, setHourlyMode] = useState(false)
-  const [referenceMode, setReferenceMode] = useState<'HORAIRE' | 'GPS'>(
-    'HORAIRE'
-  )
+  const [referenceMode, setReferenceMode] = useState<'HORAIRE' | 'GPS'>('HORAIRE')
   const [standbyMode, setStandbyMode] = useState(false)
   const [pdfMode, setPdfMode] = useState<'blue' | 'green' | 'red'>('blue')
 
@@ -66,32 +64,46 @@ export default function TitleBar() {
   const autoLockedRef = useRef(false)
   const autoInitialTargetRef = useRef<'ES' | 'FR' | null>(null)
 
-useEffect(() => {
-  window.dispatchEvent(
-    new CustomEvent('ft:view-mode-change', { detail: { mode: ftViewMode } })
-  )
-}, [ftViewMode])
+  // ----- UI fold INFOS/LTV -----
+  const [folded, setFolded] = useState(false)
 
-// ⬇️ AJOUT ICI
-useEffect(() => {
-  if (ftViewMode === 'FR') {
+  // ✅ Helper unique : forcer dépliage INFOS/LTV + dispatch + logs (1 seul endroit)
+  const forceInfosUnfold = (meta: { reason: string; source: string }) => {
+    // On force l’état local
     setFolded(false)
 
+    // Et on force le reste de l’app à se réaligner
     window.dispatchEvent(
       new CustomEvent('lim:infos-ltv-fold-change', {
         detail: { folded: false },
       })
     )
 
+    // Logs rejouables
     logTestEvent('ui:infos-ltv:auto-unfold', {
-      reason: 'ftViewMode_FR',
-      source: 'titlebar',
+      reason: meta.reason,
+      source: meta.source,
+    })
+    logTestEvent('ui:infos-ltv:fold-change', {
+      folded: false,
+      source: meta.source,
+      reason: meta.reason,
+      forced: true,
     })
   }
-}, [ftViewMode])
 
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('ft:view-mode-change', { detail: { mode: ftViewMode } })
+    )
+  }, [ftViewMode])
 
-
+  // ✅ Quand FT France (FR) est affichée : on force le dépliage (un seul endroit, clair)
+  useEffect(() => {
+    if (ftViewMode !== 'FR') return
+    forceInfosUnfold({ reason: 'ftViewMode_FR', source: 'titlebar' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ftViewMode])
 
   // =========================
   // AUTO resolve (pré-calage GPS post-parsing)
@@ -101,55 +113,50 @@ useEffect(() => {
   const AUTO_FR_SKM_THRESHOLD = 136.442302
   // =========================
   // Zone Figueres (à calibrer)
-  // - On utilisera s_km / nearestIdx (ruban) plutôt que PK
-  // - Les bornes seront renseignées après un test terrain/log (sans guess)
   // =========================
-  // ✅ Zone Figueres (valeur mesurée) : centre ≈ 133.114904, largeur mini ±0.4 km
-  // -> borne "par défaut" pour que la feature marche tout de suite en replay
   const FIGUERES_ZONE = {
     sKmMin: 132.714904 as number | null, // 133.114904 - 0.400
     sKmMax: 133.514904 as number | null, // 133.114904 + 0.400
-
-    // Tolérance de stabilité (si ruban densifié ~25m, 10 = ~250m)
     stableIdxTolerance: 10,
   }
-
 
   // ✅ Source de vérité runtime pour la zone (modifiable par calibration)
   const figueresZoneMinRef = useRef<number | null>(null)
   const figueresZoneMaxRef = useRef<number | null>(null)
 
-  // ✅ “Latch” Figueres :
-  // - On arme Figueres uniquement si on a eu GPS GREEN dans la zone.
-  // - Ensuite, on tolère ORANGE pendant l’arrêt sans désarmer immédiatement.
+  // ✅ “Latch” Figueres
   const figueresArmedRef = useRef(false)
   const figueresArmedAtRef = useRef<number | null>(null)
 
-  // Durée pendant laquelle on considère “Figueres armé” après un GREEN en zone
-  // (large volontairement pour couvrir approche + arrêt + aléas)
   const FIGUERES_ARM_TTL_MS = 10 * 60 * 1000 // 10 minutes
+
+  // ✅ ref miroir pour lire l'état GPS courant dans d'autres handlers
+  const gpsStateRef = useRef<0 | 1 | 2>(0)
+
+  // ✅ Dernier fix GPS reçu (pour logique Figueres : zone + stabilité)
+  const lastGpsFixRef = useRef<{
+    ts: number
+    nearestIdx: number | null
+    s_km: number | null
+    onLine: boolean | null
+  } | null>(null)
 
   const isFigueresArmed = () => {
     if (!figueresArmedRef.current) return false
     const t0 = figueresArmedAtRef.current
     if (typeof t0 !== 'number' || !Number.isFinite(t0)) return false
 
-    // ✅ “now” cohérent : si on a un timestamp de fix (replay), on l’utilise
     const nowMs =
-      (typeof lastGpsFixRef.current?.ts === 'number' && Number.isFinite(lastGpsFixRef.current.ts))
+      typeof lastGpsFixRef.current?.ts === 'number' && Number.isFinite(lastGpsFixRef.current.ts)
         ? lastGpsFixRef.current.ts
         : Date.now()
 
     return nowMs - t0 <= FIGUERES_ARM_TTL_MS
   }
 
-  // ✅ Zone minimale : 400 m de chaque côté (±0.400 km)
   const FIGUERES_MIN_HALF_WIDTH_KM = 0.4
-  // ✅ Ancre Figueres (mesurée dans ton log)
-// Sert de fallback si la zone n'est pas calibrée
-const FIGUERES_SKM_ANCHOR = 133.114904
-const FIGUERES_ANCHOR_TOL_KM = 1.0 // tolérance large, juste pour éviter les faux positifs
-
+  const FIGUERES_SKM_ANCHOR = 133.114904
+  const FIGUERES_ANCHOR_TOL_KM = 1.0
 
   const isInFigueresZone = (fix: {
     nearestIdx: number | null
@@ -159,45 +166,32 @@ const FIGUERES_ANCHOR_TOL_KM = 1.0 // tolérance large, juste pour éviter les f
     const { s_km } = fix
     if (typeof s_km !== 'number' || !Number.isFinite(s_km)) return false
 
-    // ✅ priorité aux refs (calibration), fallback sur la config
     const a = figueresZoneMinRef.current ?? FIGUERES_ZONE.sKmMin
     const b = figueresZoneMaxRef.current ?? FIGUERES_ZONE.sKmMax
 
-// ✅ Si rien n'est calibré => fallback sur l'ancre Figueres (±0.4 km)
-// (et on ajoute une garde : on ne considère la zone que si on est proche de l'ancre)
-if (a == null && b == null) {
-  const min = FIGUERES_SKM_ANCHOR - FIGUERES_MIN_HALF_WIDTH_KM
-  const max = FIGUERES_SKM_ANCHOR + FIGUERES_MIN_HALF_WIDTH_KM
+    if (a == null && b == null) {
+      const min = FIGUERES_SKM_ANCHOR - FIGUERES_MIN_HALF_WIDTH_KM
+      const max = FIGUERES_SKM_ANCHOR + FIGUERES_MIN_HALF_WIDTH_KM
+      if (Math.abs(s_km - FIGUERES_SKM_ANCHOR) > FIGUERES_ANCHOR_TOL_KM) return false
+      return s_km >= min && s_km <= max
+    }
 
-  // garde supplémentaire : si on est totalement loin de l'ancre, on évite un "inZone" absurde
-  if (Math.abs(s_km - FIGUERES_SKM_ANCHOR) > FIGUERES_ANCHOR_TOL_KM) return false
-
-  return s_km >= min && s_km <= max
-}
-
-
-    // Si une seule borne est connue : on prend cette valeur comme "centre"
     const rawMin = a != null ? a : (b as number)
     const rawMax = b != null ? b : (a as number)
 
     const min0 = Math.min(rawMin, rawMax)
     const max0 = Math.max(rawMin, rawMax)
 
-    // ✅ On garantit AU MOINS ±0.400 km autour du centre.
     const center = (min0 + max0) / 2
     const half0 = (max0 - min0) / 2
     const half = Math.max(half0, FIGUERES_MIN_HALF_WIDTH_KM)
 
     const min = center - half
     const max = center + half
-
     return s_km >= min && s_km <= max
   }
 
   // ✅ Calibration Figueres (debug)
-  // Déclencheurs :
-  // - touche F8 (sans modificateurs)
-  // - event manuel : window.dispatchEvent(new Event('figueres:calib-request'))
   useEffect(() => {
     const doCalib = () => {
       const fix = lastGpsFixRef.current
@@ -206,7 +200,7 @@ if (a == null && b == null) {
       const payload = {
         source: 'figueres:calibration',
         tLocal: Date.now(),
-        gpsState: gpsStateNow, // 0/1/2
+        gpsState: gpsStateNow,
         tsFix: fix?.ts ?? null,
         nearestIdx: fix?.nearestIdx ?? null,
         s_km: fix?.s_km ?? null,
@@ -315,13 +309,9 @@ if (a == null && b == null) {
     }
   }, [])
 
-
-
-
   type AutoResolvedSide = 'ES' | 'FR' | null
 
   const [autoResolved, setAutoResolved] = useState<{
-    
     available: boolean
     side: AutoResolvedSide
     s_km: number | null
@@ -345,7 +335,6 @@ if (a == null && b == null) {
     ts: null,
     reason: null,
   }))
-  // ✅ Timer de latence ergonomique pour le switch AUTO (annulable)
   const autoSwitchTimerRef = useRef<number | null>(null)
 
   const resolveSideFromSkm = (s_km: number | null): AutoResolvedSide => {
@@ -371,11 +360,9 @@ if (a == null && b == null) {
   }
 
   const startPdfProcessing = () => {
-    // reset propre
     stopPdfProcessing()
     setPdfProcessing(true)
 
-    // garde-fou : si rien ne “termine” le traitement
     pdfProcessingTimerRef.current = window.setTimeout(() => {
       pdfProcessingTimerRef.current = null
       setPdfProcessing(false)
@@ -384,11 +371,7 @@ if (a == null && b == null) {
   }
 
   const [testRecording, setTestRecording] = useState(false)
-
-  // ✅ Mode test (ON par défaut pour l’instant) : pilote l’affichage du STOP + l’enregistrement
   const [testModeEnabled, setTestModeEnabled] = useState(true)
-
-  // ✅ Mode simulation (replay) — pilotage global via event sim:enable
   const [simulationEnabled, setSimulationEnabled] = useState(false)
 
   useEffect(() => {
@@ -397,20 +380,16 @@ if (a == null && b == null) {
     )
   }, [simulationEnabled])
 
-  // ✅ OCR online (ON par défaut) : persistance localStorage + pilote le routage OCR (ocrRouter)
   const [ocrOnlineEnabled, setOcrOnlineEnabledState] = useState(() =>
     getOcrOnlineEnabled()
   )
 
-  // Sync : tout changement UI -> localStorage (source de vérité pour ocrRouter)
   useEffect(() => {
     setOcrOnlineEnabled(ocrOnlineEnabled)
   }, [ocrOnlineEnabled])
 
-  // ----- UI : spinner pendant traitement PDF (étape 1 : juste l'affichage) -----
   const [pdfLoading, setPdfLoading] = useState(false)
 
-  // ----- GARDE-FOU : timeout si traitement PDF bloqué -----
   const pdfLoadingTimerRef = useRef<number | null>(null)
 
   const PDF_LOADING_TIMEOUT_MS = 45_000
@@ -428,19 +407,15 @@ if (a == null && b == null) {
     stopPdfLoadingGuard()
     pdfLoadingTimerRef.current = window.setTimeout(() => {
       pdfLoadingTimerRef.current = null
-      setPdfLoading(false) // on enlève l’overlay
-      window.alert(PDF_LOADING_FAIL_MESSAGE) // bouton OK natif
+      setPdfLoading(false)
+      window.alert(PDF_LOADING_FAIL_MESSAGE)
     }, PDF_LOADING_TIMEOUT_MS)
   }
 
-  // ✅ Auto-start du test : garde-fou pour ne le lancer qu'une fois
   const testAutoStartedRef = useRef(false)
 
-  // avance/retard affiché à côté de l'heure (ex: "+3 min" ou "-1 min")
   const [scheduleDelta, setScheduleDelta] = useState<string | null>(null)
   const [scheduleDeltaIsLarge, setScheduleDeltaIsLarge] = useState(false)
-
-  // ✅ delta précis (en secondes) si FT le fournit
   const [scheduleDeltaSec, setScheduleDeltaSec] = useState<number | null>(null)
 
   // =========================
@@ -448,8 +423,6 @@ if (a == null && b == null) {
   // =========================
   const gpsReplayInputRef = useRef<HTMLInputElement>(null)
   const [gpsReplayBusy, setGpsReplayBusy] = useState(false)
-
-  // ✅ Progression (0..1) pour afficher une barre sur le bouton pendant le replay
   const [gpsReplayProgress, setGpsReplayProgress] = useState(0)
 
   const downloadTextFile = (
@@ -469,7 +442,6 @@ if (a == null && b == null) {
       a.click()
     } finally {
       a.remove()
-      // ✅ Important : ne pas révoquer tout de suite (sinon NotFoundError possible)
       window.setTimeout(() => {
         try {
           URL.revokeObjectURL(url)
@@ -480,7 +452,10 @@ if (a == null && b == null) {
 
   const buildRibbonKml = () => {
     const esc = (s: any) =>
-      String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
 
     if (!Array.isArray(RIBBON_POINTS) || RIBBON_POINTS.length === 0) {
       throw new Error('RIBBON_POINTS vide')
@@ -537,19 +512,14 @@ ${coords}
       setGpsReplayBusy(true)
       setGpsReplayProgress(0)
 
-      // ✅ On évite de mélanger GPS live et replay
       stopGpsWatch()
 
-      // s’assure que le moteur est prêt (il est déjà init au boot, mais garde-fou)
       if (!gpsPkReady) {
         await initGpsPkEngine()
         setGpsPkReady(true)
       }
-      // ✅ Replay : repartir d’une mémoire PK propre (sinon dtMs est faux)
       resetGpsPkEngineMemory()
 
-      // ✅ IMPORTANT : en replay, on impose le sens attendu au moteur (déterministe)
-      // DOWN => PK décroissants => -1 ; UP => PK croissants => +1
       const dirForEngine: 1 | -1 | null =
         expectedDir === 'DOWN' ? -1 : expectedDir === 'UP' ? 1 : null
 
@@ -567,13 +537,11 @@ ${coords}
         return null
       }
 
-      // ✅ Vitesse replay (1 = temps réel, 2 = 2x plus vite, etc.)
-      const SPEED = 10
+      const SPEED = 60
 
       const text = await file.text()
       const lines = text.split(/\r?\n/)
 
-      // ---- 1) On extrait tous les points gps:position du log ----
       const points: Array<{
         tLogMs: number
         tRaw: any
@@ -607,18 +575,13 @@ ${coords}
         return
       }
 
-      // Tri sécurité
       points.sort((a, b) => a.tLogMs - b.tLogMs)
 
-      // ---- 2) Horloge simulée : tLog → tSim (basé sur Date.now) ----
       const t0Log = points[0].tLogMs
       const t0Sim = Date.now()
 
-      // 🔧 Horloge vue par FT = temps réel du log (non compressé)
-      const toSimMs = (tLogMs: number) =>
-        Math.trunc(t0Sim + (tLogMs - t0Log))
+      const toSimMs = (tLogMs: number) => Math.trunc(t0Sim + (tLogMs - t0Log))
 
-      // ---- 3) Export projection (comme avant) + injection timée dans FT ----
       const outLines: string[] = []
       outLines.push('# LIM gps replay projection')
       outLines.push(`# source=${file.name}`)
@@ -642,21 +605,16 @@ ${coords}
 
         const simTs = toSimMs(it.tLogMs)
 
-        // ✅ Temporisation entre points (respect du timing du log, modulé par SPEED)
         if (i > 0) {
           const prevSimTs = toSimMs(points[i - 1].tLogMs)
-          // 🔧 Accélération appliquée seulement à l’attente réelle
           const waitMs = Math.max(0, (simTs - prevSimTs) / Math.max(0.0001, SPEED))
           if (waitMs > 0) {
             await new Promise((r) => window.setTimeout(r, waitMs))
           }
         }
 
-        // En replay, on veut tester le moteur actuel => on recalcule systématiquement.
-        let projOk = false
-
         const proj = projectGpsToPk(lat, lon, { nowMs: simTs })
-        projOk = !!proj
+        const projOk = !!proj
 
         const pk = proj?.pk ?? null
         const s_km = proj?.s_km ?? null
@@ -672,7 +630,6 @@ ${coords}
         const dist = distance_m
         const onLine = dist != null && dist <= 200
 
-        // ✅ Injection dans FT : même event que le live
         window.dispatchEvent(
           new CustomEvent('gps:position', {
             detail: {
@@ -684,8 +641,6 @@ ${coords}
               distance_m,
               onLine,
               timestamp: simTs,
-
-              // DEBUG : point ruban retenu / décision PK
               nearestIdx,
               nearestLat,
               nearestLon,
@@ -695,7 +650,6 @@ ${coords}
           })
         )
 
-        // Export “projection pure” (comme avant)
         const record = {
           t: it.tRaw ?? null,
           kind: 'gps:replay:projection',
@@ -703,12 +657,10 @@ ${coords}
             lat,
             lon,
             accuracy: typeof accuracy === 'number' ? accuracy : null,
-
             projOk,
             pk,
             s_km,
             distance_m,
-
             nearestIdx,
             nearestLat,
             nearestLon,
@@ -720,7 +672,6 @@ ${coords}
         outLines.push(JSON.stringify(record))
         outCount++
 
-        // ✅ Progression UI (throttle léger)
         if (i % 20 === 0 || i === points.length - 1) {
           setGpsReplayProgress((i + 1) / points.length)
         }
@@ -746,16 +697,13 @@ ${coords}
       const stack = err?.stack ? String(err.stack) : ''
 
       console.warn('[TitleBar] GPS replay failed', err)
-      if (stack) {
-        console.warn('[TitleBar] GPS replay stack:\n' + stack)
-      }
+      if (stack) console.warn('[TitleBar] GPS replay stack:\n' + stack)
 
       const stackLine = stack.split('\n').slice(0, 2).join('\n')
       window.alert(`Replay GPS impossible: ${msg}\n\n${stackLine}`)
     } finally {
       setGpsReplayProgress(0)
       setGpsReplayBusy(false)
-      // reset input pour permettre re-import même fichier
       if (gpsReplayInputRef.current) gpsReplayInputRef.current.value = ''
     }
   }
@@ -767,7 +715,6 @@ ${coords}
     const mm = Math.floor((abs % 3600) / 60)
     const ss = abs % 60
     const pad2 = (n: number) => String(n).padStart(2, '0')
-    // si < 1h, on affiche mm:ss ; sinon h:mm:ss
     return hh > 0 ? `${sign}${hh}:${pad2(mm)}:${pad2(ss)}` : `${sign}${mm}:${pad2(ss)}`
   }
 
@@ -784,26 +731,10 @@ ${coords}
     dist_m?: number | null
   } | null>(null)
 
-  // Texte affiché dans le badge GPS (donné par FT via lim:gps-state)
   const [gpsPkDisplay, setGpsPkDisplay] = useState<string | null>(null)
 
-  // ✅ ref miroir pour lire l'état GPS courant dans d'autres handlers
-  const gpsStateRef = useRef<0 | 1 | 2>(0)
-
-    // ✅ Dernier fix GPS reçu (pour logique Figueres : zone + stabilité)
-  // Alimenté par le listener 'gps:position'
-  const lastGpsFixRef = useRef<{
-    ts: number
-    nearestIdx: number | null
-    s_km: number | null
-    onLine: boolean | null
-  } | null>(null)
-  // =========================
-  // Figueres — détection "arrêt" (fixe) via ruban
-  // - On considère "figé" si nearestIdx reste stable (±tolérance) pendant N ms
-  // - N doit être cohérent avec ta règle FT (ex: 30s)
-  // =========================
-  const FIGUERES_STOP_STABLE_MS = 30_000 // 30s (à aligner avec ta règle métier)
+  // Figueres — stabilité
+  const FIGUERES_STOP_STABLE_MS = 30_000
   const figueresStableSinceRef = useRef<number | null>(null)
   const figueresStableIdxRef = useRef<number | null>(null)
   const figueresStopTriggeredRef = useRef(false)
@@ -812,15 +743,12 @@ ${coords}
     gpsStateRef.current = gpsState
   }, [gpsState])
 
-    // ✅ Arme Figueres quand on voit du GPS GREEN dans la zone.
-  // Important : on ne demande pas que GREEN reste pendant tout l’arrêt.
+  // ✅ Arme Figueres quand GREEN dans zone
   useEffect(() => {
-    if (gpsState !== 2) return // 2 = GREEN
+    if (gpsState !== 2) return
     const fix = lastGpsFixRef.current
     if (!fix) return
 
-    // ✅ REPLAY ONLY : auto-calib silencieux
-    // On ne tente l’auto-calib que si le 1er GREEN est déjà "près" de la zone Figueres attendue.
     if (
       gpsReplayBusy &&
       figueresZoneMinRef.current == null &&
@@ -837,9 +765,8 @@ ${coords}
         typeof zMax === 'number' &&
         Number.isFinite(zMax)
 
-      // Si pas de bornes connues, on ne fait rien ici.
       if (hasBounds) {
-        const minZ = Math.min(zMin as number, zMax as number) - 1.0 // marge 1 km
+        const minZ = Math.min(zMin as number, zMax as number) - 1.0
         const maxZ = Math.max(zMin as number, zMax as number) + 1.0
 
         const plausible = fix.s_km >= minZ && fix.s_km <= maxZ
@@ -855,17 +782,12 @@ ${coords}
             tLocal: Date.now(),
           })
         }
-        // ✅ sinon: silencieux (pas de "SKIP" spam au début du replay)
       }
     }
 
-
     figueresArmedRef.current = true
 
-    // ✅ tArmed cohérent : en replay, fix.ts = temps simulé ; sinon Date.now()
-    const tArmed =
-      (typeof fix.ts === 'number' && Number.isFinite(fix.ts)) ? fix.ts : Date.now()
-
+    const tArmed = typeof fix.ts === 'number' && Number.isFinite(fix.ts) ? fix.ts : Date.now()
     figueresArmedAtRef.current = tArmed
 
     console.log('[Figueres] ARMED (GREEN in zone)', {
@@ -881,14 +803,10 @@ ${coords}
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gpsState, gpsReplayBusy])
-  // ✅ Arrêt Figueres => bascule automatique du toggle FT
-  // Conditions :
-  // - Figueres "armé" (on a eu du GREEN dans la zone récemment)
-  // - fix dans la zone (s_km)
-  // - ruban stable >= FIGUERES_STOP_STABLE_MS
+
+  // ✅ Arrêt Figueres => auto switch FT
   useEffect(() => {
     const t = window.setInterval(() => {
-      // 1) doit être armé
       if (!isFigueresArmed()) {
         figueresStopTriggeredRef.current = false
         return
@@ -897,33 +815,23 @@ ${coords}
       const fix = lastGpsFixRef.current
       if (!fix) return
 
-      // 2) doit être dans la zone Figueres
       if (!isInFigueresZone(fix)) {
         figueresStopTriggeredRef.current = false
         return
       }
 
-      // 3) doit être stable (figé)
       const t0 = figueresStableSinceRef.current
       if (typeof t0 !== 'number' || !Number.isFinite(t0)) return
 
-      // ✅ En replay on utilise l’horloge réelle, sinon timestamp GPS
-const nowMs = gpsReplayBusy
-  ? Date.now()
-  : (lastGpsFixRef.current?.ts ?? Date.now())
-const stableMs = nowMs - t0
+      const nowMs = gpsReplayBusy ? Date.now() : lastGpsFixRef.current?.ts ?? Date.now()
+      const stableMs = nowMs - t0
       if (stableMs < FIGUERES_STOP_STABLE_MS) return
 
-      // 4) éviter de retrigger en boucle
       if (figueresStopTriggeredRef.current) return
       figueresStopTriggeredRef.current = true
 
-      // 👉 ACTION MÉTIER : bascule du toggle
-      // Hypothèse : à Figueres on veut basculer sur FR (LFP).
-      // Si tu veux l’inverse (ES), on changera UNE ligne.
       const target: 'FR' | 'ES' = 'FR'
 
-      // Si l’utilisateur n’a pas engagé AUTO, on ne force pas
       if (!autoEngaged) {
         console.log('[Figueres][DEBUG] autoEngaged=', autoEngaged)
         logTestEvent('figueres:auto-switch:skipped', {
@@ -956,35 +864,15 @@ const stableMs = nowMs - t0
   }, [autoEngaged])
 
   useEffect(() => {
-    // 🔊 diffusion globale (comportement existant)
-    window.dispatchEvent(
-      new CustomEvent('lim:pdf-mode-change', { detail: { mode: pdfMode } })
-    )
-
-    // ✅ log rejouable : changement de mode PDF par l'utilisateur
-    logTestEvent('ui:pdf:mode-change', {
-      mode: pdfMode,
-    })
+    window.dispatchEvent(new CustomEvent('lim:pdf-mode-change', { detail: { mode: pdfMode } }))
+    logTestEvent('ui:pdf:mode-change', { mode: pdfMode })
   }, [pdfMode])
 
-  // Diffusion du mode test (pilotage global FT / overlays)
   useEffect(() => {
-    // 1) émission immédiate
-    window.dispatchEvent(
-      new CustomEvent('lim:test-mode', {
-        detail: { enabled: testModeEnabled },
-      })
-    )
-
-    // 2) ✅ re-émission courte : rattrape les listeners montés après (race au boot)
+    window.dispatchEvent(new CustomEvent('lim:test-mode', { detail: { enabled: testModeEnabled } }))
     const t = window.setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent('lim:test-mode', {
-          detail: { enabled: testModeEnabled },
-        })
-      )
+      window.dispatchEvent(new CustomEvent('lim:test-mode', { detail: { enabled: testModeEnabled } }))
     }, 400)
-
     return () => window.clearTimeout(t)
   }, [testModeEnabled])
 
@@ -995,10 +883,9 @@ const stableMs = nowMs - t0
     const raw = last?.trenPadded ?? last?.tren
     return toTitleNumber(raw)
   })
-  // ✅ Sécurité : si train non éligible FT France => forcer ADIF (ES)
+
   useEffect(() => {
     if (!trainDisplay) return
-
     const n = parseInt(trainDisplay, 10)
     if (!Number.isFinite(n)) return
 
@@ -1034,15 +921,13 @@ const stableMs = nowMs - t0
   // =========================
   // Direction attendue (PK)
   // =========================
-  type ExpectedDir = 'UP' | 'DOWN' // UP => PK croissants, DOWN => PK décroissants
-
+  type ExpectedDir = 'UP' | 'DOWN'
   const [expectedDir, setExpectedDir] = useState<ExpectedDir | null>(null)
   const expectedDirLockedRef = useRef(false)
   const expectedDirSourceRef = useRef<'train_number' | 'manual' | null>(null)
-  const expectedDirTrainRef = useRef<string | null>(null) // ✅ train ayant servi au lock
+  const expectedDirTrainRef = useRef<string | null>(null)
 
   const emitExpectedDir = (dir: ExpectedDir, meta: { source: string }) => {
-    // diffusion globale (FT ou autres modules pourront écouter)
     const detail = {
       expectedDir: dir,
       pkTrend: dir === 'UP' ? 'increasing' : 'decreasing',
@@ -1054,15 +939,12 @@ const stableMs = nowMs - t0
     window.dispatchEvent(new CustomEvent('lim:expected-direction', { detail }))
     window.dispatchEvent(new CustomEvent('ft:expected-direction', { detail }))
 
-    // rattrapage boot (race listeners)
     window.setTimeout(() => {
       window.dispatchEvent(new CustomEvent('lim:expected-direction', { detail }))
       window.dispatchEvent(new CustomEvent('ft:expected-direction', { detail }))
     }, 400)
   }
 
-  // Lock automatique dès qu'on connaît le numéro de train
-  // ✅ Si le train change, on re-lock automatiquement (nouveau run/nouveau PDF)
   useEffect(() => {
     if (!trainDisplay) return
 
@@ -1070,8 +952,6 @@ const stableMs = nowMs - t0
     if (!Number.isFinite(n)) return
 
     const trainChanged = expectedDirTrainRef.current !== trainDisplay
-
-    // si même train + déjà lock => rien à faire
     if (!trainChanged && expectedDirLockedRef.current) return
 
     const dir: ExpectedDir = n % 2 === 0 ? 'DOWN' : 'UP'
@@ -1099,7 +979,6 @@ const stableMs = nowMs - t0
       expectedDirTrainRef.current = null
       expectedDirSourceRef.current = null
       setExpectedDir(null)
-
       logTestEvent('direction:reset', { source: 'clear_pdf' })
     }
 
@@ -1111,11 +990,8 @@ const stableMs = nowMs - t0
     }
   }, [])
 
-  const [folded, setFolded] = useState(false)
-
   // ----- INFOS (à afficher depuis la roue dentée) -----
   const [aboutOpen, setAboutOpen] = useState(false)
-  // ✅ Fermeture du menu Paramètres quand clic en dehors
   const settingsDetailsRef = useRef<HTMLDetailsElement | null>(null)
 
   useEffect(() => {
@@ -1129,7 +1005,6 @@ const stableMs = nowMs - t0
       const target = e.target as Node | null
       if (!target) return
 
-      // Si clic en dehors du <details>, on ferme
       if (!el.contains(target)) {
         el.removeAttribute('open')
       }
@@ -1163,11 +1038,9 @@ const stableMs = nowMs - t0
 - Le fonctionnement actuel reste centré sur la portion ADIF.
 `
 
-  // ✅ Ouverture du panneau "À propos" depuis ailleurs (ex: toast App)
   useEffect(() => {
     const handler = () => {
       setAboutOpen(true)
-      // Bonus : si le menu Paramètres est ouvert, on le ferme
       if (settingsDetailsRef.current?.hasAttribute('open')) {
         settingsDetailsRef.current.removeAttribute('open')
       }
@@ -1193,14 +1066,12 @@ const stableMs = nowMs - t0
         return
       }
 
-      // Quand le nouveau SW devient contrôleur, on reload
       const onCtrl = () => {
         navigator.serviceWorker.removeEventListener('controllerchange', onCtrl)
         window.location.reload()
       }
       navigator.serviceWorker.addEventListener('controllerchange', onCtrl)
 
-      // Demande au SW "waiting" de s’activer
       reg.waiting.postMessage({ type: 'SKIP_WAITING' })
       console.log('[TitleBar][SW] SKIP_WAITING sent')
     } catch (err) {
@@ -1209,7 +1080,6 @@ const stableMs = nowMs - t0
   }
 
   useEffect(() => {
-    // Pas de SW => rien à faire
     if (!('serviceWorker' in navigator)) return
 
     let cancelled = false
@@ -1225,15 +1095,12 @@ const stableMs = nowMs - t0
     }
 
     const attachUpdateFound = (reg: ServiceWorkerRegistration) => {
-      // Quand un nouveau SW arrive (installing), on surveille jusqu’à "installed"
       reg.addEventListener('updatefound', () => {
         const nw = reg.installing
         if (!nw) return
 
         const onState = () => {
           if (cancelled) return
-
-          // "installed" + controller présent => update dispo (waiting)
           if (nw.state === 'installed' && navigator.serviceWorker.controller) {
             markIfWaiting(reg, 'updatefound:installed')
           }
@@ -1250,11 +1117,7 @@ const stableMs = nowMs - t0
 
         if (reg) {
           attachUpdateFound(reg)
-
-          // Provoquer une vérification (important sur iOS/PWA)
           reg.update().catch(() => {})
-
-          // Cas où c’est déjà en attente
           markIfWaiting(reg, reason)
         }
       } catch (err) {
@@ -1262,14 +1125,11 @@ const stableMs = nowMs - t0
       }
     }
 
-    // 1) check immédiat au boot
     check('boot')
 
-    // 2) re-check léger après (iOS parfois tardif)
     const t1 = window.setTimeout(() => check('boot+800ms'), 800)
     const t2 = window.setTimeout(() => check('boot+2500ms'), 2500)
 
-    // Quand le nouveau SW prend la main, l’update n’est plus "en attente"
     const onControllerChange = () => {
       setSwUpdateAvailable(false)
     }
@@ -1283,18 +1143,15 @@ const stableMs = nowMs - t0
     }
   }, [])
 
-  // ✅ Auto-démarrage du test à l'ouverture de l'app (uniquement si mode test ON)
   useEffect(() => {
     if (testAutoStartedRef.current) return
     testAutoStartedRef.current = true
 
-    // si le mode test est OFF, on ne démarre rien
     if (!testModeEnabled) {
       setTestRecording(false)
       return
     }
 
-    // label simple à l'ouverture (train inconnu au boot, pdfMode = blue)
     const bootMode: 'blue' = 'blue'
 
     const labelParts: string[] = []
@@ -1327,9 +1184,7 @@ const stableMs = nowMs - t0
         }
       } catch (err) {
         console.error('[TitleBar] Erreur init gpsPkEngine', err)
-        if (!cancelled) {
-          setGpsPkReady(false)
-        }
+        if (!cancelled) setGpsPkReady(false)
       }
     })()
 
@@ -1414,9 +1269,7 @@ const stableMs = nowMs - t0
     try {
       localStorage.setItem('brightness', String(brightness))
     } catch {}
-    window.dispatchEvent(
-      new CustomEvent('lim:brightness-change', { detail: { brightness } })
-    )
+    window.dispatchEvent(new CustomEvent('lim:brightness-change', { detail: { brightness } }))
     return () => {
       ;[html, body, root, main].forEach((el) => {
         if (el) (el as HTMLElement).style.filter = ''
@@ -1430,7 +1283,6 @@ const stableMs = nowMs - t0
   const inputRef = useRef<HTMLInputElement>(null)
   const handleImportClick = () => inputRef.current?.click()
 
-  // calcule un id stable (SHA-256) à partir du contenu du PDF
   const computePdfId = async (file: File): Promise<string> => {
     const buf = await file.arrayBuffer()
     const hashBuf = await crypto.subtle.digest('SHA-256', buf)
@@ -1438,7 +1290,6 @@ const stableMs = nowMs - t0
     return hashArr.map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
-  // stocke le PDF localement (Cache Storage) pour le replay
   const storePdfForReplay = async (pdfId: string, file: File): Promise<string> => {
     const cache = await caches.open('limgpt-pdf-replay')
     const key = `/replay/pdf/${pdfId}`
@@ -1450,19 +1301,15 @@ const stableMs = nowMs - t0
       },
     })
     await cache.put(req, res)
-    return key // clé de récupération
+    return key
   }
 
   const onPickPdf: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
     const file = e.target.files?.[0]
     if (file) {
-      // ✅ Spinner ON dès que le PDF est sélectionné
       setPdfLoading(true)
-
-      // ✅ Garde-fou : si le parsing ne se termine jamais, on sort du spinner
       startPdfLoadingGuard()
 
-      // 1) ID stable + stockage local replay-ready
       let pdfId: string | null = null
       let replayKey: string | null = null
       try {
@@ -1474,7 +1321,6 @@ const stableMs = nowMs - t0
         replayKey = null
       }
 
-      // ✅ log rejouable : import PDF (100% local)
       logTestEvent('import:pdf', {
         name: file.name,
         size: file.size,
@@ -1486,7 +1332,6 @@ const stableMs = nowMs - t0
         storage: 'local',
       })
 
-      // ✅ IMPORTANT : on déclenche le parsing sans aucun upload réseau
       window.dispatchEvent(
         new CustomEvent('lim:import-pdf', {
           detail: { file, pdfId, replayKey, storage: 'local' },
@@ -1503,7 +1348,6 @@ const stableMs = nowMs - t0
         })
       )
 
-      // L’UI passe en NORMAL dès que l’import est lancé (parsing en cours)
       setPdfMode('green')
     }
 
@@ -1516,7 +1360,6 @@ const stableMs = nowMs - t0
       const detail = (ce.detail || {}) as LIMFields
       ;(window as any).__limLastParsed = detail
 
-      // ✅ DEBUG / TEST : confirmer que lim:parsed arrive bien en TitleBar
       logTestEvent('ui:lim:parsed', {
         train: (detail as any)?.trenPadded ?? (detail as any)?.tren ?? null,
         type: (detail as any)?.type ?? null,
@@ -1524,40 +1367,29 @@ const stableMs = nowMs - t0
         source: 'titlebar:onParsed',
       })
 
-      // ✅ Spinner OFF : parsing terminé
       stopPdfLoadingGuard()
       setPdfLoading(false)
 
-      // mise à jour du numéro de train
       const raw = detail.trenPadded ?? detail.tren
       const disp = toTitleNumber(raw)
       setTrainDisplay(disp)
 
-      // ✅ Publie aussi le train pour App/FT overlay (ne dépend plus d'Infos.tsx)
-if (disp) {
-  const n = parseInt(disp, 10)
-  if (Number.isFinite(n)) {
-    window.dispatchEvent(
-      new CustomEvent("lim:train-change", { detail: { trainNumber: n } })
-    )
-  }
-}
+      if (disp) {
+        const n = parseInt(disp, 10)
+        if (Number.isFinite(n)) {
+          window.dispatchEvent(new CustomEvent('lim:train-change', { detail: { trainNumber: n } }))
+        }
+      }
 
-      // mise à jour du type (ex: T200)
       const rawType = (detail as any).type
       setTrainType(rawType ? String(rawType) : undefined)
 
-      // mise à jour de la composition (ex: US)
       const rawComp = (detail as any).composicion ?? (detail as any).unit
       setTrainComposition(rawComp ? String(rawComp) : undefined)
 
-      // =========================
-      // Pré-calage GPS ponctuel (post-parsing)
-      // =========================
       ;(async () => {
         try {
-          // reset état "AUTO dispo" à chaque nouveau parsing
-                    setAutoEngaged(false)
+          setAutoEngaged(false)
 
           setAutoResolved({
             available: false,
@@ -1580,7 +1412,6 @@ if (disp) {
             return
           }
 
-          // ✅ s'assure que le moteur est prêt (sans toucher à sa logique)
           if (!gpsPkReady) {
             try {
               await initGpsPkEngine()
@@ -1705,7 +1536,6 @@ if (disp) {
       const val = (ce.detail as any)?.train as string | undefined
       const disp = toTitleNumber(val)
       if (disp) setTrainDisplay(disp)
-      // lim:train ne transporte pas forcément type/composition → on ne les touche pas ici
     }
 
     window.addEventListener('lim:parsed', onParsed as EventListener)
@@ -1714,20 +1544,22 @@ if (disp) {
       window.removeEventListener('lim:parsed', onParsed as EventListener)
       window.removeEventListener('lim:train', onTrain as EventListener)
     }
-  }, [])
+  }, [gpsPkReady])
 
-  // écoute les mises à jour d'avance/retard envoyées par le reste de l'app
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent
 
-      // ✅ PROUVE ce que la TitleBar reçoit réellement
-      console.log('[TitleBar] lim:schedule-delta detail =', ce?.detail)
+      console.log(
+        "[TitleBar] lim:schedule-delta detail =",
+        ce?.detail,
+        "\n[TitleBar] origin stack =\n",
+        new Error().stack
+      )
 
       const rawText = ce?.detail?.text as string | null | undefined
       const isLarge = !!ce?.detail?.isLargeDelay
 
-      // ✅ delta précis (secondes) optionnel — sera utilisé si présent
       const deltaSecRaw = ce?.detail?.deltaSec
       const deltaSec =
         typeof deltaSecRaw === 'number' && Number.isFinite(deltaSecRaw)
@@ -1736,38 +1568,23 @@ if (disp) {
 
       const text = rawText && rawText.trim().length > 0 ? rawText.trim() : null
 
-      // log labo : ce que la TitleBar reçoit et ce qu'elle va afficher
-      logTestEvent('ui:schedule-delta', {
-        text,
-        isLarge,
-      })
+      logTestEvent('ui:schedule-delta', { text, isLarge })
 
       if (text) {
         setScheduleDelta(text)
         setScheduleDeltaIsLarge(isLarge)
 
-        // ✅ Ne PAS écraser si l'event ne fournit pas deltaSec
         if (deltaSec !== null) {
           setScheduleDeltaSec(deltaSec)
         }
 
-        // log labo : ce que la TitleBar reçoit et ce qu'elle va afficher
-        logTestEvent('ui:schedule-delta', {
-          text,
-          isLarge,
-          deltaSec,
-        })
+        logTestEvent('ui:schedule-delta', { text, isLarge, deltaSec })
       } else {
-        // si on envoie texte vide ou null -> on efface
         setScheduleDelta(null)
         setScheduleDeltaIsLarge(false)
         setScheduleDeltaSec(null)
 
-        logTestEvent('ui:schedule-delta', {
-          text: null,
-          isLarge: false,
-          deltaSec: null,
-        })
+        logTestEvent('ui:schedule-delta', { text: null, isLarge: false, deltaSec: null })
       }
     }
 
@@ -1777,7 +1594,6 @@ if (disp) {
     }
   }, [])
 
-  // écoute le mode horaire envoyé par FT
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent
@@ -1787,7 +1603,6 @@ if (disp) {
       setHourlyMode(enabled || standby)
       setStandbyMode(standby)
 
-      // ✅ Le Play/Pause affiché doit refléter l'état REEL de FT
       setAutoScroll(enabled)
     }
 
@@ -1797,15 +1612,11 @@ if (disp) {
     }
   }, [])
 
-  // écoute le mode de référence (HORAIRE / GPS) envoyé par FT
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent
       const mode = ce?.detail?.mode as 'HORAIRE' | 'GPS' | undefined
-
-      if (mode === 'HORAIRE' || mode === 'GPS') {
-        setReferenceMode(mode)
-      }
+      if (mode === 'HORAIRE' || mode === 'GPS') setReferenceMode(mode)
     }
 
     window.addEventListener('lim:reference-mode', handler as EventListener)
@@ -1814,9 +1625,7 @@ if (disp) {
     }
   }, [])
 
-  // ✅ GPS (source de vérité FT) : la TitleBar affiche l'état calculé dans FT
   useEffect(() => {
-    // ✅ Compteur local (debug) pour réduire le volume : on logge 1 fois sur N en RED
     let redSeq = 0
 
     const handler = (e: Event) => {
@@ -1826,7 +1635,6 @@ if (disp) {
       const pkRaw = ce?.detail?.pkRaw as number | null | undefined
       const reasonCodes = ce?.detail?.reasonCodes as any
 
-      // ✅ Log rejouable : on capture les raisons de RED (sans spammer)
       if (testModeEnabled && state === 'RED') {
         redSeq++
         if (redSeq % 10 === 1) {
@@ -1870,9 +1678,8 @@ if (disp) {
       window.removeEventListener('lim:gps-state', handler as EventListener)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  // ✅ Fix GPS brut (source: TitleBar → event gps:position)
-  // Sert uniquement à mémoriser nearestIdx / s_km / onLine + timestamp pour la logique Figueres.
+  }, [testModeEnabled])
+
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent
@@ -1893,12 +1700,9 @@ if (disp) {
           ? Math.trunc(d.timestamp)
           : Date.now()
 
-      // ✅ mémorisation du dernier fix utile Figueres
       lastGpsFixRef.current = { ts, nearestIdx, s_km, onLine }
 
-      // ✅ détection "figé" (stabilité ruban)
-      // On ne calcule la stabilité que si on a un idx et qu'on est sur la ligne.
-      const now = ts // ts vient déjà de d.timestamp (ou Date.now fallback)
+      const now = ts
       if (nearestIdx != null && onLine === true) {
         const prevIdx = figueresStableIdxRef.current
 
@@ -1910,15 +1714,13 @@ if (disp) {
           const dIdx = Math.abs(nearestIdx - prevIdx)
 
           if (dIdx <= tol) {
-            // stable → on garde stableSince
+            // stable
           } else {
-            // mouvement → on réarme la stabilité
             figueresStableIdxRef.current = nearestIdx
             figueresStableSinceRef.current = now
           }
         }
       } else {
-        // pas exploitable → on réinitialise la stabilité
         figueresStableIdxRef.current = null
         figueresStableSinceRef.current = null
       }
@@ -1927,11 +1729,6 @@ if (disp) {
     window.addEventListener('gps:position', handler as EventListener)
     return () => window.removeEventListener('gps:position', handler as EventListener)
   }, [])
-
-
-
-
-
 
   // ----- GPS : démarrage / arrêt du watchPosition -----
   useEffect(() => {
@@ -1942,9 +1739,7 @@ if (disp) {
   }, [])
 
   function startGpsWatch() {
-    if (gpsWatchIdRef.current != null) {
-      return
-    }
+    if (gpsWatchIdRef.current != null) return
     if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
       console.warn('[TitleBar] Geolocation non disponible')
       logTestEvent('gps:watch:start:failed', { reason: 'no_geolocation' })
@@ -1958,11 +1753,7 @@ if (disp) {
       (pos) => {
         const { latitude, longitude, accuracy } = pos.coords
 
-        gpsLastInfoRef.current = {
-          lat: latitude,
-          lon: longitude,
-          accuracy,
-        }
+        gpsLastInfoRef.current = { lat: latitude, lon: longitude, accuracy }
 
         if (!gpsPkReady) {
           logTestEvent('gps:position:noPkEngine', {
@@ -1978,15 +1769,12 @@ if (disp) {
           console.log(
             `[GPS] lat=${latitude.toFixed(6)} lon=${longitude.toFixed(6)} → hors ruban (proj=null)`
           )
-          logTestEvent('gps:position:offLine', {
-            lat: latitude,
-            lon: longitude,
-            accuracy,
-          })
+          logTestEvent('gps:position:offLine', { lat: latitude, lon: longitude, accuracy })
           return
         }
 
-        const { pk, s_km, distance_m, nearestIdx, nearestLat, nearestLon, pkCandidate, pkDecision } = proj
+        const { pk, s_km, distance_m, nearestIdx, nearestLat, nearestLon, pkCandidate, pkDecision } =
+          proj
         const dist = distance_m ?? null
         const onLine = dist != null && dist <= 200
 
@@ -2010,7 +1798,8 @@ if (disp) {
           nearestIdx: typeof nearestIdx === 'number' ? nearestIdx : null,
           nearestLat: typeof nearestLat === 'number' ? nearestLat : null,
           nearestLon: typeof nearestLon === 'number' ? nearestLon : null,
-          pkCandidate: typeof pkCandidate === 'number' && Number.isFinite(pkCandidate) ? pkCandidate : null,
+          pkCandidate:
+            typeof pkCandidate === 'number' && Number.isFinite(pkCandidate) ? pkCandidate : null,
           pkDecision: pkDecision ?? null,
         })
 
@@ -2038,12 +1827,13 @@ if (disp) {
         )
 
         console.log(
-          `[GPS] lat=${latitude.toFixed(6)} lon=${longitude.toFixed(6)} → PK≈${pk?.toFixed?.(3)}  s≈${s_km?.toFixed?.(3)} km  dist=${dist?.toFixed?.(1)} m  onLine=${onLine}`
+          `[GPS] lat=${latitude.toFixed(6)} lon=${longitude.toFixed(6)} → PK≈${pk?.toFixed?.(
+            3
+          )}  s≈${s_km?.toFixed?.(3)} km  dist=${dist?.toFixed?.(1)} m  onLine=${onLine}`
         )
       },
       (err) => {
         console.error('[TitleBar] Erreur GPS', err)
-
         logTestEvent('gps:watch:error', {
           code: (err as any)?.code ?? null,
           message: (err as any)?.message ?? String(err),
@@ -2061,10 +1851,7 @@ if (disp) {
 
   function stopGpsWatch() {
     const id = gpsWatchIdRef.current
-
-    if (id != null) {
-      logTestEvent('gps:watch:stop', {})
-    }
+    if (id != null) logTestEvent('gps:watch:stop', {})
 
     if (id != null && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
       navigator.geolocation.clearWatch(id)
@@ -2078,20 +1865,14 @@ if (disp) {
   const baseTitle = `LIM${titleSuffix}`
 
   const extendedParts: string[] = []
-  if (trainType && String(trainType).trim().length > 0) {
-    extendedParts.push(String(trainType).trim())
-  }
-  if (trainComposition && String(trainComposition).trim().length > 0) {
+  if (trainType && String(trainType).trim().length > 0) extendedParts.push(String(trainType).trim())
+  if (trainComposition && String(trainComposition).trim().length > 0)
     extendedParts.push(String(trainComposition).trim())
-  }
 
   const fullTitle =
-    folded && extendedParts.length > 0
-      ? `${baseTitle} - ${extendedParts.join(' - ')}`
-      : baseTitle
+    folded && extendedParts.length > 0 ? `${baseTitle} - ${extendedParts.join(' - ')}` : baseTitle
 
   const handleTitleClick = () => {
-    // ✅ Quand la FT France (LFP) est affichée, on désactive le pliage/dépliage
     if (ftViewMode === 'FR') {
       logTestEvent('ui:blocked', {
         control: 'infosLtvFold',
@@ -2102,20 +1883,14 @@ if (disp) {
     }
 
     if (simulationEnabled) {
-      logTestEvent('ui:blocked', {
-        control: 'infosLtvFold',
-        source: 'titlebar',
-      })
+      logTestEvent('ui:blocked', { control: 'infosLtvFold', source: 'titlebar' })
       return
     }
 
     setFolded((prev) => {
       const next = !prev
 
-      logTestEvent('ui:infos-ltv:fold-change', {
-        folded: next,
-        source: 'titlebar',
-      })
+      logTestEvent('ui:infos-ltv:fold-change', { folded: next, source: 'titlebar' })
 
       window.dispatchEvent(
         new CustomEvent('lim:infos-ltv-fold-change', {
@@ -2125,7 +1900,6 @@ if (disp) {
       return next
     })
   }
-
 
   const IconSun = () => (
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" className="opacity-80">
@@ -2157,8 +1931,22 @@ if (disp) {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[1px]">
           <div className="rounded-2xl bg-white dark:bg-zinc-900 px-5 py-4 shadow-lg border border-zinc-200 dark:border-zinc-700 flex items-center gap-3">
             <svg className="h-6 w-6 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="3" opacity="0.2" />
-              <path d="M21 12a9 9 0 0 0-9-9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              <circle
+                cx="12"
+                cy="12"
+                r="9"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3"
+                opacity="0.2"
+              />
+              <path
+                d="M21 12a9 9 0 0 0-9-9"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
             </svg>
             <div className="text-sm font-semibold">Traitement du PDF…</div>
           </div>
@@ -2166,7 +1954,6 @@ if (disp) {
       )}
 
       <div className="flex items-center justify-between gap-2">
-        {/* Gauche — Heure + boutons état */}
         <div className="flex min-w-0 items-center gap-2">
           <div className="tabular-nums text-[18px] leading-none font-semibold tracking-tight">
             {clock}
@@ -2196,7 +1983,6 @@ if (disp) {
 
           {pdfMode === 'green' && (
             <>
-              {/* Auto-scroll */}
               <button
                 type="button"
                 onClick={() => {
@@ -2228,7 +2014,11 @@ if (disp) {
                       : 'bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100'
                   }
                 `}
-                title={autoScroll ? 'Désactiver le défilement automatique' : 'Activer le défilement automatique'}
+                title={
+                  autoScroll
+                    ? 'Désactiver le défilement automatique'
+                    : 'Activer le défilement automatique'
+                }
               >
                 {autoScroll ? (
                   <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
@@ -2242,7 +2032,6 @@ if (disp) {
                 )}
               </button>
 
-              {/* GPS */}
               <button
                 type="button"
                 className={`
@@ -2272,7 +2061,6 @@ if (disp) {
                 )}
               </button>
 
-              {/* Sens attendu (PK) */}
               <button
                 type="button"
                 onClick={() => {
@@ -2324,7 +2112,6 @@ if (disp) {
                 <span aria-hidden>{expectedDir === 'DOWN' ? '⬇️' : expectedDir === 'UP' ? '⬆️' : '↕️'}</span>
               </button>
 
-              {/* Mode horaire — indicateur */}
               <button
                 type="button"
                 className={`h-7 w-7 rounded-full flex items-center justify-center text-[12px] bg-white dark:bg-zinc-900 transition cursor-default
@@ -2346,7 +2133,6 @@ if (disp) {
           )}
         </div>
 
-        {/* Centre — Titre */}
         <div className="min-w-0 flex-1 text-center">
           <button
             type="button"
@@ -2358,7 +2144,6 @@ if (disp) {
           </button>
         </div>
 
-        {/* Droite — Contrôles */}
         <div className="flex items-center gap-2 relative z-10">
           {swUpdateAvailable && (
             <button
@@ -2379,7 +2164,6 @@ if (disp) {
             </button>
           )}
 
-          {/* Jour/Nuit */}
           <div className="h-8 rounded-md overflow-hidden bg-zinc-200 dark:bg-zinc-700 flex" title="Jour / Nuit">
             <button
               type="button"
@@ -2410,7 +2194,6 @@ if (disp) {
             </button>
           </div>
 
-          {/* Luminosité */}
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] opacity-60">Lum:</span>
             <input
@@ -2452,9 +2235,7 @@ if (disp) {
                 clearTimeout((currentInput as any).__pdfClickTimer)
                 ;(currentInput as any).__pdfClickTimer = null
 
-                if (pdfMode !== 'blue') {
-                  setPdfMode('blue')
-                }
+                if (pdfMode !== 'blue') setPdfMode('blue')
 
                 setFtViewMode('ES')
 
@@ -2494,7 +2275,7 @@ if (disp) {
             {pdfMode === 'red' && <span className="font-bold">SECOURS</span>}
           </button>
 
-          {/* FT LFP / AUTO / ADIF (3 positions) */}
+          {/* FT LFP / AUTO / ADIF */}
           {trainDisplay &&
             (() => {
               const n = parseInt(trainDisplay, 10)
@@ -2502,7 +2283,6 @@ if (disp) {
 
               const FT_FR_WHITELIST = new Set<number>([9712, 9714, 9707, 9709, 9705, 9710])
               const isEligible = FT_FR_WHITELIST.has(n)
-
               if (!isEligible) return null
 
               const isEven = n % 2 === 0
@@ -2535,13 +2315,11 @@ if (disp) {
                             return
                           }
 
-                          // ✅ Annule un switch AUTO en attente si l’utilisateur reclique
                           if (autoSwitchTimerRef.current != null) {
                             window.clearTimeout(autoSwitchTimerRef.current)
                             autoSwitchTimerRef.current = null
                           }
 
-                          // ✅ AUTO indisponible tant que FR/ES non déterminé
                           if (autoDisabled) {
                             logTestEvent('ui:ftViewMode:auto:blocked', {
                               source: 'titlebar',
@@ -2550,12 +2328,8 @@ if (disp) {
                             return
                           }
 
-                          // ✅ Clic AUTO :
-                          // - 1er clic : engage AUTO + applique la sélection auto (latence ergonomique)
-                          // - clics suivants : NE RECALENT PAS sur la position réelle (AUTO reste verrouillé)
                           if (isAuto) {
                             if (autoEngaged) {
-                              // déjà armé => on ne refait pas un choix auto
                               logTestEvent('ui:ftViewMode:auto:ignored', {
                                 source: 'titlebar',
                                 reason: 'already_engaged',
@@ -2566,7 +2340,6 @@ if (disp) {
 
                             setAutoEngaged(true)
 
-                            // feedback immédiat : on affiche AUTO sélectionné pendant la latence
                             setFtViewMode('AUTO')
                             logTestEvent('ui:ftViewMode:change', { mode: 'AUTO', source: 'titlebar' })
 
@@ -2588,9 +2361,6 @@ if (disp) {
                             return
                           }
 
-                          // ✅ Clic ES/FR manuel :
-                          // - on change l’affichage
-                          // - MAIS on ne désarme jamais AUTO (il reste prêt pour Figueres)
                           setFtViewMode(mode)
                           logTestEvent('ui:ftViewMode:change', {
                             mode,
@@ -2598,7 +2368,6 @@ if (disp) {
                             autoEngaged: autoEngaged,
                           })
                         }}
-
                         className={
                           'px-3 text-xs font-semibold ' +
                           (showAutoActive ? 'ring-2 ring-inset ring-emerald-500 dark:ring-emerald-400 ' : '') +
@@ -2616,117 +2385,8 @@ if (disp) {
                     )
                   })}
                 </div>
-
-
-
               )
             })()}
-
-          {testModeEnabled && (
-            <button
-              type="button"
-              onClick={async () => {
-                if (simulationEnabled) {
-                  logTestEvent('ui:blocked', { control: 'stopButton', source: 'titlebar' })
-                  return
-                }
-
-                if (autoScroll) {
-                  setAutoScroll(false)
-                  window.dispatchEvent(
-                    new CustomEvent('ft:auto-scroll-change', {
-                      detail: { enabled: false, source: 'titlebar' },
-                    })
-                  )
-                }
-                stopGpsWatch()
-
-                setScheduleDelta(null)
-                setScheduleDeltaIsLarge(false)
-
-                setPdfMode('blue')
-                setPdfLoading(false)
-                stopPdfLoadingGuard()
-
-                setScheduleDeltaSec(null)
-
-                window.dispatchEvent(new CustomEvent('lim:clear-pdf'))
-                window.dispatchEvent(new CustomEvent('ft:clear-pdf'))
-                window.dispatchEvent(new CustomEvent('lim:pdf-raw', { detail: { file: null } }))
-
-                if (testRecording) {
-                  logTestEvent('ui:test:stop', { source: 'stop_button' })
-
-                  stopTestSession()
-                  setTestRecording(false)
-
-                  // ✅ Export local immédiat (toujours)
-                  try {
-                    const exported = await exportTestLogLocal()
-                    if (!exported) {
-                      window.alert('Aucun événement de test à exporter.')
-                      logTestEvent('testlog:export:failed', {
-                        reason: 'no_events',
-                        source: 'stop_button',
-                      })
-                    } else {
-                      logTestEvent('testlog:exported', { source: 'stop_button' })
-                    }
-                  } catch (err: any) {
-                    window.alert('Export local des logs impossible.')
-                    logTestEvent('testlog:export:failed', {
-                      reason: err?.message ?? String(err),
-                      source: 'stop_button',
-                    })
-                  }
-                }
-
-                // ✅ Redémarrer immédiatement une nouvelle session de log
-                const nextMode: 'blue' = 'blue'
-                const labelParts: string[] = []
-                if (trainDisplay) labelParts.push(`train_${trainDisplay}`)
-                labelParts.push(`mode_${nextMode}`)
-                labelParts.push('auto')
-
-                const label = labelParts.join('_')
-                startTestSession(label)
-                setTestRecording(true)
-              }}
-              disabled={!testRecording}
-              className={
-                testRecording
-                  ? 'h-8 w-10 rounded-md bg-red-500 text-white font-semibold flex items-center justify-center'
-                  : 'h-8 w-10 rounded-md bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400 flex items-center justify-center cursor-not-allowed'
-              }
-              title="Stop (interrompre le test)"
-              aria-label="Stop"
-            >
-              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                <path
-                  d="M8.2 2.6h7.6l5.6 5.6v7.6l-5.6 5.6H8.2L2.6 15.8V8.2L8.2 2.6Z"
-                  fill="currentColor"
-                  opacity="0.18"
-                />
-                <path
-                  d="M8.2 2.6h7.6l5.6 5.6v7.6l-5.6 5.6H8.2L2.6 15.8V8.2L8.2 2.6Z"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                />
-                <text
-                  x="12"
-                  y="14"
-                  textAnchor="middle"
-                  fontSize="7"
-                  fontWeight="700"
-                  fill="currentColor"
-                  style={{ letterSpacing: '0.5px' }}
-                >
-                  STOP
-                </text>
-              </svg>
-            </button>
-          )}
 
           {/* Paramètres */}
           <details ref={settingsDetailsRef} className="relative">
@@ -2753,7 +2413,6 @@ if (disp) {
             <div className="absolute right-0 mt-2 w-72 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-lg p-3 text-xs z-[9999]">
               <div className="text-[11px] font-semibold opacity-70 mb-2">Paramètres</div>
 
-              {/* Toggle MODE TEST */}
               <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
                 <span className="font-semibold">Mode test</span>
                 <input
@@ -2850,7 +2509,6 @@ if (disp) {
 
               <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
 
-              {/* Toggle OCR */}
               <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
                 <span>OCR online</span>
                 <input
@@ -2872,7 +2530,6 @@ if (disp) {
 
               <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
 
-              {/* GPS Replay (offline) */}
               {testModeEnabled && (
                 <button
                   type="button"
@@ -2929,7 +2586,6 @@ if (disp) {
 
               <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
 
-              {/* À propos */}
               <button
                 type="button"
                 onClick={() => {
@@ -2951,7 +2607,6 @@ if (disp) {
             </div>
           </details>
 
-          {/* ✅ Fenêtre "À propos" */}
           {aboutOpen && (
             <div
               className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 backdrop-blur-[1px]"
@@ -2988,7 +2643,13 @@ if (disp) {
             </div>
           )}
 
-          <input ref={inputRef} type="file" accept="application/pdf" onChange={onPickPdf} className="hidden" />
+          <input
+            ref={inputRef}
+            type="file"
+            accept="application/pdf"
+            onChange={onPickPdf}
+            className="hidden"
+          />
 
           <input
             ref={gpsReplayInputRef}

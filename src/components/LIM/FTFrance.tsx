@@ -223,7 +223,25 @@ function parseHhmmToMinutes(h?: string | null): number | null {
   if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
   return hh * 60 + mm
 }
+// -----------------------------------------------------------------------------
+// Horloge "source" pour le mode HORAIRE
+// - réel : Date()
+// - replay : events (sim:* / replay:*) si disponibles
+// -----------------------------------------------------------------------------
+function clamp01(x: number) {
+  return Math.max(0, Math.min(1, x))
+}
 
+function normalizeMinutes(min: number) {
+  const m = min % (24 * 60)
+  return m < 0 ? m + 24 * 60 : m
+}
+
+function hhmmToMinutesLoose(v?: any): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v
+  if (typeof v !== "string") return null
+  return parseHhmmToMinutes(v)
+}
 // ✅ heuristique simple : on déduit le référentiel du PK reçu (pour l’affichage barre)
 function detectRefFromPkValue(pk: number): NetRef {
   if (pk >= 600) return "ADIF"
@@ -251,6 +269,9 @@ type FTFranceProps = {
   figueresDepartureHhmm?: string | null // ES->FR
   figueresArrivalHhmm?: string | null // FR->ES
 
+  // ✅ Horloge de replay (optionnelle). Si null/absente => heure réelle.
+  replayNowMs?: number | null
+
   // ✅ depuis App.tsx (relais des events FT Espagne)
   referenceMode: ReferenceMode
   gpsStateUi: GpsStateUi
@@ -261,6 +282,8 @@ export default function FTFrance({
   trainNumber,
   figueresDepartureHhmm = null,
   figueresArrivalHhmm = null,
+
+  replayNowMs = null,
 
   referenceMode,
   gpsStateUi,
@@ -323,10 +346,322 @@ export default function FTFrance({
 
   // Référence scroll (source de vérité pour la position de barre)
   const scrollContainerRef = React.useRef<HTMLDivElement | null>(null)
+  // ------------------------------------------------------------
+  // Horloge réelle vs replay
+  // ------------------------------------------------------------
+  const [replayEnabled, setReplayEnabled] = React.useState(false)
+  const [replayNowMin, setReplayNowMin] = React.useState<number | null>(null)
 
+  // Horloge source utilisée en mode HORAIRE
+  // ✅ minutes "flottantes" (inclut les secondes) pour interpolation pixel/par pixel
+  const [realNowMin, setRealNowMin] = React.useState(() => {
+    const d = new Date()
+    return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60
+  })
+
+  React.useEffect(() => {
+    // tick réel (léger) — si replay actif, on s’en fiche
+    const id = window.setInterval(() => {
+      const d = new Date()
+      setRealNowMin(d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60)
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  React.useEffect(() => {
+    const onEnable = (e: Event) => {
+      const ce = e as CustomEvent<any>
+      const enabled = !!ce?.detail?.enabled
+      setReplayEnabled(enabled)
+      if (!enabled) setReplayNowMin(null)
+    }
+
+    // Accepte plusieurs formats de tick :
+    // detail.nowMs (timestamp), detail.hhmm ("HH:MM"), detail.nowMin (minutes)
+    const onTick = (e: Event) => {
+      const ce = e as CustomEvent<any>
+      const d = ce?.detail ?? {}
+
+      const fromNowMin = hhmmToMinutesLoose(d.nowMin)
+      if (fromNowMin != null) {
+        setReplayNowMin(normalizeMinutes(fromNowMin))
+        return
+      }
+
+      const fromHhmm = hhmmToMinutesLoose(d.hhmm)
+      if (fromHhmm != null) {
+        setReplayNowMin(normalizeMinutes(fromHhmm))
+        return
+      }
+
+      const nowMs = typeof d.nowMs === "number" ? d.nowMs : null
+      if (nowMs != null && Number.isFinite(nowMs)) {
+        const dt = new Date(nowMs)
+        setReplayNowMin(dt.getHours() * 60 + dt.getMinutes() + dt.getSeconds() / 60)
+      }
+    }
+
+    window.addEventListener("sim:enable", onEnable as EventListener)
+
+    window.addEventListener("sim:tick", onTick as EventListener)
+    window.addEventListener("sim:time", onTick as EventListener)
+    window.addEventListener("replay:tick", onTick as EventListener)
+    window.addEventListener("replay:time", onTick as EventListener)
+
+    return () => {
+      window.removeEventListener("sim:enable", onEnable as EventListener)
+
+      window.removeEventListener("sim:tick", onTick as EventListener)
+      window.removeEventListener("sim:time", onTick as EventListener)
+      window.removeEventListener("replay:tick", onTick as EventListener)
+      window.removeEventListener("replay:time", onTick as EventListener)
+    }
+  }, [])
+
+    // ------------------------------------------------------------
+  // Play/Pause auto-scroll (TitleBar -> FT France)
+  // ------------------------------------------------------------
+  const [autoScrollEnabled, setAutoScrollEnabled] = React.useState(false)
+
+   React.useEffect(() => {
+    const onAutoScrollChange = (e: Event) => {
+      const ce = e as CustomEvent<any>
+      const enabled = !!ce?.detail?.enabled
+      const source = ce?.detail?.source
+
+      // DEBUG : comprendre si le standby coupe le Play
+      // eslint-disable-next-line no-console
+      console.log(
+        "[FTFrance] ft:auto-scroll-change =>",
+        enabled,
+        "detail=",
+        ce?.detail,
+        "at=",
+        new Date().toISOString()
+      )
+
+      // ✅ FIX: ignorer les "enabled:false" qui ne viennent pas de la TitleBar
+      // (actuellement FT.tsx (Espagne) envoie {enabled:false} sans source via updateFromClock)
+      if (enabled === false && !source) {
+        // eslint-disable-next-line no-console
+        console.log(
+          "[FTFrance] IGNORE ft:auto-scroll-change enabled:false without source (likely FT.tsx standby)"
+        )
+        return
+      }
+
+      setAutoScrollEnabled(enabled)
+    }
+
+    window.addEventListener(
+      "ft:auto-scroll-change",
+      onAutoScrollChange as EventListener
+    )
+    return () => {
+      window.removeEventListener(
+        "ft:auto-scroll-change",
+        onAutoScrollChange as EventListener
+      )
+    }
+  }, [])
+    // ------------------------------------------------------------
+  // DEV — tracer QUI déclenche le standby / auto-scroll-change
+  // ------------------------------------------------------------
+  React.useEffect(() => {
+    const w = window as any
+    if (w.__ftFranceDispatchTracerInstalled) return
+    w.__ftFranceDispatchTracerInstalled = true
+
+    const originalDispatch = window.dispatchEvent.bind(window)
+
+    window.dispatchEvent = ((evt: Event) => {
+      try {
+        const type = (evt as any)?.type
+        if (type === "ft:standby:set" || type === "ft:auto-scroll-change") {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[FTFrance][DISPATCH TRACE] ${type}`,
+            "detail=",
+            (evt as any)?.detail ?? null,
+            "\nstack=\n",
+            new Error().stack
+          )
+        }
+      } catch {
+        // ignore
+      }
+      return originalDispatch(evt)
+    }) as any
+
+    return () => {
+      // on ne "désinstalle" pas proprement ici (mono-install) : DEV only
+    }
+  }, [])
+
+  const nowMin = replayEnabled && replayNowMin != null ? replayNowMin : realNowMin
+    // ------------------------------------------------------------
+  // Base horaire (figée au Play) + delta (comme FT Espagne)
+  // ------------------------------------------------------------
+  type AutoScrollBase = {
+    firstHoraMin: number
+    realMinInt: number
+    fixedDelay: number
+    deltaSec: number
+
+    // ✅ moment exact du Play (en secondes dans la journée)
+    playNowSec: number
+  }
+
+  const autoScrollBaseRef = React.useRef<AutoScrollBase | null>(null)
+
+  const computeFixedDelay = React.useCallback((nowMinValue: number, ftMin: number) => {
+    const nowTotalSec = Math.round(nowMinValue * 60)
+    const ftTotalSec = Math.round(ftMin * 60)
+    const deltaSec = nowTotalSec - ftTotalSec
+    const fixedDelayMin = Math.round(deltaSec / 60)
+    return { deltaSec, fixedDelayMin }
+  }, [])
+
+  React.useEffect(() => {
+    if (!autoScrollEnabled) {
+      autoScrollBaseRef.current = null
+      return
+    }
+
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    // ✅ Si la base existe déjà, on ré-émet juste un delta FIGÉ (ne bouge plus)
+    const existing = autoScrollBaseRef.current
+    if (existing) {
+      const fixedDelayMin = existing.fixedDelay
+
+      const text =
+        fixedDelayMin === 0
+          ? "0 min"
+          : fixedDelayMin > 0
+          ? `+ ${fixedDelayMin} min`
+          : `- ${-fixedDelayMin} min`
+
+      window.dispatchEvent(
+        new CustomEvent("lim:schedule-delta", {
+          detail: {
+            source: "FTFRANCE",
+            text,
+            isLargeDelay: Math.abs(fixedDelayMin) >= 5,
+            // ✅ IMPORTANT : deltaSec figé (sinon l'affichage diminue d'1s/1s)
+            deltaSec: existing.deltaSec,
+          },
+        })
+      )
+      return
+    }
+
+    // ✅ Référence Play = 1ère ligne visible
+    const containerRect = container.getBoundingClientRect()
+    const mainRows =
+      container.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main")
+    if (!mainRows.length) return
+
+    let refDataIdx: number | null = null
+
+    for (const tr of Array.from(mainRows)) {
+      const r = tr.getBoundingClientRect()
+      if (r.bottom > containerRect.top && r.top < containerRect.bottom) {
+        const attr = tr.getAttribute("data-ft-row")
+        const n = attr ? parseInt(attr, 10) : NaN
+        if (Number.isFinite(n)) {
+          refDataIdx = n
+          break
+        }
+      }
+    }
+
+    if (refDataIdx == null) {
+      const attr = mainRows[0].getAttribute("data-ft-row")
+      const n = attr ? parseInt(attr, 10) : NaN
+      if (Number.isFinite(n)) refDataIdx = n
+    }
+
+    if (refDataIdx == null) return
+
+    const refRow = rows[refDataIdx]
+    const firstHoraMin = parseHhmmToMinutes(refRow?.hhmm)
+    if (firstHoraMin == null) return
+
+    // ✅ Moment exact du Play
+    const nowTotalSec = Math.round(nowMin * 60)
+    const realMinInt = Math.floor(nowMin)
+
+    const ftTotalSec = Math.round(firstHoraMin * 60)
+    const deltaSec = nowTotalSec - ftTotalSec
+    const fixedDelayMin = Math.round(deltaSec / 60)
+
+    // ✅ On fige TOUT ici, une seule fois
+    autoScrollBaseRef.current = {
+      firstHoraMin,
+      realMinInt,
+      fixedDelay: fixedDelayMin,
+      deltaSec, // ✅ figé
+      playNowSec: nowTotalSec,
+    }
+
+    const text =
+      fixedDelayMin === 0
+        ? "0 min"
+        : fixedDelayMin > 0
+        ? `+ ${fixedDelayMin} min`
+        : `- ${-fixedDelayMin} min`
+
+    window.dispatchEvent(
+      new CustomEvent("lim:schedule-delta", {
+        detail: {
+          source: "FTFRANCE",
+          text,
+          isLargeDelay: Math.abs(fixedDelayMin) >= 5,
+          deltaSec, // ✅ figé (pas vivant)
+        },
+      })
+    )
+  }, [autoScrollEnabled, rows, nowMin])
   // ------------------------------------------------------------
   // 1) Déterminer l’index “actif” (fallback) — utile si on ne peut pas interpoler
   // ------------------------------------------------------------
+    // ------------------------------------------------------------
+  // Ligne active en mode HORAIRE pendant le Play (base -> effectiveMin)
+  // ------------------------------------------------------------
+  const [activeRowIndex, setActiveRowIndex] = React.useState<number | null>(null)
+
+  React.useEffect(() => {
+    // On ne pilote la ligne active que si :
+    // - mode HORAIRE
+    // - Play actif
+    // - base horaire disponible
+    if (referenceMode !== "HORAIRE") return
+    if (!autoScrollEnabled) return
+
+    const base = autoScrollBaseRef.current
+    if (!base) return
+
+    // effectiveMin : minutes théoriques "suivies" depuis la base (comme FT Espagne)
+    const effectiveMin = base.firstHoraMin + (nowMin - base.realMinInt)
+
+    let exactIdx: number | null = null
+    let lastPastIdx: number | null = null
+    let firstValidIdx: number | null = null
+
+    for (let i = 0; i < rows.length; i++) {
+      const m = parseHhmmToMinutes(rows[i]?.hhmm)
+      if (m == null) continue
+
+      if (firstValidIdx == null) firstValidIdx = i
+      if (m === effectiveMin && exactIdx == null) exactIdx = i
+      if (m <= effectiveMin) lastPastIdx = i
+    }
+
+    const idx = exactIdx ?? lastPastIdx ?? firstValidIdx ?? 0
+    setActiveRowIndex(idx)
+  }, [referenceMode, autoScrollEnabled, nowMin, rows])
   const activeRowIndexFallback = React.useMemo(() => {
     if (!rows.length) return 0
 
@@ -352,7 +687,7 @@ export default function FTFrance({
       return bestIdx
     }
 
-    const now = new Date()
+    const now = replayNowMs != null ? new Date(replayNowMs) : new Date()
     const nowMin = now.getHours() * 60 + now.getMinutes()
 
     let firstValid: number | null = null
@@ -368,7 +703,7 @@ export default function FTFrance({
     }
 
     return lastPast ?? firstValid ?? 0
-  }, [rows, referenceMode, gpsPk])
+  }, [rows, referenceMode, gpsPk, replayNowMs])
 
   // ------------------------------------------------------------
   // 2) Calculer trainPosYpx (position barre dans le viewport scroll)
@@ -533,16 +868,113 @@ export default function FTFrance({
     }
 
     // -------------------------
-    // HORAIRE : inchangé (ligne “active”)
+    // HORAIRE : interpolation entre 2 lignes encadrantes
     // -------------------------
-    const y = getRowCenterY(activeRowIndexFallback)
+    const mins: Array<number | null> = rows.map((r) =>
+      parseHhmmToMinutes(r?.hhmm)
+    )
+
+    // ✅ Pendant le Play (base figée), on suit le temps "effectif" comme FT Espagne
+    const base = autoScrollBaseRef.current
+    const effectiveMin =
+      referenceMode === "HORAIRE" && autoScrollEnabled && base
+        ? base.firstHoraMin + (nowMin - base.realMinInt)
+        : nowMin
+
+    const target = effectiveMin
+        // DEBUG HORAIRE (uniquement en Play) : comprendre pourquoi ça "saute"
+    if (autoScrollEnabled) {
+      const validCount = mins.filter((x) => x != null).length
+      // eslint-disable-next-line no-console
+      console.log("[FTFrance][HORAIRE] target=", target, "validHHMM=", validCount)
+    }
+
+    // Trouver i0 = dernière ligne <= target, i1 = première ligne > target
+    let i0: number | null = null
+    let i1: number | null = null
+
+    for (let i = 0; i < mins.length; i++) {
+      const m = mins[i]
+      if (m == null) continue
+      if (m <= target) i0 = i
+      if (m > target) {
+        i1 = i
+        break
+      }
+    }
+
+    // ✅ index de fallback pour HORAIRE : si on a une ligne active (Play), on la privilégie
+    const idxFallbackHoraire = activeRowIndex ?? activeRowIndexFallback
+
+    // Si on n’a rien trouvé (pas d’heures), fallback
+    if (i0 == null && i1 == null) {
+      const y = getRowCenterY(idxFallbackHoraire)
+      if (y != null) {
+        const clamped = Math.max(0, Math.min(container.clientHeight, y))
+        setTrainPosYpx(clamped)
+      } else {
+        setTrainPosYpx(null)
+      }
+      return
+    }
+
+    // Cas bord : avant première heure ou après dernière heure
+    if (i0 == null) i0 = i1
+    if (i1 == null) i1 = i0
+
+    const y0 = i0 != null ? getRowCenterY(i0) : null
+    const y1 = i1 != null ? getRowCenterY(i1) : null
+
+    const m0 = i0 != null ? mins[i0] : null
+    const m1 = i1 != null ? mins[i1] : null
+
+        if (autoScrollEnabled) {
+      // eslint-disable-next-line no-console
+      console.log(
+        "[FTFrance][HORAIRE] i0/i1=",
+        i0,
+        i1,
+        "m0/m1=",
+        m0,
+        m1,
+        "canInterp=",
+        i0 != null && i1 != null && m0 != null && m1 != null && m0 !== m1
+      )
+    }
+
+    if (
+      i0 != null &&
+      i1 != null &&
+      y0 != null &&
+      y1 != null &&
+      m0 != null &&
+      m1 != null &&
+      m0 !== m1
+    ) {
+      const t = clamp01((target - m0) / (m1 - m0))
+      const y = y0 + t * (y1 - y0)
+      const clamped = Math.max(0, Math.min(container.clientHeight, y))
+      setTrainPosYpx(clamped)
+      return
+    }
+
+    // fallback : centre de la ligne i0
+    const y = i0 != null ? getRowCenterY(i0) : null
     if (y != null) {
       const clamped = Math.max(0, Math.min(container.clientHeight, y))
       setTrainPosYpx(clamped)
     } else {
       setTrainPosYpx(null)
     }
-  }, [rows, referenceMode, gpsPk, activeRowIndexFallback])
+  }, [
+    rows,
+    referenceMode,
+    gpsPk,
+    activeRowIndexFallback,
+    nowMin,
+    autoScrollEnabled,
+    activeRowIndex,
+  ])
 
 
   React.useEffect(() => {
@@ -574,7 +1006,16 @@ export default function FTFrance({
       vv?.removeEventListener("scroll", onScroll)
     }
   }, [recomputeTrainPos])
+  // ✅ Tick en mode HORAIRE : sinon la barre ne bouge pas tant qu'il n'y a pas de scroll/resize
+  React.useEffect(() => {
+    if (referenceMode !== "HORAIRE") return
 
+    const t = window.setInterval(() => {
+      recomputeTrainPos()
+    }, 1000)
+
+    return () => window.clearInterval(t)
+  }, [referenceMode, recomputeTrainPos])
   const getFallbackTrainTopPx = React.useCallback(() => {
     const container = scrollContainerRef.current
     if (!container) return "40vh"
@@ -865,19 +1306,35 @@ export default function FTFrance({
                   const isYellowRow =
                     !isSpacer && (r?.pk === "748,9" || r?.pk === "467,5")
 
+                  // ✅ Ligne active (HORAIRE + Play)
+                  const isActive =
+                    !isSpacer &&
+                    referenceMode === "HORAIRE" &&
+                    autoScrollEnabled &&
+                    activeRowIndex != null &&
+                    item.origIdx === activeRowIndex
+
                   const bgPk = isYellowRow ? YELLOW_GRADIENT : undefined
                   const bgVmax = isYellowRow ? YELLOW_GRADIENT : undefined
                   const bgLoc = isYellowRow ? YELLOW_GRADIENT : undefined
                   const bgHhmm = isYellowRow ? YELLOW_GRADIENT : undefined
 
-                  return (
-                    <tr
-                      key={`${item.kind}-${item.origIdx}-${rIdx}`}
-                      className={!isSpacer ? "ft-row-main" : undefined}
-                      data-ft-row={!isSpacer ? item.origIdx : undefined}
-                    >
-                      {isSpacer ? (
-                        <SpacerTd />
+return (
+  <tr
+    key={`${item.kind}-${item.origIdx}-${rIdx}`}
+    className={!isSpacer ? "ft-row-main" : undefined}
+    data-ft-row={!isSpacer ? item.origIdx : undefined}
+    style={
+      isActive
+        ? {
+            outline: "2px solid rgba(255,0,0,0.65)",
+            outlineOffset: "-2px",
+          }
+        : undefined
+    }
+  >
+    {isSpacer ? (
+      <SpacerTd />
                       ) : (
                         <Td align="center" className="font-semibold">
                           {r.sig ?? ""}

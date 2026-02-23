@@ -16,11 +16,9 @@
 // - isNoteOnly?: true si la ligne ne représente pas une dependencia classique,
 //   mais uniquement des remarques rouges. (Elle est affichée AVANT la gare correspondante)
 //
-//
 // Colonnes techniques :
 // - bloqueo: "↓ BCA ↓" etc. (colonne B / Bloqueo)
 // - radio: "◯ GSMR" etc. (colonne R / Radio)
-//
 //
 // Profil de ligne (RC / Ramp Caract) :
 // - rc: valeur numérique de rampe/pente en ‰ (ex: 25 / 28 / 18)
@@ -79,6 +77,7 @@ export interface FTEntry {
 
   // Colonnes constantes
   bloqueo?: string;
+  bloqueo_bar?: 1 | 2; // séparateurs Bloqueo (1=RFN↔LFPSA, 2=ADIF↔LFPSA)
   radio?: string;
 
   // Vitesse maximale (colonne V)
@@ -99,18 +98,6 @@ export interface FTEntry {
 // -----------------------------------------------------------------------------
 // CSV_ZONES : zones de baisse significative de vitesse (CSV)
 // -----------------------------------------------------------------------------
-//
-// Une CSV est définie par :
-// - un sens (PAIR / IMPAIR)
-// - une plage kilométrique [pkFrom ; pkTo] dans le repère croissant du fichier
-
-//   (615.9 → 752.4)
-// - éventuellement un flag ignoreIfFirst pour les zones qu'on ne surligne pas
-//   si elles sont la première portion affichée sur la FT.
-//
-// Pour l'instant, on ne déclare qu'une seule zone, pour tester le principe :
-// - sens PAIR
-// - entre PK 715.5 et 714.7 (zone autour de GIRONA)
 
 export type CsvSens = "PAIR" | "IMPAIR";
 
@@ -149,7 +136,7 @@ export const CSV_ZONES: CsvZone[] = [
     pkFrom: 624.3,
     pkTo: 623.8,
   },
-    {
+  {
     // Zone 5 : CSV 30 entre PK 620.2 et 621.0 (PK croissants, sens PAIR)
     sens: "PAIR",
     pkFrom: 620.2,
@@ -170,7 +157,7 @@ export const CSV_ZONES: CsvZone[] = [
     pkFrom: 709.9,
     pkTo: 710.7,
   },
-    {
+  {
     // Zone 7 : portion 30 km/h 620.2 → 621.0
     // sens des PK croissants (FT_LIGNE_PAIR) => sens "IMPAIR" dans notre code
     sens: "IMPAIR",
@@ -186,41 +173,9 @@ export const CSV_ZONES: CsvZone[] = [
   },
 ];
 
-
-
-
-
-
 // -----------------------------------------------------------------------------
 // FT_LIGNE_PAIR : sens PAIR
 // -----------------------------------------------------------------------------
-//
-// Partitionnement (PK croissant, vitesses après chaque PK) :
-// 615.9→616.0 : 30
-// 616.0→618.1 : 95
-// 618.1→619.9 : 85
-// 619.9→620.2 : 60
-// 620.2→621.7 : 30
-// 621.7→623.8 : 140
-// 623.8→624.3 : 80
-// 624.3→626.7 : 140
-// 626.7→627.7 : 45
-// 627.7→629.4 : 45
-// 629.4→630.7 : 110
-// 630.7→632.4 : 130
-// 632.4→639.8 : 200
-// 639.8→641.9 : 185
-// 641.9→643.6 : 195
-// 643.6→709.9 : 200
-// 709.9→710.7 : 125
-// 710.7→713.2 : 125
-// 713.2→715.5 : 120
-// 715.5→716.8 : 165
-// 716.8→752.4 : 200
-//
-// Règle :
-// - vmax sur le PK = vitesse de la portion qui suit ce PK (avec le sens choisi).
-// - vmax_bar = true sur tous ces PK intermédiaires (sauf 615.9 et 752.4) pour dessiner la barre.
 
 export const FT_LIGNE_PAIR: FTEntry[] = [
   {
@@ -280,9 +235,7 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: true, // changement 25→28
-    // 620.2→621.0 et 621.0→621.7 restent à 30
     vmax: 30,
-    // pas de barre Vmax ici, on conserve la barre sur 620.2 / 621.7
   },
   {
     pk: "621.7",
@@ -325,7 +278,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     vmax_bar: true,
   },
 
-  // Remarques rouges AVANT LA SAGRERA AV
   {
     pk: "",
     dependencia: "",
@@ -335,7 +287,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // vmax implicite : 45 dans la zone
   },
 
   {
@@ -385,7 +336,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "636.6",
@@ -394,7 +344,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "639.8",
@@ -413,7 +362,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // hérite 185
   },
   {
     pk: "641.3",
@@ -421,8 +369,7 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     bloqueo: "↓ BCA ↓",
     radio: "◯ GSMR",
     rc: 18,
-    rc_bar: true, // 28→18
-    // hérite 185
+    rc_bar: true,
   },
   {
     pk: "641.9",
@@ -451,7 +398,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -461,7 +407,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "655.6",
@@ -470,7 +415,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "655.8",
@@ -479,7 +423,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "660.8",
@@ -488,7 +431,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "661.5",
@@ -497,7 +439,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "662.0",
@@ -506,7 +447,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -516,7 +456,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -526,7 +465,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -536,7 +474,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -546,7 +483,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -556,7 +492,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -566,7 +501,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -576,7 +510,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -586,7 +519,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -608,7 +540,7 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     rc: 18,
     rc_bar: false,
     vmax: 125,
-    vmax_bar: true, // barre "cosmétique" entre deux zones à 125
+    vmax_bar: true,
   },
 
   {
@@ -629,7 +561,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 120
   },
 
   {
@@ -661,7 +592,6 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "723.7",
@@ -670,10 +600,8 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
-  // Remarques rouges AVANT FIGUERES-VILAFANT
   {
     pk: "",
     dependencia: "",
@@ -683,92 +611,155 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
-  {
-    pk: "748.9",
-    dependencia: "FIGUERES-VILAFANT",
-    bloqueo: "↓ BCA ↓",
-    radio: "◯ GSMR",
-    rc: 18,
-    rc_bar: false,
-    // hérite 200
-  },
+{
+  pk: "748.9",
+  dependencia: "FIGUERES-VILAFANT",
+  bloqueo: "↓ BCA ↓",
+  radio: "◯ GSMR",
+  rc: 18,
+  rc_bar: false,
+},
 
-  {
-    pk: "752.4",
-    dependencia: "LIMITE ADIF - LFPSA",
-    network: "ADIF",
-    pk_adif: "752.4",
-    pk_lfp: "44.4",
-    pk_internal: 752.4,
+{
+  pk: "752.4",
+  dependencia: "LIMITE ADIF - LFPSA",
+  network: "ADIF",
+  pk_adif: "752.4",
+  pk_lfp: "44.4",
+  pk_internal: 752.4,
 
-    bloqueo: "↓ BCA ↓",
-    radio: "◯ GSMR",
-    rc: 18,
-    rc_bar: false,
-    vmax: 200,
-    vmax_bar: false, // pas de barre en toute fin
-  },
-  {
-    // PK interne continu (virtuel) : correspond au PK LFP 0.0
-    // (repère interne basé sur ADIF, en prenant l’ancre 752.4 ↔ LFP 44.4)
-    pk: "796.8",
-    dependencia: "LFP PK 0 (POINT TECHNIQUE)",
-    network: "LFP",
-    pk_lfp: "0.0",
-    pk_internal: 796.8,
+  // ✅ BARRE 2
+  bloqueo_bar: 2,
 
-    // TODO: à affiner plus tard (vmax/rc/radio/bloqueo) pour la portion FR/LFP
-    bloqueo: "↓ BCA ↓",
-    radio: "◯ GSMR",
-    rc: 18,
-    rc_bar: false,
-    vmax: 200,
-    vmax_bar: false,
-  },
+  radio: "◯ GSMR",
+  rc: 18,
+  rc_bar: false,
 
-  {
-    // Limite RFN ↔ LFP (PK RFN 473.300)
-    pk: "799.7",
-    dependencia: "LIMITE RFN - LFPSA",
-    network: "RFN",
-    pk_rfn: "473.300",
-    pk_internal: 799.7,
+  // ✅ IMPAIR : barre VMAX + début segment 300
+  vmax: 300,
+  vmax_bar: true,
+},
 
-    bloqueo: "↓ BCA ↓",
-    radio: "◯ GSMR",
-    rc: 18,
-    rc_bar: false,
-    vmax: 200,
-    vmax_bar: false,
-  },
+{
+  pk: "771.2",
+  dependencia: "TETE SUD TUNNEL",
+  network: "LFP",
+  pk_lfp: "25.6",
+  pk_internal: 771.2,
 
-  {
-    // PERPIGNAN (PK RFN 467.500)
-    pk: "805.5",
-    dependencia: "PERPIGNAN",
-    network: "RFN",
-    pk_rfn: "467.500",
-    pk_internal: 805.5,
+  // ✅ Entre barre 1 et barre 2
+  bloqueo: "ERTMS Niv. 1",
 
-    bloqueo: "↓ BCA ↓",
-    radio: "◯ GSMR",
-    rc: 18,
-    rc_bar: false,
-    vmax: 200,
-    vmax_bar: false,
-  },
+  radio: "◯ GSMR",
+  rc: 18,
+  rc_bar: false,
+  vmax_bar: false,
+},
+{
+  pk: "772.2",
+  dependencia: "FRONTIERE",
+  network: "LFP",
+  pk_lfp: "24.6",
+  pk_internal: 772.2,
 
+  // ✅ Entre barre 1 et barre 2
+  bloqueo: "ERTMS Niv. 1",
+
+  radio: "◯ GSMR",
+  rc: 18,
+  rc_bar: false,
+  vmax_bar: false,
+},
+{
+  pk: "779.7",
+  dependencia: "TETE NORD TUNNEL",
+  network: "LFP",
+  pk_lfp: "17.1",
+  pk_internal: 779.7,
+
+  // ✅ Entre barre 1 et barre 2
+  bloqueo: "ERTMS Niv. 1",
+
+  radio: "◯ GSMR",
+  rc: 12,
+  rc_bar: true, // ✅ barre à 779.7 (début segment 12)
+  vmax_bar: false,
+},
+{
+  pk: "783.9",
+  dependencia: "SAUT DE MOUTON",
+  network: "LFP",
+  pk_lfp: "12.9",
+  pk_internal: 783.9,
+
+  // ✅ Entre barre 1 et barre 2
+  bloqueo: "ERTMS Niv. 1",
+
+  radio: "◯ GSMR",
+  rc: 12,
+  rc_bar: false,
+  vmax_bar: false,
+},
+
+{
+  pk: "799.7",
+  dependencia: "LIMITE RFN - LFPSA",
+  network: "RFN",
+  pk_rfn: "473.3",
+  pk_internal: 799.7,
+
+  // ✅ BARRE 1
+  bloqueo_bar: 1,
+
+  radio: "◯ GSMR",
+  rc: 0,
+  rc_bar: true, // ✅ barre à 799.7 (début segment 0)
+
+  // ✅ IMPAIR : barre VMAX + début segment 160
+  vmax: 160,
+  vmax_bar: true,
+},
+
+{
+  pk: "802.0",
+  dependencia: "LIMITE RAC - LFP-FRR",
+  network: "RFN",
+  pk_rfn: "471.0",
+  pk_internal: 802.0,
+
+  // ✅ Au-dessus de la barre 1
+  bloqueo: "BAL KVB",
+
+  radio: "◯ GSMR",
+  rc: 0,
+  rc_bar: false,
+  vmax: 160,
+  vmax_bar: false,
+},
+
+{
+  pk: "805.5",
+  dependencia: "PERPIGNAN",
+  network: "RFN",
+  pk_rfn: "467.5",
+  pk_internal: 805.5,
+
+  // ✅ Au-dessus de la barre 1
+  bloqueo: "BAL KVB",
+
+  radio: "◯ GSMR",
+  rc: 0,
+  rc_bar: false,
+  vmax: 160,
+  vmax_bar: false,
+},
 ];
-
 
 // -----------------------------------------------------------------------------
 // FT_LIGNE_IMPAIR : sens IMPAIR
 // -----------------------------------------------------------------------------
-//
-// Même grille de paliers que ci-dessus, mais tableau séparé pour pouvoir diverger plus tard.
 
 export const FT_LIGNE_IMPAIR: FTEntry[] = [
   {
@@ -779,7 +770,7 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     rc: 25,
     rc_bar: false,
     vmax: 30,
-    vmax_bar: false, // pas de barre à l'extrémité
+    vmax_bar: false,
   },
   {
     pk: "616.0",
@@ -788,7 +779,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 25,
     rc_bar: false,
-    // sens IMPAIR (PK décroissants): 616.0→615.9 = 30
     vmax: 30,
     vmax_bar: true,
   },
@@ -799,7 +789,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 25,
     rc_bar: false,
-    // 618.1→616.0 = 95
     vmax: 95,
     vmax_bar: true,
   },
@@ -810,7 +799,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 25,
     rc_bar: false,
-    // 619.9→618.1 = 85
     vmax: 85,
     vmax_bar: true,
   },
@@ -821,7 +809,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 25,
     rc_bar: false,
-    // 620.2→619.9 = 60
     vmax: 60,
     vmax_bar: true,
   },
@@ -832,9 +819,7 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: true,
-    // 621.7→621.0 = 30
     vmax: 30,
-    // pas de barre ici, on garde la barre sur 621.7
   },
   {
     pk: "621.7",
@@ -843,7 +828,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // 621.7→620.2 = 30
     vmax: 30,
     vmax_bar: true,
   },
@@ -854,7 +838,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // 623.8→621.7 = 140
     vmax: 140,
     vmax_bar: true,
   },
@@ -865,7 +848,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // 624.3→623.8 = 80
     vmax: 80,
     vmax_bar: true,
   },
@@ -876,12 +858,10 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // 626.7→624.3 = 140
     vmax: 140,
     vmax_bar: true,
   },
 
-  // Remarque rouge AVANT LA SAGRERA AV (alignée sur la version de référence)
   {
     pk: "",
     dependencia: "",
@@ -893,7 +873,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     rc_bar: false,
   },
 
-
   {
     pk: "627.7",
     dependencia: "LA SAGRERA AV",
@@ -901,11 +880,9 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // 627.7→626.7 = 45
     vmax: 45,
     vmax_bar: true,
   },
-
   {
     pk: "629.4",
     dependencia: "",
@@ -913,7 +890,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // 629.4→627.7 = 45
     vmax: 45,
     vmax_bar: true,
   },
@@ -924,7 +900,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // 630.7→629.4 = 110
     vmax: 110,
     vmax_bar: true,
   },
@@ -935,7 +910,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // 632.4→630.7 = 130
     vmax: 130,
     vmax_bar: true,
   },
@@ -946,8 +920,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // dans la portion 639.8→632.4
-    // hérite 200 (sens décroissant)
   },
   {
     pk: "636.6",
@@ -956,7 +928,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // idem, hérite 200
   },
   {
     pk: "639.8",
@@ -965,7 +936,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // 639.8→632.4 = 200
     vmax: 200,
     vmax_bar: true,
   },
@@ -977,7 +947,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 28,
     rc_bar: false,
-    // dans la portion 643.6→639.8
   },
   {
     pk: "641.3",
@@ -986,7 +955,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: true,
-    // toujours dans la portion 643.6→639.8
   },
   {
     pk: "641.9",
@@ -995,7 +963,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // 641.9→639.8 = 185
     vmax: 185,
     vmax_bar: true,
   },
@@ -1006,7 +973,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // 643.6→641.9 = 195
     vmax: 195,
     vmax_bar: true,
   },
@@ -1017,7 +983,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // dans la portion 709.9→643.6 (200), puis 643.6→641.9 (195) selon le sens
   },
 
   {
@@ -1027,7 +992,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "655.6",
@@ -1036,7 +1000,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "655.8",
@@ -1045,7 +1008,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "660.8",
@@ -1054,7 +1016,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "661.5",
@@ -1063,7 +1024,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
   {
     pk: "662.0",
@@ -1072,7 +1032,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -1082,7 +1041,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -1092,7 +1050,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -1102,7 +1059,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -1112,7 +1068,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -1122,7 +1077,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -1132,7 +1086,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -1142,7 +1095,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // hérite 200
   },
 
   {
@@ -1152,7 +1104,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // dans la portion 709.9→703.5 = 200
   },
 
   {
@@ -1162,7 +1113,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // 709.9→643.6 = 200
     vmax: 200,
     vmax_bar: true,
   },
@@ -1174,8 +1124,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // dans la portion 713.2→709.9 = 125
-    // -> pas de vmax ni de barre cosmétique dans ce sens
   },
 
   {
@@ -1185,7 +1133,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // 713.2→709.9 = 125
     vmax: 125,
     vmax_bar: true,
   },
@@ -1197,7 +1144,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // 714.7→713.2 = 120
     vmax: 120,
     vmax_highlight: true,
     vmax_bar: true,
@@ -1210,7 +1156,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // 715.5→714.7 = 120
     vmax: 120,
     vmax_highlight: true,
     vmax_bar: true,
@@ -1223,7 +1168,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // 716.8→715.5 = 165
     vmax: 165,
     vmax_bar: true,
   },
@@ -1235,7 +1179,6 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // dans la portion 752.4→716.8 = 200
   },
   {
     pk: "723.7",
@@ -1244,10 +1187,8 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     radio: "◯ GSMR",
     rc: 18,
     rc_bar: false,
-    // idem, hérite 200
   },
 
-  // Remarque rouge AVANT FIGUERES-VILAFANT (alignée sur la version de référence)
   {
     pk: "",
     dependencia: "",
@@ -1259,15 +1200,13 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     rc_bar: false,
   },
 
-
-  {
+   {
     pk: "748.9",
     dependencia: "FIGUERES-VILAFANT",
     bloqueo: "↓ BCA ↓",
     radio: "◯ GSMR",
     rc: 18,
-    rc_bar: false,
-    // dans la portion 752.4→716.8 = 200
+    rc_bar: true, // ✅ BARRE RC 3 (748.9)
   },
 
   {
@@ -1278,62 +1217,145 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
     pk_lfp: "44.4",
     pk_internal: 752.4,
 
-    bloqueo: "↓ BCA ↓",
+    // ✅ BARRE 2
+    bloqueo_bar: 2,
+
     radio: "◯ GSMR",
-    rc: 18,
+    rc: 13,         // ✅ segment 13 (entre 779.7 et 748.9)
     rc_bar: false,
+
+    // ✅ En dessous de la barre 2 : on garde 200
     vmax: 200,
-    vmax_bar: false,
+    vmax_bar: true,
   },
   {
-    // PK interne continu (virtuel) : correspond au PK LFP 0.0
-    // (repère interne basé sur ADIF, en prenant l’ancre 752.4 ↔ LFP 44.4)
-    pk: "796.8",
-    dependencia: "LFP PK 0 (POINT TECHNIQUE)",
+    pk: "771.2",
+    dependencia: "TETE SUD TUNNEL",
     network: "LFP",
-    pk_lfp: "0.0",
-    pk_internal: 796.8,
+    pk_lfp: "25.6",
+    pk_internal: 771.2,
 
-    // TODO: à affiner plus tard (vmax/rc/radio/bloqueo) pour la portion FR/LFP
-    bloqueo: "↓ BCA ↓",
+    // ✅ Entre barre 1 et barre 2
+    bloqueo: "ERTMS Niv. 1",
+
     radio: "◯ GSMR",
-    rc: 18,
+    rc: 13,         // ✅ segment 13
     rc_bar: false,
-    vmax: 200,
+
+    // ✅ Entre les barres : 300
+    vmax: 300,
+    vmax_bar: false,
+  },
+  {
+    pk: "772.2",
+    dependencia: "FRONTIERE",
+    network: "LFP",
+    pk_lfp: "24.6",
+    pk_internal: 772.2,
+
+    // ✅ Entre barre 1 et barre 2
+    bloqueo: "ERTMS Niv. 1",
+
+    radio: "◯ GSMR",
+    rc: 13,         // ✅ segment 13
+    rc_bar: false,
+
+    // ✅ Entre les barres : 300
+    vmax: 300,
+    vmax_bar: false,
+  },
+  {
+    pk: "779.7",
+    dependencia: "TETE NORD TUNNEL",
+    network: "LFP",
+    pk_lfp: "17.1",
+    pk_internal: 779.7,
+
+    // ✅ Entre barre 1 et barre 2
+    bloqueo: "ERTMS Niv. 1",
+
+    radio: "◯ GSMR",
+    rc: 18,         // ✅ segment 18 (entre 799.7 et 779.7)
+    rc_bar: true,   // ✅ BARRE RC 2 (779.7)
+
+    // ✅ Entre les barres : 300
+    vmax: 300,
+    vmax_bar: false,
+  },
+  {
+    pk: "783.9",
+    dependencia: "SAUT DE MOUTON",
+    network: "LFP",
+    pk_lfp: "12.9",
+    pk_internal: 783.9,
+
+    // ✅ Entre barre 1 et barre 2
+    bloqueo: "ERTMS Niv. 1",
+
+    radio: "◯ GSMR",
+    rc: 18,         // ✅ segment 18
+    rc_bar: false,
+
+    // ✅ Entre les barres : 300
+    vmax: 300,
     vmax_bar: false,
   },
 
   {
-    // Limite RFN ↔ LFP (PK RFN 473.300)
     pk: "799.7",
     dependencia: "LIMITE RFN - LFPSA",
     network: "RFN",
-    pk_rfn: "473.300",
+    pk_rfn: "473.3",
     pk_internal: 799.7,
 
-    bloqueo: "↓ BCA ↓",
+    // ✅ BARRE 1
+    bloqueo_bar: 1,
+
     radio: "◯ GSMR",
-    rc: 18,
+    rc: 10,         // ✅ segment 10 (au-dessus de 799.7)
+    rc_bar: true,   // ✅ BARRE RC 1 (799.7)
+
+    // ✅ La barre 1 marque l'entrée dans la zone 300
+    vmax: 300,
+    vmax_bar: true,
+  },
+
+  {
+    pk: "802.0",
+    dependencia: "LIMITE RAC - LFP-FRR",
+    network: "RFN",
+    pk_rfn: "471.0",
+    pk_internal: 802.0,
+
+    // ✅ Au-dessus de la barre 1
+    bloqueo: "BAL KVB",
+
+    radio: "◯ GSMR",
+    rc: 10,       // ✅ segment 10
     rc_bar: false,
-    vmax: 200,
+
+    // ✅ Au-dessus de la barre 1 : 160
+    vmax: 160,
     vmax_bar: false,
   },
 
   {
-    // PERPIGNAN (PK RFN 467.500)
     pk: "805.5",
     dependencia: "PERPIGNAN",
     network: "RFN",
-    pk_rfn: "467.500",
+    pk_rfn: "467.5",
     pk_internal: 805.5,
 
-    bloqueo: "↓ BCA ↓",
+    // ✅ Au-dessus de la barre 1
+    bloqueo: "BAL KVB",
+
     radio: "◯ GSMR",
-    rc: 18,
+    rc: 10,       // ✅ segment 10
     rc_bar: false,
-    vmax: 200,
+
+    // ✅ Au-dessus de la barre 1 : 160
+    vmax: 160,
     vmax_bar: false,
   },
 
-];
-
+ ];

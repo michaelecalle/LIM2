@@ -9,6 +9,7 @@ import {
   type CsvSens,
 } from "../../data/ligneFT";
 import { logTestEvent } from "../../lib/testLogger";
+import { getFtFranceHhmm } from "../../data/ftFranceTimes"
 
 type GpsPosition = {
   lat: number;
@@ -1432,17 +1433,18 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
       const text =
         fixed === 0 ? "0 min" : fixed > 0 ? `+ ${fixed} min` : `- ${-fixed} min`;
 
-      window.dispatchEvent(
-        new CustomEvent("lim:schedule-delta", {
-          detail: {
-            text,
-            isLargeDelay: Math.abs(fixed) >= 5,
-            deltaSec, // delta signé en secondes (depuis la base)
-          },
-        })
-      );
-    }
-
+      if (effectiveFtView === "ES") {
+        window.dispatchEvent(
+          new CustomEvent("lim:schedule-delta", {
+            detail: {
+              text,
+              isLargeDelay: Math.abs(fixed) >= 5,
+              deltaSec,
+            },
+          })
+        );
+      }
+    } // ✅ fermeture du if (autoScrollBaseRef.current) manquante
 
     const updateFromClock = (forcedHHMM?: string) => {
       // si heure forcée (console), on garde l'ancien comportement
@@ -1660,15 +1662,18 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
       const fixed = base.fixedDelay ?? 0;
       const text =
         fixed === 0 ? "0 min" : fixed > 0 ? `+ ${fixed} min` : `- ${-fixed} min`;
-      window.dispatchEvent(
-        new CustomEvent("lim:schedule-delta", {
-          detail: {
-            text,
-            isLargeDelay: Math.abs(fixed) >= 5,
-          },
-        })
-      );
-    };
+      if (effectiveFtView === "ES") {
+        window.dispatchEvent(
+          new CustomEvent("lim:schedule-delta", {
+            detail: {
+              text,
+              isLargeDelay: Math.abs(fixed) >= 5,
+            },
+          })
+        );
+      }
+
+    }; // ✅ fermeture de updateFromClock (manquante dans TON fichier)
 
     // premier calage immédiat
     updateFromClock();
@@ -1686,14 +1691,11 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
         updateFromClock(time);
       }
     };
-    window.addEventListener("ft:force-time", handleForceTime as EventListener);
+    window.addEventListener("ft:force-time", handleForceTime);
 
     return () => {
       clearInterval(timer);
-      window.removeEventListener(
-        "ft:force-time",
-        handleForceTime as EventListener
-      );
+      window.removeEventListener("ft:force-time", handleForceTime);
     };
   }, [autoScrollEnabled]);
 
@@ -1834,9 +1836,11 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
       );
     }
 
+    const hasFranceFtLocal = !!trainNumber && FT_FR_WHITELIST.has(trainNumber);
     let firstIdx = 0;
     let lastIdx = oriented.length - 1;
 
+    // Tronquage NORMAL routeStart/routeEnd : évite d'afficher des branches hors parcours (ex: CAN TUNIS)
     if (routeStart && routeEnd) {
       const nStartWanted = normName(routeStart);
       const nEndWanted = normName(routeEnd);
@@ -1881,6 +1885,26 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
       }
     }
 
+    // Extension "France" : si train whitelisté, on étend la portion pour inclure UNIQUEMENT les lignes RFN
+    // (sans toucher au terminus Barcelone, donc sans réintroduire CAN TUNIS)
+    if (hasFranceFtLocal) {
+      let minRfn = Number.POSITIVE_INFINITY;
+      let maxRfn = Number.NEGATIVE_INFINITY;
+
+      for (let i = 0; i < oriented.length; i++) {
+        const e = oriented[i] as any;
+        if (e.isNoteOnly) continue;
+        if (e.network === "RFN") {
+          if (i < minRfn) minRfn = i;
+          if (i > maxRfn) maxRfn = i;
+        }
+      }
+
+      if (Number.isFinite(minRfn) && Number.isFinite(maxRfn)) {
+        firstIdx = Math.min(firstIdx, minRfn);
+        lastIdx = Math.max(lastIdx, maxRfn);
+      }
+    }
     const visibleEntries = oriented.slice(firstIdx, lastIdx + 1);
 
     const snapshot = visibleEntries
@@ -2886,14 +2910,16 @@ logTestEvent("gps:mode-check", {
                   ? `+ ${fixedDelay} min`
                   : `- ${-fixedDelay} min`;
 
-              window.dispatchEvent(
-                new CustomEvent("lim:schedule-delta", {
-                  detail: {
-                    text,
-                    isLargeDelay: Math.abs(fixedDelay) >= 5,
-                  },
-                })
-              );
+              if (effectiveFtView === "ES") {
+                window.dispatchEvent(
+                  new CustomEvent("lim:schedule-delta", {
+                    detail: {
+                      text,
+                      isLargeDelay: Math.abs(fixedDelay) >= 5,
+                    },
+                  })
+                );
+              }
 
               const nowHHMM =
                 now.getHours().toString().padStart(2, "0") +
@@ -3135,8 +3161,35 @@ logTestEvent("gps:mode-check", {
 
   function isEligible(e: FTEntry): boolean {
     if ((e as any).isNoteOnly) return false;
+
+    // Les heures détectées (ft:heures) sont celles de la FT Espagne (ADIF).
+    // Quand on affiche la FT complète (avec la partie France), certaines lignes "techniques"
+    // ne doivent PAS consommer le curseur d'heures, sinon décalage global.
+const net = (e as any).network as string | undefined;
+
+// ✅ Train whitelisté => les heures détectées proviennent de la FT ADIF,
+// donc seules les lignes ADIF consomment le curseur (sinon décalage).
+const hasFranceFtLocal = !!trainNumber && FT_FR_WHITELIST.has(trainNumber);
+if (hasFranceFtLocal) {
+  if (net && net !== "ADIF") return false; // exclut RFN + LFP + tout le reste
+} else {
+  // garde-fou historique
+  if (net === "RFN") return false;
+}
+
     const s = (e.pk ?? "").toString().trim();
     const d = (e.dependencia ?? "").toString().trim();
+
+    // Exclure les lignes techniques intermédiaires (elles n'ont pas d'heure dans le PDF ADIF)
+    const dUp = d.toUpperCase();
+    if (
+      dUp.includes("LFP PK") ||
+      dUp.includes("POINT TECHNIQUE") ||
+      dUp.includes("LIMITE RFN")
+    ) {
+      return false;
+    }
+
     return s.length > 0 && d.length > 0;
   }
 
@@ -3203,6 +3256,47 @@ logTestEvent("gps:mode-check", {
       if (info) {
         segmentSpeed.set(segId, info);
       }
+    }
+  }
+
+  // --- Pré-calcul des segments Bloqueo (timeline type VMAX) ---
+  const bloqueoSegmentIndex: number[] = [];
+  const bloqueoLabelRowIndex = new Map<number, number>();
+  const bloqueoValueBySeg = new Map<number, string>();
+
+  {
+    let currentBloqueoSegId = 0;
+    let prevValue = "";
+
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e: any = rawEntries[i];
+
+      if (e?.isNoteOnly) {
+        bloqueoSegmentIndex[i] = currentBloqueoSegId;
+        continue;
+      }
+
+      // Barre de séparation : pas une valeur de segment
+      const bar = e?.bloqueo_bar;
+      if (bar === 1 || bar === 2) {
+        bloqueoSegmentIndex[i] = currentBloqueoSegId;
+        continue;
+      }
+
+      const val = String(e?.bloqueo ?? "").trim();
+
+      if (val && val !== prevValue) {
+        currentBloqueoSegId =
+          currentBloqueoSegId === 0 ? 1 : currentBloqueoSegId + 1;
+        prevValue = val;
+
+        if (!bloqueoLabelRowIndex.has(currentBloqueoSegId)) {
+          bloqueoLabelRowIndex.set(currentBloqueoSegId, i);
+        }
+        bloqueoValueBySeg.set(currentBloqueoSegId, val);
+      }
+
+      bloqueoSegmentIndex[i] = currentBloqueoSegId;
     }
   }
 
@@ -3856,6 +3950,9 @@ logTestEvent("gps:mode-check", {
   let rcCurrentSegmentId = 0;
   const rcPrintedSegments = new Set<number>();
 
+  // Gestion Bloqueo/Sen-SIG (scroll intelligent)
+  const bloqueoPrintedSegments = new Set<number>();
+
   // Gestion VMax (scroll intelligent)
   const vPrintedSegments = new Set<number>();
 
@@ -3868,8 +3965,6 @@ logTestEvent("gps:mode-check", {
   let mainRowCounter = 0;
   // radio : on veut l'afficher une seule fois dans le viewport
   let radioPrintedInThisRender = false;
-  // bloqueo : on veut l'afficher une seule fois dans le viewport
-  let bloqueoPrintedInThisRender = false;
 
   const arrivalEvents: { arrivalMin: number; rowIndex: number }[] = [];
 
@@ -3986,14 +4081,35 @@ logTestEvent("gps:mode-check", {
     const nextEntry = rawEntries[i + 1];
     const hasNoteAfter = nextEntry && nextEntry.isNoteOnly === true;
 
-    const sitKm = entry.isNoteOnly ? "" : entry.pk ?? "";
+    const net = (entry as any).network as ("RFN" | "LFP" | "ADIF" | undefined);
 
-    const eligible = isEligible(entry);
-    const horaAssigned =
-      eligible && heuresDetecteesCursor < heuresDetectees.length
-        ? heuresDetectees[heuresDetecteesCursor]
-        : (entry as any).hora ?? "";
-    const hora = horaAssigned;
+const sitKm =
+  entry.isNoteOnly
+    ? ""
+    : net === "RFN"
+      ? ((entry as any).pk_rfn ?? "")
+      : net === "LFP"
+        ? ((entry as any).pk_lfp ?? "")
+        : net === "ADIF"
+          ? ((entry as any).pk_adif ?? entry.pk ?? "")
+          : (entry.pk ?? "");
+
+// FT France : lookup horaire (clé = PK affiché, mais en virgule comme dans ftFranceTimes)
+const pkKey = (sitKm ?? "").toString().replace(".", ",");
+
+const eligible = isEligible(entry);
+const horaAssigned =
+  eligible && heuresDetecteesCursor < heuresDetectees.length
+    ? heuresDetectees[heuresDetecteesCursor]
+    : (entry as any).hora ?? "";
+
+// Heures France (si dispo) : lookup par n° de train + PK "à la française" (virgule)
+const horaFrance =
+  net === "RFN" || net === "LFP"
+    ? getFtFranceHhmm(trainNumber, pkKey)
+    : "";
+
+const hora = horaAssigned || horaFrance;
 
     const depNorm = (entry.dependencia ?? "")
       .toUpperCase()
@@ -4100,6 +4216,7 @@ logTestEvent("gps:mode-check", {
 
     const radio = (entry as any).radio ?? "";
     const bloqueo = (entry as any).bloqueo ?? "";
+    const bloqueoBar = (entry as any).bloqueo_bar ?? null;
 
     // Arrêt : ligne principale avec COM ou TECN non vide
     const hasComOrTecnico =
@@ -4157,8 +4274,11 @@ logTestEvent("gps:mode-check", {
 
     const showRcBar = isRcBreakpointHere && i !== rawEntries.length - 1;
 
-    // (on remet la ligne qui manquait)
-    const nivel = (entry as any).etcs ?? "①";
+// Colonne N (ETCS) : ① uniquement côté Espagne (ADIF / network absent)
+const nivel =
+  (entry as any).network === "RFN" || (entry as any).network === "LFP"
+    ? ""
+    : ((entry as any).etcs ?? "①");
 
     // --- Vitesse par segment ---
     const segId = speedSegmentIndex[i] ?? 0;
@@ -4452,31 +4572,66 @@ onClick={() => {
 
       >
         {(() => {
-          renderedRowIndex++;
+         // 0) Barre de séparation Bloqueo
+if (bloqueoBar === 1 || bloqueoBar === 2) {
+  return (
+    <td className="ft-td" style={{ position: "relative" }}>
+      <div
+        style={{
+          height: 2,
 
-          // 1) cas normal : la toute première vraie ligne est visible
-          const isFirstRow = i === firstNonNoteIndex;
-          const isFirstRowVisible =
-            i >= visibleRows.first && i <= visibleRows.last;
+          width: "calc(100% + 12px)",
+          left: -6,
+          right: -6,
 
-          if (isFirstRow && isFirstRowVisible) {
-            bloqueoPrintedInThisRender = true;
-            return <td className="ft-td">{bloqueo}</td>;
+          borderRadius: 0,
+          background: "currentColor",
+          opacity: 1,
+
+          position: "absolute",
+          top: "50%",
+          transform: "translateY(-50%)",
+        }}
+      />
+    </td>
+  );
+}
+          // 1) Affichage type VMAX : valeur au début de segment
+          const segId = bloqueoSegmentIndex[i] ?? 0;
+          const labelRowIndex =
+            segId > 0 ? bloqueoLabelRowIndex.get(segId) ?? null : null;
+          const segValue = segId > 0 ? bloqueoValueBySeg.get(segId) ?? "" : "";
+
+          if (labelRowIndex !== null && i === labelRowIndex) {
+            return <td className="ft-td">{segValue}</td>;
           }
 
-          // 2) sinon, on le repose sur la 2e ligne principale visible
-          const visibleStart3 = visibleRows.first;
-          const visibleEnd3 = visibleRows.last;
-          const targetVisible3 = visibleStart3 + 1; // même logique que Radio / VMax
-          const isGoodSpot =
-            mainRowCounter >= targetVisible3 && mainRowCounter <= visibleEnd3;
+          // 2) Scroll intelligent : si la ligne-label est hors viewport,
+          // on réaffiche la valeur une seule fois dans la zone visible.
+          if (segId > 0 && segValue && !bloqueoPrintedSegments.has(segId)) {
+            const visibleStart = visibleRows.first;
+            const visibleEnd = visibleRows.last;
 
-          if (!bloqueoPrintedInThisRender && isGoodSpot) {
-            bloqueoPrintedInThisRender = true;
-            return <td className="ft-td">{bloqueo}</td>;
+            const labelIsVisible =
+              labelRowIndex !== null &&
+              labelRowIndex >= visibleStart &&
+              labelRowIndex <= visibleEnd;
+
+            if (!labelIsVisible) {
+              const segStillVisible = i >= visibleStart && i <= visibleEnd;
+              const targetVisible = visibleStart + 1; // même logique que VMAX/RC
+              const isGoodSpot =
+                segStillVisible &&
+                mainRowCounter >= targetVisible &&
+                mainRowCounter <= visibleEnd;
+
+              if (isGoodSpot) {
+                bloqueoPrintedSegments.add(segId);
+                return <td className="ft-td">{segValue}</td>;
+              }
+            }
           }
 
-          // 3) sinon, rien
           return <td className="ft-td"></td>;
         })()}
 

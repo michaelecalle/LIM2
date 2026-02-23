@@ -1920,7 +1920,7 @@ export default function FT({ variant = "classic" }: FTProps) {
     };
 
     // --------
-    // 1) Ancres horaires (départ) = même logique que ton horaTheoMinutesByIndex
+    // 1) Ancres horaires = mapping 1:1 eligibleIndices <-> heuresDetectees
     // --------
     const eligibleIndices: number[] = [];
     for (let i = 0; i < rawEntries.length; i++) {
@@ -1945,12 +1945,14 @@ export default function FT({ variant = "classic" }: FTProps) {
       }
     }
 
-    if (anchors.length < 2) {
-      return out;
-    }
+    if (anchors.length < 2) return out;
 
     // --------
-    // 2) Interpolation pondérée par (dKm / vmax)
+    // 2) Interpolation pondérée (distance / vmax)
+    //    + garde-fous:
+    //      - strictement croissant entre A et B (au moins +1s)
+    //      - la dernière ligne avant B est <= (B - 1s)
+    //      - on calcule une position au "début de ligne i" via un préfixe
     // --------
     const minutesInDay = 24 * 60;
 
@@ -1968,13 +1970,12 @@ export default function FT({ variant = "classic" }: FTProps) {
       // wrap minuit si nécessaire (ex: 23:58 -> 00:02)
       if (B_min < A_min) B_min += minutesInDay;
 
-      const deltaSec = (B_min - A_min) * 60;
-      if (!(deltaSec > 0)) continue;
+      const totalSec = (B_min - A_min) * 60;
+      if (!(totalSec > 0)) continue;
 
-      type Seg = { idx: number; w: number; x: number };
-      const segs: Seg[] = [];
+      // poids des segments i -> i+1
+      const segW: number[] = new Array(rawEntries.length).fill(0);
 
-      // on échantillonne les segments entre i0..i1 à partir des PK
       for (let i = i0; i < i1; i++) {
         const pkA = getPkNum(i);
         const pkB = getPkNum(i + 1);
@@ -1986,48 +1987,60 @@ export default function FT({ variant = "classic" }: FTProps) {
         const v = getVmaxForIndex(i) ?? getVmaxForIndex(i + 1);
         if (v == null) continue;
 
-        // poids ~ temps = distance / vitesse
-        const w = dKm / v;
-        segs.push({ idx: i, w, x: 0 });
+        const w = dKm / v; // ~ temps
+        if (Number.isFinite(w) && w > 0) segW[i] = w;
       }
 
-      if (segs.length === 0) continue;
-
-      const W = segs.reduce((acc, s) => acc + s.w, 0);
+      const W = segW.slice(i0, i1).reduce((acc, w) => acc + w, 0);
       if (!(W > 0)) continue;
 
-      // cumul pondéré 0..1
-      let cum = 0;
-      for (let k = 0; k < segs.length; k++) {
-        cum += segs[k].w;
-        segs[k].x = clamp(cum / W, 0, 1);
+      // position normalisée au "début" de chaque index i
+      // pos[i0] = 0
+      // pos[i1] = 1
+      const posByIndex = new Array<number | null>(rawEntries.length).fill(null);
+      posByIndex[i0] = 0;
+
+      let prefix = 0;
+      for (let i = i0 + 1; i <= i1; i++) {
+        prefix += segW[i - 1] || 0;
+        posByIndex[i] = clamp(prefix / W, 0, 1);
       }
 
-      // assigne à chaque “idx” (entre i0 et i1) un temps interpolé
-      // On remplit uniquement si pas déjà ancré.
       const baseSec = A_min * 60;
+      const endSec = baseSec + totalSec; // = B exact (en secondes, avec wrap déjà géré)
+
+      // Remplissage des indices STRICTEMENT entre i0 et i1
+      let prevAssigned = out[i0] ?? baseSec;
 
       for (let i = i0 + 1; i < i1; i++) {
-        if (out[i] != null) continue;
-
-        // trouver la position x correspondante :
-        // on repère le segment dont idx <= i < idx+1 puis on prend son x
-        let x = null as number | null;
-        for (let k = 0; k < segs.length; k++) {
-          if (segs[k].idx >= i) {
-            x = segs[k].x;
-            break;
-          }
+        if (out[i] != null) {
+          // si déjà renseigné, on garde mais on met à jour prevAssigned
+          prevAssigned = out[i] as number;
+          continue;
         }
-        if (x == null) x = segs[segs.length - 1].x;
 
-        const sec = baseSec + x * deltaSec;
+        const x0 = posByIndex[i];
+        if (x0 == null) continue;
+
+        // temps au "début de la ligne i"
+        let sec = baseSec + x0 * totalSec;
+
+        // garde-fou: strictement croissant (au moins +1s)
+        sec = Math.max(sec, prevAssigned + 1);
+
+        // garde-fou: ne JAMAIS atteindre B sur une ligne avant l’ancre B
+        sec = Math.min(sec, endSec - 1);
+
         out[i] = sec;
+        prevAssigned = sec;
       }
+
+      // on force l’ancre B exacte (déjà faite, mais on sécurise)
+      out[i1] = endSec;
     }
 
     return out;
-  }, [rawEntries, heuresDetectees, speedMap, parseHoraToMinutes]);
+  }, [rawEntries, heuresDetectees, speedMap]);
 
   const { rows, arrivalEvents } = buildFtRows({
     rawEntries,

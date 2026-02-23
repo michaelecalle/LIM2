@@ -264,11 +264,6 @@ export function buildFtRows(params: BuildFtRowsParams): {
     const sitKm = entry.isNoteOnly ? "" : entry.pk ?? "";
 
     const eligible = isEligible(entry);
-    const horaAssigned =
-      eligible && heuresDetecteesCursor < heuresDetectees.length
-        ? heuresDetectees[heuresDetecteesCursor]
-        : (entry as any).hora ?? "";
-    const hora = horaAssigned;
 
     const depNorm = (entry.dependencia ?? "")
       .toUpperCase()
@@ -280,6 +275,18 @@ export function buildFtRows(params: BuildFtRowsParams): {
       depNorm === "LA SAGRERA AV" ||
       depNorm === "GIRONA" ||
       depNorm === "FIGUERES-VILAFANT";
+
+    // ✅ On ne consomme heuresDetectees QUE sur les lignes "ancre" (arrêts)
+    const isHoraAnchor =
+      eligible &&
+      (isVoyageursStop || i === firstNonNoteIndex || i === lastNonNoteIndex);
+
+    const horaAssigned =
+      isHoraAnchor && heuresDetecteesCursor < heuresDetectees.length
+        ? heuresDetectees[heuresDetecteesCursor]
+        : (entry as any).hora ?? "";
+
+    const hora = horaAssigned;
 
     let com = "";
     let comMinutes: number | null = null;
@@ -321,7 +328,7 @@ export function buildFtRows(params: BuildFtRowsParams): {
       }
     }
 
-    if (eligible && heuresDetecteesCursor < heuresDetectees.length) {
+    if (isHoraAnchor && heuresDetecteesCursor < heuresDetectees.length) {
       heuresDetecteesCursor++;
     }
 

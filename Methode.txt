@@ -6,4 +6,3 @@ Je te rappelle ici nos règles de travail, à respecter IMPERATIVEMENT ET SANS E
 3. En cas de MODIFICATION partielle de code, tu dois identifier clairement et sans ambiguïté la partie de code que je dois remplacer. Pour cela, la méthode la plus efficace est la suivante : tu me donnes exactement les 5 premières et les 5 dernières lignes du code à remplacer, pour que je puisse les identifier avec un Ctrl+F dans VS Code, puis tu me donne le nouveau code à coller à la place.
 4. Pour un AJOUT de code, tu me donnes une instruction du type "Ajoute B entre A et C", ou A et C sont des extraits de mon code réel  et actuel avant modification et B le code à ajouter.
 
-23/02 13h20 Arrivée demi heure avant
