@@ -2275,119 +2275,78 @@ ${coords}
             {pdfMode === 'red' && <span className="font-bold">SECOURS</span>}
           </button>
 
-          {/* FT LFP / AUTO / ADIF */}
-          {trainDisplay &&
-            (() => {
-              const n = parseInt(trainDisplay, 10)
-              if (!Number.isFinite(n)) return null
+          {/* STOP (remplace l'ancien toggle LFP / AUTO / ADIF) */}
+          {testModeEnabled && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (simulationEnabled) {
+                  logTestEvent('ui:blocked', { control: 'stopButton', source: 'titlebar' })
+                  return
+                }
 
-              const FT_FR_WHITELIST = new Set<number>([9712, 9714, 9707, 9709, 9705, 9710])
-              const isEligible = FT_FR_WHITELIST.has(n)
-              if (!isEligible) return null
+                const ok = window.confirm(
+                  'Arrêter le mode test ?\n\n' +
+                    '(équivaut à STOP : arrêt de la session et export local des logs)'
+                )
+                if (!ok) return
 
-              const isEven = n % 2 === 0
-              const order = isEven ? (['FR', 'AUTO', 'ES'] as const) : (['ES', 'AUTO', 'FR'] as const)
+                if (autoScroll) {
+                  setAutoScroll(false)
+                  window.dispatchEvent(
+                    new CustomEvent('ft:auto-scroll-change', {
+                      detail: { enabled: false, source: 'titlebar_stop_button' },
+                    })
+                  )
+                }
 
-              const labelOf = (mode: 'FR' | 'AUTO' | 'ES') =>
-                mode === 'FR' ? 'LFP' : mode === 'ES' ? 'ADIF' : 'AUTO'
+                stopGpsWatch()
 
-              return (
-                <div
-                  className="h-8 rounded-md overflow-hidden bg-zinc-200 dark:bg-zinc-700 flex"
-                  title="Choix FT : LFP / AUTO / ADIF"
-                >
-                  {order.map((mode) => {
-                    const isAuto = mode === 'AUTO'
-                    const autoAvailable = !!autoResolved.available
-                    const autoDisabled = isAuto && !autoAvailable
+                setScheduleDelta(null)
+                setScheduleDeltaIsLarge(false)
+                setScheduleDeltaSec(null)
 
-                    const isSelected = ftViewMode === mode
-                    const showAutoActive = isAuto && autoEngaged
+                setPdfMode('blue')
+                setPdfLoading(false)
+                stopPdfLoadingGuard()
 
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        disabled={autoDisabled}
-                        onClick={() => {
-                          if (simulationEnabled) {
-                            logTestEvent('ui:blocked', { control: 'ftViewMode', source: 'titlebar' })
-                            return
-                          }
+                window.dispatchEvent(new CustomEvent('lim:clear-pdf'))
+                window.dispatchEvent(new CustomEvent('ft:clear-pdf'))
+                window.dispatchEvent(new CustomEvent('lim:pdf-raw', { detail: { file: null } }))
 
-                          if (autoSwitchTimerRef.current != null) {
-                            window.clearTimeout(autoSwitchTimerRef.current)
-                            autoSwitchTimerRef.current = null
-                          }
+                if (testRecording) {
+                  logTestEvent('ui:test:stop', { source: 'titlebar_stop_button' })
+                  stopTestSession()
+                  setTestRecording(false)
+                }
 
-                          if (autoDisabled) {
-                            logTestEvent('ui:ftViewMode:auto:blocked', {
-                              source: 'titlebar',
-                              reason: autoResolved.reason ?? 'not_available',
-                            })
-                            return
-                          }
+                try {
+                  const exported = await exportTestLogLocal()
+                  if (!exported) {
+                    window.alert('Aucun événement de test à exporter.')
+                    logTestEvent('testlog:export:failed', {
+                      reason: 'no_events',
+                      source: 'titlebar_stop_button',
+                    })
+                  } else {
+                    logTestEvent('testlog:exported', { source: 'titlebar_stop_button' })
+                  }
+                } catch (err: any) {
+                  window.alert('Export local des logs impossible.')
+                  logTestEvent('testlog:export:failed', {
+                    reason: err?.message ?? String(err),
+                    source: 'titlebar_stop_button',
+                  })
+                }
 
-                          if (isAuto) {
-                            if (autoEngaged) {
-                              logTestEvent('ui:ftViewMode:auto:ignored', {
-                                source: 'titlebar',
-                                reason: 'already_engaged',
-                                currentMode: ftViewMode,
-                              })
-                              return
-                            }
-
-                            setAutoEngaged(true)
-
-                            setFtViewMode('AUTO')
-                            logTestEvent('ui:ftViewMode:change', { mode: 'AUTO', source: 'titlebar' })
-
-                            const sideSnapshot = autoResolved.side
-                            const target: 'ES' | 'FR' = sideSnapshot === 'FR' ? 'FR' : 'ES'
-
-                            autoSwitchTimerRef.current = window.setTimeout(() => {
-                              autoSwitchTimerRef.current = null
-                              setFtViewMode(target)
-
-                              logTestEvent('ui:ftViewMode:auto:apply', {
-                                source: 'titlebar',
-                                side: sideSnapshot,
-                                target,
-                                delayMs: 1000,
-                              })
-                            }, 1000)
-
-                            return
-                          }
-
-                          setFtViewMode(mode)
-                          logTestEvent('ui:ftViewMode:change', {
-                            mode,
-                            source: 'titlebar',
-                            autoEngaged: autoEngaged,
-                          })
-                        }}
-                        className={
-                          'px-3 text-xs font-semibold ' +
-                          (showAutoActive ? 'ring-2 ring-inset ring-emerald-500 dark:ring-emerald-400 ' : '') +
-                          (isSelected
-                            ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100'
-                            : autoDisabled
-                              ? 'text-zinc-400 dark:text-zinc-500 cursor-not-allowed'
-                              : isAuto && autoAvailable
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-zinc-700 dark:text-zinc-200')
-                        }
-                      >
-                        {labelOf(mode)}
-                      </button>
-                    )
-                  })}
-                </div>
-              )
-            })()}
-
+                setTestModeEnabled(false)
+              }}
+              className="h-8 px-3 text-xs rounded-md bg-red-600 text-white font-semibold flex items-center gap-1"
+              title="Stop : arrêter le mode test et exporter les logs"
+            >
+              <span className="font-bold">STOP</span>
+            </button>
+          )}
           {/* Paramètres */}
           <details ref={settingsDetailsRef} className="relative">
             <summary

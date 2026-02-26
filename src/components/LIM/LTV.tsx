@@ -351,7 +351,39 @@ const LTV: React.FC = () => {
       )
     }
   }, [ltvMode])
+  // ✅ Signale que la hauteur LTV a probablement changé et que le layout peut être re-mesuré
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent("ltv:layout-stable", {
+            detail: {
+              mode: ltvMode || null,
+              rowsCount: rows.length,
+              hasPreviewImage: !!previewImage,
+              hasFinalCropped: !!finalCroppedUrl,
+              isCropping,
+            },
+          })
+        )
+      }, 0)
 
+      window.setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent("ltv:layout-stable", {
+            detail: {
+              mode: ltvMode || null,
+              rowsCount: rows.length,
+              hasPreviewImage: !!previewImage,
+              hasFinalCropped: !!finalCroppedUrl,
+              isCropping,
+              delayed: true,
+            },
+          })
+        )
+      }, 120)
+    })
+  }, [ltvMode, rows.length, previewImage, finalCroppedUrl, isCropping])
   // --- début du drag (NEEDS_CROP)
   const handleEdgeStart = (
     edge: "top" | "bottom" | "left" | "right",

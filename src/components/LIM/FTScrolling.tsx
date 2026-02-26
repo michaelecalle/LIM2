@@ -55,16 +55,30 @@ const FTScrolling: React.FC<FTScrollingProps> = ({
       });
     };
 
-
     const onPdfModeChange = (e: Event) => {
       const ce = e as CustomEvent<any>;
       const mode = ce?.detail?.mode as "blue" | "green" | "red" | undefined;
       if (mode === "green") {
         // après import, le layout bouge : on re-mesure
         requestAnimationFrame(() => {
-          window.setTimeout(() => updateMaxHeight("pdf-mode-green"), 0);
+          window.setTimeout(() => updateMaxHeight("pdf-mode-green@0ms"), 0);
+          window.setTimeout(() => updateMaxHeight("pdf-mode-green@120ms"), 120);
         });
       }
+    };
+
+    // ✅ Mesure initiale au montage
+    requestAnimationFrame(() => {
+      updateMaxHeight("mount@raf");
+      window.setTimeout(() => updateMaxHeight("mount@0ms"), 0);
+      window.setTimeout(() => updateMaxHeight("mount@120ms"), 120);
+    });
+
+    const onLtvLayoutStable = () => {
+      requestAnimationFrame(() => {
+        window.setTimeout(() => updateMaxHeight("ltv-layout-stable@0ms"), 0);
+        window.setTimeout(() => updateMaxHeight("ltv-layout-stable@120ms"), 120);
+      });
     };
 
     window.addEventListener("resize", onResize);
@@ -73,6 +87,7 @@ const FTScrolling: React.FC<FTScrollingProps> = ({
       onFoldChange as EventListener
     );
     window.addEventListener("lim:pdf-mode-change", onPdfModeChange as EventListener);
+    window.addEventListener("ltv:layout-stable", onLtvLayoutStable as EventListener);
 
     return () => {
       window.removeEventListener("resize", onResize);
@@ -81,6 +96,7 @@ const FTScrolling: React.FC<FTScrollingProps> = ({
         onFoldChange as EventListener
       );
       window.removeEventListener("lim:pdf-mode-change", onPdfModeChange as EventListener);
+      window.removeEventListener("ltv:layout-stable", onLtvLayoutStable as EventListener);
     };
 
   }, []);
