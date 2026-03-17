@@ -356,7 +356,7 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
     vmax_bar: true,
   },
   {
-    pk: "640.5",
+    pk: "640.9",
     dependencia: "BIF. MOLLET",
     bloqueo: "↓ BCA ↓",
     radio: "◯ GSMR",
@@ -450,7 +450,7 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
   },
 
   {
-    pk: "662.1",
+    pk: "662.5",
     dependencia: "LLINARS-A. V",
     bloqueo: "↓ BCA ↓",
     radio: "◯ GSMR",
@@ -468,7 +468,7 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
   },
 
   {
-    pk: "678.1",
+    pk: "679.3",
     dependencia: "RIELLS-A. V",
     bloqueo: "↓ BCA ↓",
     radio: "◯ GSMR",
@@ -614,7 +614,7 @@ export const FT_LIGNE_PAIR: FTEntry[] = [
   },
 
 {
-  pk: "748.9",
+  pk: "749.6",
   dependencia: "FIGUERES-VILAFANT",
   bloqueo: "↓ BCA ↓",
   radio: "◯ GSMR",
@@ -941,7 +941,7 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
   },
 
   {
-    pk: "640.5",
+    pk: "640.9",
     dependencia: "BIF. MOLLET",
     bloqueo: "↓ BCA ↓",
     radio: "◯ GSMR",
@@ -1035,7 +1035,7 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
   },
 
   {
-    pk: "662.1",
+    pk: "662.5",
     dependencia: "LLINARS-A. V",
     bloqueo: "↓ BCA ↓",
     radio: "◯ GSMR",
@@ -1053,7 +1053,7 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
   },
 
   {
-    pk: "678.1",
+    pk: "679.3",
     dependencia: "RIELLS-A. V",
     bloqueo: "↓ BCA ↓",
     radio: "◯ GSMR",
@@ -1201,7 +1201,7 @@ export const FT_LIGNE_IMPAIR: FTEntry[] = [
   },
 
    {
-    pk: "748.9",
+    pk: "749.6",
     dependencia: "FIGUERES-VILAFANT",
     bloqueo: "↓ BCA ↓",
     radio: "◯ GSMR",

@@ -1424,7 +1424,12 @@ const orangeToRedStartedAtRef = React.useRef<number | null>(null);
   const forceRealignOnResumeRef = React.useRef(false);
 
   useEffect(() => {
-    function handlerAutoScroll(e: any) {
+      // ===== GARDE-FOU "SAUT DE PK" =====
+      // Objectif : si un saut énorme arrive, on ne pilote plus la FT avec ce PK.
+      // On force ORANGE et on attend de retrouver une cohérence.
+      const speedKmPerSec = GPS_JUMP_MAX_SPEED_KMH / 3600;
+
+      const lastCoherentPk = lastCoherentPkRef.current;    function handlerAutoScroll(e: any) {
       const detail = e?.detail ?? {};
       const enabled = !!detail.enabled;
       const standby = !!detail.standby;
@@ -1769,29 +1774,70 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
       const now = new Date();
       const nowMin = now.getHours() * 60 + now.getMinutes();
 
-      // minutes écoulées depuis l’activation
-      const elapsed = nowMin - base.realMinInt;
+      const baseRealMinInt =
+        typeof base.realMinInt === "number" && Number.isFinite(base.realMinInt)
+          ? base.realMinInt
+          : null;
 
-      // heure FT qu’on veut suivre
-      const effectiveMin = base.firstHoraMin + elapsed;
-      const effectiveHHMM = minutesToHHMM(effectiveMin);
+      const baseFirstHoraMin =
+        typeof base.firstHoraMin === "number" && Number.isFinite(base.firstHoraMin)
+          ? base.firstHoraMin
+          : null;
+
+      const elapsed =
+        baseRealMinInt != null ? nowMin - baseRealMinInt : null;
+
+      const effectiveMin =
+        baseFirstHoraMin != null && elapsed != null
+          ? baseFirstHoraMin + elapsed
+          : null;
+
+      const effectiveHHMM =
+        effectiveMin != null && Number.isFinite(effectiveMin)
+          ? minutesToHHMM(effectiveMin)
+          : "INVALID";
 
       // on met dans la console exactement ce que tu veux regarder
       console.log(
         `[FT][auto] heure réelle = ${minutesToHHMM(
           nowMin
-        )} | première heure FT = ${minutesToHHMM(
-          base.firstHoraMin
-        )} | diff (minutes depuis activation) = ${elapsed} | heure EFFECTIVE utilisée pour le '>' = ${effectiveHHMM}`
+        )} | première heure FT = ${
+          baseFirstHoraMin != null ? minutesToHHMM(baseFirstHoraMin) : "INVALID"
+        } | diff (minutes depuis activation) = ${
+          elapsed ?? "INVALID"
+        } | heure EFFECTIVE utilisée pour le '>' = ${effectiveHHMM}`
       );
 
       logTestEvent("ft:delta:tick", {
         nowHHMM: minutesToHHMM(nowMin),
-        baseFirstHoraHHMM: minutesToHHMM(base.firstHoraMin),
+        baseFirstHoraHHMM:
+          baseFirstHoraMin != null ? minutesToHHMM(baseFirstHoraMin) : "INVALID",
         elapsedMinutes: elapsed,
         effectiveHHMM,
         fixedDelay: base.fixedDelay ?? null,
       });
+
+      // ✅ Garde-fou : si la base horaire est invalide, on ne touche ni à la ligne active
+      // ni au scroll. On conserve simplement la dernière ligne valide.
+      if (
+        baseRealMinInt == null ||
+        baseFirstHoraMin == null ||
+        elapsed == null ||
+        effectiveMin == null ||
+        !Number.isFinite(effectiveMin)
+      ) {
+        logTestEvent("ft:delta:tick:invalid-base", {
+          nowHHMM: minutesToHHMM(nowMin),
+          baseRealMinInt: base.realMinInt ?? null,
+          baseFirstHoraMin: base.firstHoraMin ?? null,
+          elapsedMinutes: elapsed,
+          effectiveMin,
+          fixedDelay: base.fixedDelay ?? null,
+          activeRowIndexBefore: activeRowIndex,
+          referenceMode: referenceModeRef.current,
+        });
+        return;
+      }
 
       // 🔁 PAUSE AUTOMATIQUE SUR HEURE D’ARRIVÉE
       if (referenceModeRef.current === "HORAIRE") {
@@ -1906,7 +1952,7 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
       }
 
       let dataIndex =
-        exactDataIndex ?? lastPastDataIndex ?? firstValidDataIndex ?? 0;
+        exactDataIndex ?? lastPastDataIndex ?? firstValidDataIndex ?? activeRowIndex;
 
       // ✅ Tick 0 : on évite le "saut" au démarrage
       // - en reprise après Standby, on reste immédiatement sur la vraie ligne de recalage
@@ -2630,7 +2676,44 @@ const isRelock = acceptedMode === "relock";
       const lastCoherentPk = lastCoherentPkRef.current;
       const lastCoherentTs = lastCoherentTsRef.current;
 
-      // Détection uniquement si on a un point cohérent précédent, un PK courant, et un fix sur la ligne non-stale.
+      // ✅ NOUVEAU :
+      // On privilégie la dernière référence "accepted" fournie par pkDecision
+      // quand elle est exploitable, car elle peut mieux représenter la continuité
+      // réelle à travers un tunnel que le dernier "coherent" local.
+      const pkDecisionObj =
+        detail && typeof (detail as any).pkDecision === "object"
+          ? (detail as any).pkDecision
+          : null;
+
+      const lastAcceptedPkFromDecision =
+        pkDecisionObj && typeof pkDecisionObj.lastAcceptedPk === "number" && Number.isFinite(pkDecisionObj.lastAcceptedPk)
+          ? pkDecisionObj.lastAcceptedPk
+          : null;
+
+      const lastAcceptedAtMsFromDecision =
+        pkDecisionObj && typeof pkDecisionObj.lastAcceptedAtMs === "number" && Number.isFinite(pkDecisionObj.lastAcceptedAtMs)
+          ? pkDecisionObj.lastAcceptedAtMs
+          : null;
+
+      // ✅ Base de comparaison utilisée pour détecter le saut :
+      // priorité au dernier "accepted", sinon fallback sur le dernier "coherent".
+      const jumpRefPk =
+        lastAcceptedPkFromDecision != null ? lastAcceptedPkFromDecision : lastCoherentPk;
+
+      const jumpRefTs =
+        lastAcceptedAtMsFromDecision != null && lastAcceptedAtMsFromDecision > 0
+          ? lastAcceptedAtMsFromDecision
+          : lastCoherentTs;
+
+      const jumpRefSource =
+        lastAcceptedPkFromDecision != null &&
+        lastAcceptedAtMsFromDecision != null &&
+        lastAcceptedAtMsFromDecision > 0
+          ? "lastAccepted"
+          : "lastCoherent";
+
+      // Détection uniquement si on a un point de référence précédent, un PK courant,
+      // et un fix sur la ligne non-stale.
       let pkJumpSuspect = false;
 
       if (
@@ -2639,36 +2722,35 @@ const isRelock = acceptedMode === "relock";
         onLine &&
         !isStale &&
         pk != null &&
-        lastCoherentPk != null &&
-        lastCoherentTs > 0
+        jumpRefPk != null &&
+        jumpRefTs > 0
       ) {
-        const dtSecRaw = Math.max(0, (sampleTs - lastCoherentTs) / 1000)
+        const dtSecRaw = Math.max(0, (sampleTs - jumpRefTs) / 1000);
         // ✅ On évite le “trou” à 0.99s : on détecte quand même,
         // en bornant juste le dt utilisé pour la tolérance.
-        const dtSec = Math.max(dtSecRaw, GPS_JUMP_MIN_ELAPSED_SEC)
+        const dtSec = Math.max(dtSecRaw, GPS_JUMP_MIN_ELAPSED_SEC);
 
-        const maxDeltaKm = GPS_JUMP_BASE_TOLERANCE_KM + speedKmPerSec * dtSec
-        const dPk = Math.abs(pk - lastCoherentPk)
+        const maxDeltaKm = GPS_JUMP_BASE_TOLERANCE_KM + speedKmPerSec * dtSec;
+        const dPk = Math.abs(pk - jumpRefPk);
 
         if (dPk > maxDeltaKm) {
-          pkJumpSuspect = true
+          pkJumpSuspect = true;
         }
       }
 
-
-      // Entrée en garde-fou : on se base sur le DERNIER PK cohérent
+      // Entrée en garde-fou : on se base sur la référence utilisée pour la détection
       if (
         pkJumpSuspect &&
         !pkJumpGuardActiveRef.current &&
-        lastCoherentPk != null
+        jumpRefPk != null
       ) {
         pkJumpGuardActiveRef.current = true;
-        pkJumpGuardBasePkRef.current = lastCoherentPk;
+        pkJumpGuardBasePkRef.current = jumpRefPk;
         pkJumpGuardBaseTsRef.current = sampleTs;
 
         // 📌 enrichissement log : tout le contexte utile au diagnostic
         const dtSecSinceLast =
-          lastCoherentTs > 0 ? Math.max(0, (sampleTs - lastCoherentTs) / 1000) : null;
+          jumpRefTs > 0 ? Math.max(0, (sampleTs - jumpRefTs) / 1000) : null;
 
         const maxDeltaKmSinceLast =
           dtSecSinceLast != null
@@ -2676,7 +2758,7 @@ const isRelock = acceptedMode === "relock";
             : null;
 
         const dPkSinceLast =
-          pk != null && lastCoherentPk != null ? Math.abs(pk - lastCoherentPk) : null;
+          pk != null && jumpRefPk != null ? Math.abs(pk - jumpRefPk) : null;
 
         logTestEvent("gps:pk-jump-guard:enter", {
           // --- brut GPS / projection ---
@@ -2697,12 +2779,18 @@ const isRelock = acceptedMode === "relock";
           pkRaw: pkRaw ?? null,
           pkCandidate: pk, // PK qui a déclenché le suspect
           pkLastCoherent: lastCoherentPk,
+          pkLastAccepted: lastAcceptedPkFromDecision,
+          jumpRefPk,
+          jumpRefSource,
 
           // --- calculs de détection ---
           dtSecSinceLast,
           dPkSinceLast,
           maxDeltaKmSinceLast,
           minElapsedSec: GPS_JUMP_MIN_ELAPSED_SEC,
+          jumpRefTs,
+          lastCoherentTs,
+          lastAcceptedAtMs: lastAcceptedAtMsFromDecision,
 
           // --- contexte app ---
           onLine,
@@ -3346,128 +3434,144 @@ logTestEvent("gps:mode-check", {
             // Ligne active = ligne GPS (PK projeté)
             setActiveRowIndex(idx);
 
-            // 📌 On ne recalcule le delta qu'au passage à un *nouveau* point d'ancrage
             const lastIdx = lastAnchoredRowRef.current;
             const isNewAnchor = lastIdx == null || lastIdx !== idx;
 
-            if (!isNewAnchor) {
-              // même ligne FT que la dernière ancre GPS → pas de recalage horaire
-              return;
-            }
+            if (isNewAnchor) {
+              lastAnchoredRowRef.current = idx;
 
-            // On mémorise cette ligne comme nouveau point d'ancrage GPS
-            lastAnchoredRowRef.current = idx;
+              // ✅ Définition métier d’un point d’ancrage GPS :
+              // ligne portant une heure de départ RÉELLE (non interpolée),
+              // qu’elle vienne du PDF Espagne ou des données fixes France.
+              const departHoraText = resolveHoraForRowIndex(idx);
+              const departMinutes = parseHoraToMinutes(departHoraText);
 
-            // Heure de départ (FT brute ou mapping S&D)
-            const departHoraText = resolveHoraForRowIndex(idx);
-            const departMinutes = parseHoraToMinutes(departHoraText);
+              const isGpsDeltaAnchor =
+                typeof departHoraText === "string" &&
+                departHoraText.trim().length > 0 &&
+                departMinutes != null;
 
-            // En mode GPS : si une heure d'arrivée a été calculée pour cette ligne,
-            // on l'utilise pour le calcul du delta (objectif "à l'heure à l'arrivée").
-            let usedMinutes: number | null = departMinutes;
-            let usedHoraText: string = departHoraText;
-            let usedSource: "DEPART" | "ARRIVEE" = "DEPART";
+              if (!isGpsDeltaAnchor) {
+                logTestEvent("ft:delta:gps-recalage:skip", {
+                  rowIndex: idx,
+                  pk: entry?.pk ?? null,
+                  dependencia: entry?.dependencia ?? null,
+                  reason: "gps_row_without_real_departure_time",
+                });
+              } else {
+                // En mode GPS : si une heure d'arrivée a été calculée pour cette ligne,
+                // on l'utilise pour le calcul du delta (objectif : heure réelle d'arrivée).
+                let usedMinutes: number | null = departMinutes;
+                let usedHoraText: string = departHoraText;
+                let usedSource: "DEPART" | "ARRIVEE" = "DEPART";
 
-            let arrivalMinutes: number | null = null;
-            const arrivalList = arrivalEventsRef.current || [];
-            const arrivalMatch = arrivalList.find((ev) => ev.rowIndex === idx);
-            if (arrivalMatch && Number.isFinite(arrivalMatch.arrivalMin)) {
-              arrivalMinutes = arrivalMatch.arrivalMin;
-            }
+                let arrivalMinutes: number | null = null;
+                const arrivalList = arrivalEventsRef.current || [];
+                const arrivalMatch = arrivalList.find((ev) => ev.rowIndex === idx);
 
-            if (referenceModeRef.current === "GPS" && arrivalMinutes != null) {
-              usedMinutes = arrivalMinutes;
-              usedHoraText = formatMinutesToHora(arrivalMinutes);
-              usedSource = "ARRIVEE";
-            }
+                if (arrivalMatch && Number.isFinite(arrivalMatch.arrivalMin)) {
+                  arrivalMinutes = arrivalMatch.arrivalMin;
+                }
 
-            // Si on a une heure utilisable, on recale le delta
-            if (usedMinutes != null) {
-              // 1) On note la ligne pour les futurs démarrages du mode horaire
-              recalibrateFromRowRef.current = idx;
+                if (referenceModeRef.current === "GPS" && arrivalMinutes != null) {
+                  usedMinutes = arrivalMinutes;
+                  usedHoraText = formatMinutesToHora(arrivalMinutes);
+                  usedSource = "ARRIVEE";
+                }
 
-              // 2) On recalcule le delta réel (maintenant - heure utilisée)
-              // ✅ cohérent avec le "play" : prend les secondes et arrondit à la minute la plus proche
-              const now = new Date();
+                if (usedMinutes != null) {
+                  // 1) On note la ligne pour les futurs démarrages du mode horaire
+                  recalibrateFromRowRef.current = idx;
 
-              const nowMinutes = now.getHours() * 60 + now.getMinutes();
-              const nowTotalSec = nowMinutes * 60 + now.getSeconds();
+                  // 2) On recalcule le delta réel (maintenant - heure utilisée)
+                  const now = new Date();
 
-              const usedTotalSec = usedMinutes * 60;
-              const deltaSec = nowTotalSec - usedTotalSec;
+                  const nowMinInt = now.getHours() * 60 + now.getMinutes();
+                  const nowMinFloat = nowMinInt + now.getSeconds() / 60;
+                  const nowTotalSec = nowMinInt * 60 + now.getSeconds();
 
-              const fixedDelay = Math.round(deltaSec / 60);
+                  const usedTotalSec = usedMinutes * 60;
+                  const deltaSec = nowTotalSec - usedTotalSec;
+                  const fixedDelay = Math.round(deltaSec / 60);
 
-              // 3) On recale la base interne du mode horaire sur cette ligne
-              autoScrollBaseRef.current = {
-                realMin: nowMinutes,
-                firstHoraMin: usedMinutes,
-                fixedDelay,
-              };
+                  // 3) On recale la base interne du mode horaire sur cette ligne
+                  autoScrollBaseRef.current = {
+                    realMinInt: nowMinInt,
+                    realMinFloat: nowMinFloat,
+                    firstHoraMin: usedMinutes,
+                    fixedDelay,
+                    deltaSec,
+                  };
 
+                  // 4) On met à jour immédiatement le delta affiché dans la TitleBar
+                  const text =
+                    fixedDelay === 0
+                      ? "0 min"
+                      : fixedDelay > 0
+                      ? `+ ${fixedDelay} min`
+                      : `- ${-fixedDelay} min`;
 
-              // 4) On met à jour immédiatement le delta affiché dans la TitleBar
-              const text =
-                fixedDelay === 0
-                  ? "0 min"
-                  : fixedDelay > 0
-                  ? `+ ${fixedDelay} min`
-                  : `- ${-fixedDelay} min`;
+                  if (effectiveFtView === "ES") {
+                    window.dispatchEvent(
+                      new CustomEvent("lim:schedule-delta", {
+                        detail: {
+                          text,
+                          isLargeDelay: Math.abs(fixedDelay) >= 5,
+                          deltaSec,
+                        },
+                      })
+                    );
+                  }
 
-              if (effectiveFtView === "ES") {
-                window.dispatchEvent(
-                  new CustomEvent("lim:schedule-delta", {
-                    detail: {
-                      text,
-                      isLargeDelay: Math.abs(fixedDelay) >= 5,
-                    },
-                  })
-                );
+                  const nowHHMM =
+                    now.getHours().toString().padStart(2, "0") +
+                    ":" +
+                    now.getMinutes().toString().padStart(2, "0");
+
+                  console.log(
+                    "[FT][gps] Recalage horaire via GPS (real-anchor) — source=",
+                    usedSource,
+                    "| used=",
+                    usedHoraText,
+                    "(",
+                    usedMinutes,
+                    "min ) / now=",
+                    nowHHMM,
+                    " => delta=",
+                    fixedDelay,
+                    "min (ligne index=",
+                    idx,
+                    ")"
+                  );
+
+                  logTestEvent("ft:delta:gps-recalage", {
+                    rowIndex: idx,
+                    nowHHMM,
+                    fixedDelay,
+                    deltaSec,
+                    pk: entry?.pk ?? null,
+                    dependencia: entry?.dependencia ?? null,
+
+                    // détails recalage
+                    usedSource,
+                    usedHora: usedHoraText,
+                    usedMinutes,
+
+                    // debug ancrage
+                    anchorType: "REAL_DEPARTURE_TIME",
+                    departHora: departHoraText || null,
+                    departMinutes: departMinutes ?? null,
+                    arrivalMinutes,
+                  });
+                } else {
+                  logTestEvent("ft:delta:gps-recalage:skip", {
+                    rowIndex: idx,
+                    pk: entry?.pk ?? null,
+                    dependencia: entry?.dependencia ?? null,
+                    reason: "gps_anchor_without_usable_time",
+                  });
+                }
               }
-
-              const nowHHMM =
-                now.getHours().toString().padStart(2, "0") +
-                ":" +
-                now.getMinutes().toString().padStart(2, "0");
-
-              console.log(
-                "[FT][gps] Recalage horaire via GPS — source=",
-                usedSource,
-                "| used=",
-                usedHoraText,
-                "(",
-                usedMinutes,
-                "min ) / now=",
-                nowHHMM,
-                " => delta=",
-                fixedDelay,
-                "min (ligne index=",
-                idx,
-                ")"
-              );
-
-              logTestEvent("ft:delta:gps-recalage", {
-                rowIndex: idx,
-                nowHHMM,
-                fixedDelay,
-                pk: entry?.pk ?? null,
-                dependencia: entry?.dependencia ?? null,
-
-                // ✅ détails recalage
-                usedSource,
-                usedHora: usedHoraText,
-                usedMinutes,
-
-                // ✅ debug
-                departHora: departHoraText || null,
-                departMinutes: departMinutes ?? null,
-                arrivalMinutes,
-              });
-            } else {
-              console.log(
-                "[FT][gps] Ligne GPS sans heure utilisable (départ/arrivée) -> pas de recalage",
-                { idx, departHoraText, arrivalMinutes }
-              );
             }
           }
         } else {

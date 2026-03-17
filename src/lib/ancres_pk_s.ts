@@ -11,7 +11,7 @@ export type AnchorPkS = {
 
 export const ANCRES_PK_S: AnchorPkS[] = [
   {
-    pk: 752.4,
+    pk: 752.355,
     s_km: 136.442302,
     lat: 42.2873328,
     lon: 2.9331729,
@@ -19,15 +19,7 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     label: 'LIMITE ADIF-LFPSA',
   },
   {
-    pk: 732.6,
-    s_km: 156.329348,
-    lat: 42.4554166,
-    lon: 2.8619543,
-    index_ruban: 6255,
-    label: 'FRONTIERE FRANCE-ESPAGNE',
-  },
-  {
-    pk: 749.6,
+    pk: 749.618,
     s_km: 133.765372,
     lat: 42.2643504,
     lon: 2.9428601,
@@ -35,7 +27,7 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     label: 'FIGUERES-VILAFANT',
   },
   {
-    pk: 714.7,
+    pk: 714.748,
     s_km: 99.051602,
     lat: 41.9797786,
     lon: 2.8160019,
@@ -43,7 +35,7 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     label: 'GIRONA',
   },
   {
-    pk: 710.7,
+    pk: 710.655,
     s_km: 95.323812,
     lat: 41.9475752,
     lon: 2.8039863,
@@ -51,7 +43,7 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     label: 'BIF. GIRONA MERCADERIES',
   },
   {
-    pk: 703.5,
+    pk: 703.510,
     s_km: 87.74627,
     lat: 41.8863998,
     lon: 2.7665642,
@@ -59,7 +51,7 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     label: "VILOBI D'ONYAR",
   },
   {
-    pk: 682.0,
+    pk: 682.015,
     s_km: 66.072167,
     lat: 41.7402867,
     lon: 2.6105312,
@@ -67,7 +59,7 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     label: 'BASE MTO. RIELLS',
   },
   {
-    pk: 678.1,
+    pk: 679.275,
     s_km: 63.152762,
     lat: 41.7292732,
     lon: 2.5788827,
@@ -75,7 +67,7 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     label: 'RIELLS-A. V.',
   },
   {
-    pk: 662.1,
+    pk: 662.503,
     s_km: 46.749753,
     lat: 41.6494339,
     lon: 2.4219488,
@@ -83,7 +75,7 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     label: 'LLINARS-A. V.',
   },
   {
-    pk: 640.5,
+    pk: 640.904,
     s_km: 24.600028,
     lat: 41.5297288,
     lon: 2.2191479,
@@ -99,7 +91,7 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     label: 'LA SAGRERA AV',
   },
   {
-    pk: 621.0,
+    pk: 621.052,
     s_km: 4.923695,
     lat: 41.3792115,
     lon: 2.1399158,

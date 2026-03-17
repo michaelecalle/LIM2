@@ -158,10 +158,14 @@ const SORTED_ANCHORS_RFN: PkAnchor[] = toPkAnchors(
   ANCRES_RFN.map((a) => ({ s_km: a.s_km, pk: a.pk_rff }))
 )
 
-// LFP_LINK (raccordement) : PK = 0 au s_km ORIGINE LFP, puis augmente linéairement jusqu'à LIMITE RFN-LFP
+// LFP_LINK (raccordement) : PK décroissant dans le sens Espagne -> France
+// - à l'entrée du raccordement côté LFP, on est à ~2.123 km
+// - à la sortie côté RFN, on est à 0.0
+const LFP_LINK_LENGTH_KM = S_LINK_TO_RFN - S_LFP_MAIN_TO_LINK
+
 const SORTED_ANCHORS_LFP_LINK: PkAnchor[] = toPkAnchors([
-  { s_km: S_LFP_MAIN_TO_LINK, pk: 0 },
-  { s_km: S_LINK_TO_RFN, pk: S_LINK_TO_RFN - S_LFP_MAIN_TO_LINK },
+  { s_km: S_LFP_MAIN_TO_LINK, pk: LFP_LINK_LENGTH_KM },
+  { s_km: S_LINK_TO_RFN, pk: 0 },
 ])
 
 const ANCHORS_BY_REF: Record<PkRef, PkAnchor[]> = {
