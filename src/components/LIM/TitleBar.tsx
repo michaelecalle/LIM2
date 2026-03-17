@@ -1355,6 +1355,26 @@ ${coords}
         replayKey = null
       }
 
+            if (!testRecording) {
+        const labelParts: string[] = []
+        labelParts.push('silent')
+        labelParts.push('pdf_import')
+        if (pdfId) labelParts.push(pdfId.slice(0, 8))
+
+        const label = labelParts.join('_')
+
+        startTestSession(label)
+        setTestRecording(true)
+
+        logTestEvent('testlog:silent-start', {
+          source: 'pdf_import',
+          label,
+          pdfName: file.name,
+          pdfId,
+          replayKey,
+          testModeEnabled,
+        })
+      }
       logTestEvent('import:pdf', {
         name: file.name,
         size: file.size,
@@ -2491,7 +2511,52 @@ ${coords}
               </label>
 
               <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
+              {!testModeEnabled && (
+                <>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (simulationEnabled) {
+                        logTestEvent('ui:blocked', { control: 'exportLogs', source: 'settings' })
+                        return
+                      }
 
+                      logTestEvent('testlog:manual-export:click', {
+                        source: 'settings',
+                        mode: 'silent',
+                        train: trainDisplay ?? null,
+                      })
+
+                      try {
+                        const exported = await exportTestLogLocal()
+                        if (!exported) {
+                          window.alert('Aucun log à exporter.')
+                          logTestEvent('testlog:export:failed', {
+                            reason: 'no_events',
+                            source: 'settings_manual_export',
+                          })
+                        } else {
+                          logTestEvent('testlog:exported', {
+                            source: 'settings_manual_export',
+                          })
+                        }
+                      } catch (err: any) {
+                        window.alert('Export local des logs impossible.')
+                        logTestEvent('testlog:export:failed', {
+                          reason: err?.message ?? String(err),
+                          source: 'settings_manual_export',
+                        })
+                      }
+                    }}
+                    className="w-full h-8 px-3 text-xs rounded-md bg-sky-600 text-white font-semibold flex items-center justify-center"
+                    title="Exporter manuellement les logs enregistrés hors mode test"
+                  >
+                    Exporter les logs
+                  </button>
+
+                  <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
+                </>
+              )}
               {testModeEnabled && (
                 <button
                   type="button"
