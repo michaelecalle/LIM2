@@ -733,6 +733,31 @@ ${coords}
 
   const [gpsPkDisplay, setGpsPkDisplay] = useState<string | null>(null)
 
+    const [gpsPkPeekVisible, setGpsPkPeekVisible] = useState(false)
+  const gpsPkPeekTimerRef = useRef<number | null>(null)
+
+  const showGpsPkTemporarily = () => {
+    if (testModeEnabled) return
+    if (gpsState !== 2) return
+    if (!gpsPkDisplay) return
+
+    setGpsPkPeekVisible(true)
+
+    if (gpsPkPeekTimerRef.current != null) {
+      window.clearTimeout(gpsPkPeekTimerRef.current)
+    }
+
+    gpsPkPeekTimerRef.current = window.setTimeout(() => {
+      gpsPkPeekTimerRef.current = null
+      setGpsPkPeekVisible(false)
+    }, 10_000)
+
+    logTestEvent('ui:gps-pk:temporary-show', {
+      source: 'titlebar',
+      pk: gpsPkDisplay,
+      durationMs: 10_000,
+    })
+  }
   // Figueres — stabilité
   const FIGUERES_STOP_STABLE_MS = 30_000
   const figueresStableSinceRef = useRef<number | null>(null)
@@ -742,6 +767,15 @@ ${coords}
   useEffect(() => {
     gpsStateRef.current = gpsState
   }, [gpsState])
+
+    useEffect(() => {
+    return () => {
+      if (gpsPkPeekTimerRef.current != null) {
+        window.clearTimeout(gpsPkPeekTimerRef.current)
+        gpsPkPeekTimerRef.current = null
+      }
+    }
+  }, [])
 
   // ✅ Arme Figueres quand GREEN dans zone
   useEffect(() => {
@@ -2034,8 +2068,12 @@ ${coords}
 
               <button
                 type="button"
+                onClick={() => {
+                  showGpsPkTemporarily()
+                }}
                 className={`
-                  relative h-7 px-3 rounded-full text-xs font-semibold bg-white dark:bg-zinc-900 transition cursor-default
+                  relative h-7 px-3 rounded-full text-xs font-semibold bg-white dark:bg-zinc-900 transition
+                  ${!testModeEnabled && gpsState === 2 && gpsPkDisplay ? 'cursor-pointer' : 'cursor-default'}
                   ${gpsState === 0 ? 'border-[3px] border-red-500 text-red-600 dark:text-red-400' : ''}
                   ${gpsState === 1 ? 'border-[3px] border-orange-400 text-orange-500 dark:text-orange-300' : ''}
                   ${gpsState === 2 ? 'border-[3px] border-emerald-400 text-emerald-500 dark:text-emerald-300' : ''}
@@ -2045,11 +2083,15 @@ ${coords}
                     ? 'GPS indisponible / non calé'
                     : gpsState === 1
                       ? 'GPS présent mais hors ligne de référence'
-                      : 'GPS OK : position calée sur la ligne'
+                      : !testModeEnabled && gpsPkDisplay
+                        ? 'GPS OK : appuyer pour afficher temporairement le PK'
+                        : 'GPS OK : position calée sur la ligne'
                 }
               >
                 <span className="relative z-10 tabular-nums">
-                  {gpsState === 2 && gpsPkDisplay ? `PK ${gpsPkDisplay}` : 'GPS'}
+                  {(testModeEnabled || gpsPkPeekVisible) && gpsState === 2 && gpsPkDisplay
+                    ? `PK ${gpsPkDisplay}`
+                    : 'GPS'}
                 </span>
                 {gpsState === 0 && (
                   <span className="pointer-events-none absolute inset-1 z-20" aria-hidden>
@@ -2061,56 +2103,58 @@ ${coords}
                 )}
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (simulationEnabled) {
-                    logTestEvent('ui:blocked', { control: 'expectedDirection', source: 'titlebar' })
-                    return
+              {testModeEnabled && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (simulationEnabled) {
+                      logTestEvent('ui:blocked', { control: 'expectedDirection', source: 'titlebar' })
+                      return
+                    }
+
+                    if (!expectedDir) {
+                      window.alert('Sens attendu indisponible (numéro de train manquant).')
+                      return
+                    }
+
+                    const currentLabel = expectedDir === 'DOWN' ? '⬇️ PK décroissants' : '⬆️ PK croissants'
+                    const nextDir = expectedDir === 'DOWN' ? 'UP' : 'DOWN'
+                    const nextLabel = nextDir === 'DOWN' ? '⬇️ PK décroissants' : '⬆️ PK croissants'
+
+                    const ok = window.confirm(
+                      `Changer le sens attendu ?\n\nActuel : ${currentLabel}\nNouveau : ${nextLabel}\n\n(Le train ne change pas de sens : utilisez ceci seulement si le numéro de train ne correspond pas au sens réel.)`
+                    )
+                    if (!ok) return
+
+                    setExpectedDir(nextDir)
+                    expectedDirLockedRef.current = true
+                    expectedDirSourceRef.current = 'manual'
+
+                    logTestEvent('direction:manual_override', {
+                      train: trainDisplay ?? null,
+                      from: expectedDir,
+                      to: nextDir,
+                      source: 'titlebar',
+                    })
+
+                    emitExpectedDir(nextDir, { source: 'manual_override' })
+                  }}
+                  className={`
+                    h-7 w-7 rounded-full flex items-center justify-center text-[12px] bg-white dark:bg-zinc-900 transition
+                    ${expectedDir ? 'border-[3px] border-zinc-400 text-zinc-700 dark:border-zinc-500 dark:text-zinc-100' : 'border-[3px] border-zinc-200 text-zinc-400 dark:border-zinc-700 dark:text-zinc-500'}
+                  `}
+                  title={
+                    expectedDir === 'DOWN'
+                      ? 'Sens attendu : PK décroissants (train pair) — cliquer pour changer'
+                      : expectedDir === 'UP'
+                        ? 'Sens attendu : PK croissants (train impair) — cliquer pour changer'
+                        : 'Sens attendu indisponible'
                   }
-
-                  if (!expectedDir) {
-                    window.alert('Sens attendu indisponible (numéro de train manquant).')
-                    return
-                  }
-
-                  const currentLabel = expectedDir === 'DOWN' ? '⬇️ PK décroissants' : '⬆️ PK croissants'
-                  const nextDir = expectedDir === 'DOWN' ? 'UP' : 'DOWN'
-                  const nextLabel = nextDir === 'DOWN' ? '⬇️ PK décroissants' : '⬆️ PK croissants'
-
-                  const ok = window.confirm(
-                    `Changer le sens attendu ?\n\nActuel : ${currentLabel}\nNouveau : ${nextLabel}\n\n(Le train ne change pas de sens : utilisez ceci seulement si le numéro de train ne correspond pas au sens réel.)`
-                  )
-                  if (!ok) return
-
-                  setExpectedDir(nextDir)
-                  expectedDirLockedRef.current = true
-                  expectedDirSourceRef.current = 'manual'
-
-                  logTestEvent('direction:manual_override', {
-                    train: trainDisplay ?? null,
-                    from: expectedDir,
-                    to: nextDir,
-                    source: 'titlebar',
-                  })
-
-                  emitExpectedDir(nextDir, { source: 'manual_override' })
-                }}
-                className={`
-                  h-7 w-7 rounded-full flex items-center justify-center text-[12px] bg-white dark:bg-zinc-900 transition
-                  ${expectedDir ? 'border-[3px] border-zinc-400 text-zinc-700 dark:border-zinc-500 dark:text-zinc-100' : 'border-[3px] border-zinc-200 text-zinc-400 dark:border-zinc-700 dark:text-zinc-500'}
-                `}
-                title={
-                  expectedDir === 'DOWN'
-                    ? 'Sens attendu : PK décroissants (train pair) — cliquer pour changer'
-                    : expectedDir === 'UP'
-                      ? 'Sens attendu : PK croissants (train impair) — cliquer pour changer'
-                      : 'Sens attendu indisponible'
-                }
-                aria-label="Sens attendu PK"
-              >
-                <span aria-hidden>{expectedDir === 'DOWN' ? '⬇️' : expectedDir === 'UP' ? '⬆️' : '↕️'}</span>
-              </button>
+                  aria-label="Sens attendu PK"
+                >
+                  <span aria-hidden>{expectedDir === 'DOWN' ? '⬇️' : expectedDir === 'UP' ? '⬆️' : '↕️'}</span>
+                </button>
+              )}
 
               <button
                 type="button"
@@ -2377,7 +2421,7 @@ ${coords}
                 <input
                   type="checkbox"
                   checked={testModeEnabled}
-                  onChange={async () => {
+                  onChange={() => {
                     if (simulationEnabled) {
                       logTestEvent('ui:blocked', { control: 'testModeToggle', source: 'settings' })
                       return
@@ -2385,55 +2429,14 @@ ${coords}
 
                     if (testModeEnabled) {
                       const wantDisable = window.confirm(
-                        'Désactiver le mode test ?\n\n(équivaut à STOP : proposition d’exporter les logs)'
+                        'Désactiver le mode test ?\n\n(Cela masque les fonctions de test, sans arrêter la session en cours ni décharger le PDF.)'
                       )
                       if (!wantDisable) return
 
-                      if (autoScroll) {
-                        setAutoScroll(false)
-                        window.dispatchEvent(
-                          new CustomEvent('ft:auto-scroll-change', {
-                            detail: { enabled: false, source: 'titlebar' },
-                          })
-                        )
-                      }
-                      stopGpsWatch()
-
-                      setScheduleDelta(null)
-                      setScheduleDeltaIsLarge(false)
-
-                      setPdfMode('blue')
-                      setPdfLoading(false)
-                      stopPdfLoadingGuard()
-
-                      window.dispatchEvent(new CustomEvent('lim:clear-pdf'))
-                      window.dispatchEvent(new CustomEvent('ft:clear-pdf'))
-                      window.dispatchEvent(new CustomEvent('lim:pdf-raw', { detail: { file: null } }))
-
-                      if (testRecording) {
-                        logTestEvent('ui:test:stop', { source: 'settings_toggle' })
-                        stopTestSession()
-                        setTestRecording(false)
-                      }
-
-                      try {
-                        const exported = await exportTestLogLocal()
-                        if (!exported) {
-                          window.alert('Aucun événement de test à exporter.')
-                          logTestEvent('testlog:export:failed', {
-                            reason: 'no_events',
-                            source: 'settings_toggle',
-                          })
-                        } else {
-                          logTestEvent('testlog:exported', { source: 'settings_toggle' })
-                        }
-                      } catch (err: any) {
-                        window.alert('Export local des logs impossible.')
-                        logTestEvent('testlog:export:failed', {
-                          reason: err?.message ?? String(err),
-                          source: 'settings_toggle',
-                        })
-                      }
+                      logTestEvent('ui:test:manual-disable', {
+                        source: 'settings_toggle',
+                        train: trainDisplay ?? null,
+                      })
 
                       setTestModeEnabled(false)
                       return

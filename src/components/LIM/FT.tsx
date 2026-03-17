@@ -5372,26 +5372,26 @@ if (bloqueoBar === 1 || bloqueoBar === 2) {
           {showVBar && <div className="ft-v-bar" />}
         </td>
 
-        <td className="ft-td">
-          {activeRowIndex === i ? (
+        <td className="ft-td" style={{ position: "relative", textAlign: "center" }}>
+          {sitKm}
+
+          {testModeEnabled && activeRowIndex === i && (
             <span
-              className={
-                referenceMode === "GPS"
-                  ? "ft-active-marker-gps"
-                  : "ft-active-marker-horaire"
-              }
-              style={{ display: "inline-block", width: 14, marginRight: 4, fontWeight: 700 }}
               aria-hidden
-            >
-              &gt;
-            </span>
-          ) : (
-            <span
-              style={{ display: "inline-block", width: 14, marginRight: 4 }}
-              aria-hidden
+              style={{
+                position: "absolute",
+                left: 4,
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: 0,
+                height: 0,
+                borderTop: "6px solid transparent",
+                borderBottom: "6px solid transparent",
+                borderLeft: "10px solid #2563eb",
+                pointerEvents: "none",
+              }}
             />
           )}
-          {sitKm}
         </td>
         {/* Dependencia (surlignable) */}
         <td
@@ -6176,6 +6176,10 @@ if (bloqueoBar === 1 || bloqueoBar === 2) {
           }}
           overlay={
             (() => {
+              if (!testModeEnabled && gpsStateUi !== "GREEN") {
+                return null;
+              }
+
               const color =
                 referenceMode === "HORAIRE"
                   ? "red"
@@ -6214,12 +6218,11 @@ if (bloqueoBar === 1 || bloqueoBar === 2) {
                             return `${Math.round(clamped)}px`;
                           })(),
 
-
-
-                    left: "13%", // début colonne V Max (après Bloqueo 13%)
-                    width: "14%", // V Max (5%) + Sit Km (9%)
+                    left: !testModeEnabled ? "18%" : "13%", // hors mode test : bord gauche de Sit Km
+                    width: !testModeEnabled ? "10px" : "14%",
                     display: "flex",
                     alignItems: "center",
+                    justifyContent: !testModeEnabled ? "flex-start" : "initial",
                     pointerEvents: "none",
                     zIndex: 999,
                   }}
@@ -6234,25 +6237,29 @@ if (bloqueoBar === 1 || bloqueoBar === 2) {
                       borderLeft: `10px solid ${color}`,
                     }}
                   />
-                  {/* Barre */}
-                  <div
-                    style={{
-                      flex: 1,
-                      height: "2px",
-                      background: color,
-                    }}
-                  />
-                  {/* Triangle droite (pointe vers l’intérieur = vers la gauche) */}
-                  <div
-                    style={{
-                      width: 0,
-                      height: 0,
-                      borderTop: "6px solid transparent",
 
-                      borderBottom: "6px solid transparent",
-                      borderRight: `10px solid ${color}`,
-                    }}
-                  />
+                  {testModeEnabled && (
+                    <>
+                      {/* Barre */}
+                      <div
+                        style={{
+                          flex: 1,
+                          height: "2px",
+                          background: color,
+                        }}
+                      />
+                      {/* Triangle droite (pointe vers l’intérieur = vers la gauche) */}
+                      <div
+                        style={{
+                          width: 0,
+                          height: 0,
+                          borderTop: "6px solid transparent",
+                          borderBottom: "6px solid transparent",
+                          borderRight: `10px solid ${color}`,
+                        }}
+                      />
+                    </>
+                  )}
                 </div>
               );
             })()
