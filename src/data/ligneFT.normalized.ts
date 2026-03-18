@@ -6,7 +6,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0001",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "615.9",
         "pkAdif": "",
         "pkLfp": "",
@@ -22,7 +22,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0002",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "616.0",
         "pkAdif": "",
         "pkLfp": "",
@@ -38,7 +38,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0003",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "618.1",
         "pkAdif": "",
         "pkLfp": "",
@@ -54,7 +54,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0004",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "619.9",
         "pkAdif": "",
         "pkLfp": "",
@@ -70,7 +70,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0005",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "620.2",
         "pkAdif": "",
         "pkLfp": "",
@@ -86,7 +86,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0006",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "621.0",
         "pkAdif": "",
         "pkLfp": "",
@@ -102,7 +102,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0007",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "621.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -118,7 +118,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0008",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "623.8",
         "pkAdif": "",
         "pkLfp": "",
@@ -134,7 +134,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0009",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "624.3",
         "pkAdif": "",
         "pkLfp": "",
@@ -150,7 +150,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0010",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "626.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -166,7 +166,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-note-0011",
         "type": "note",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "",
         "pkAdif": "",
         "pkLfp": "",
@@ -184,7 +184,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0012",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "627.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -200,7 +200,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0013",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "629.4",
         "pkAdif": "",
         "pkLfp": "",
@@ -216,7 +216,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0014",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "630.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -232,7 +232,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0015",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "632.4",
         "pkAdif": "",
         "pkLfp": "",
@@ -248,7 +248,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0016",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "634.5",
         "pkAdif": "",
         "pkLfp": "",
@@ -264,7 +264,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0017",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "636.6",
         "pkAdif": "",
         "pkLfp": "",
@@ -280,7 +280,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0018",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "639.8",
         "pkAdif": "",
         "pkLfp": "",
@@ -296,7 +296,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0019",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "640.9",
         "pkAdif": "",
         "pkLfp": "",
@@ -312,7 +312,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0020",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "641.3",
         "pkAdif": "",
         "pkLfp": "",
@@ -328,7 +328,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0021",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "641.9",
         "pkAdif": "",
         "pkLfp": "",
@@ -344,7 +344,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0022",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "643.6",
         "pkAdif": "",
         "pkLfp": "",
@@ -360,7 +360,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0023",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "644.3",
         "pkAdif": "",
         "pkLfp": "",
@@ -376,7 +376,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0024",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "654.4",
         "pkAdif": "",
         "pkLfp": "",
@@ -392,7 +392,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0025",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "655.6",
         "pkAdif": "",
         "pkLfp": "",
@@ -408,7 +408,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0026",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "655.8",
         "pkAdif": "",
         "pkLfp": "",
@@ -424,7 +424,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0027",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "660.8",
         "pkAdif": "",
         "pkLfp": "",
@@ -440,7 +440,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0028",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "661.5",
         "pkAdif": "",
         "pkLfp": "",
@@ -456,7 +456,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0029",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "662.0",
         "pkAdif": "",
         "pkLfp": "",
@@ -472,7 +472,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0030",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "662.5",
         "pkAdif": "",
         "pkLfp": "",
@@ -488,7 +488,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0031",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "673.5",
         "pkAdif": "",
         "pkLfp": "",
@@ -504,7 +504,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0032",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "679.3",
         "pkAdif": "",
         "pkLfp": "",
@@ -520,7 +520,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0033",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "680.2",
         "pkAdif": "",
         "pkLfp": "",
@@ -536,7 +536,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0034",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "682.0",
         "pkAdif": "",
         "pkLfp": "",
@@ -552,7 +552,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0035",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "684.0",
         "pkAdif": "",
         "pkLfp": "",
@@ -568,7 +568,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0036",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "703.5",
         "pkAdif": "",
         "pkLfp": "",
@@ -584,7 +584,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0037",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "707.1",
         "pkAdif": "",
         "pkLfp": "",
@@ -600,7 +600,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0038",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "709.9",
         "pkAdif": "",
         "pkLfp": "",
@@ -616,7 +616,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0039",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "710.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -632,7 +632,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0040",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "713.2",
         "pkAdif": "",
         "pkLfp": "",
@@ -648,7 +648,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0041",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "714.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -664,7 +664,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0042",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "715.5",
         "pkAdif": "",
         "pkLfp": "",
@@ -680,7 +680,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0043",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "716.8",
         "pkAdif": "",
         "pkLfp": "",
@@ -696,7 +696,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0044",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "720.0",
         "pkAdif": "",
         "pkLfp": "",
@@ -712,7 +712,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0045",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "723.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -728,7 +728,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-note-0046",
         "type": "note",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "",
         "pkAdif": "",
         "pkLfp": "",
@@ -747,7 +747,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "ns-data-0047",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "749.6",
         "pkAdif": "",
         "pkLfp": "",
@@ -895,7 +895,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0001",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "615.9",
         "pkAdif": "",
         "pkLfp": "",
@@ -911,7 +911,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0002",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "616.0",
         "pkAdif": "",
         "pkLfp": "",
@@ -927,7 +927,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0003",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "618.1",
         "pkAdif": "",
         "pkLfp": "",
@@ -943,7 +943,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0004",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "619.9",
         "pkAdif": "",
         "pkLfp": "",
@@ -959,7 +959,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0005",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "620.2",
         "pkAdif": "",
         "pkLfp": "",
@@ -975,7 +975,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0006",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "621.0",
         "pkAdif": "",
         "pkLfp": "",
@@ -991,7 +991,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0007",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "621.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -1007,7 +1007,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0008",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "623.8",
         "pkAdif": "",
         "pkLfp": "",
@@ -1023,7 +1023,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0009",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "624.3",
         "pkAdif": "",
         "pkLfp": "",
@@ -1039,7 +1039,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0010",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "626.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -1055,7 +1055,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-note-0011",
         "type": "note",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "",
         "pkAdif": "",
         "pkLfp": "",
@@ -1073,7 +1073,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0012",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "627.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -1089,7 +1089,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0013",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "629.4",
         "pkAdif": "",
         "pkLfp": "",
@@ -1105,7 +1105,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0014",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "630.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -1121,7 +1121,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0015",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "632.4",
         "pkAdif": "",
         "pkLfp": "",
@@ -1137,7 +1137,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0016",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "634.5",
         "pkAdif": "",
         "pkLfp": "",
@@ -1153,7 +1153,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0017",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "636.6",
         "pkAdif": "",
         "pkLfp": "",
@@ -1169,7 +1169,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0018",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "639.8",
         "pkAdif": "",
         "pkLfp": "",
@@ -1185,7 +1185,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0019",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "640.9",
         "pkAdif": "",
         "pkLfp": "",
@@ -1201,7 +1201,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0020",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "641.3",
         "pkAdif": "",
         "pkLfp": "",
@@ -1217,7 +1217,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0021",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "641.9",
         "pkAdif": "",
         "pkLfp": "",
@@ -1233,7 +1233,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0022",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "643.6",
         "pkAdif": "",
         "pkLfp": "",
@@ -1249,7 +1249,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0023",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "644.3",
         "pkAdif": "",
         "pkLfp": "",
@@ -1265,7 +1265,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0024",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "654.4",
         "pkAdif": "",
         "pkLfp": "",
@@ -1281,7 +1281,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0025",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "655.6",
         "pkAdif": "",
         "pkLfp": "",
@@ -1297,7 +1297,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0026",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "655.8",
         "pkAdif": "",
         "pkLfp": "",
@@ -1313,7 +1313,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0027",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "660.8",
         "pkAdif": "",
         "pkLfp": "",
@@ -1329,7 +1329,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0028",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "661.5",
         "pkAdif": "",
         "pkLfp": "",
@@ -1345,7 +1345,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0029",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "662.0",
         "pkAdif": "",
         "pkLfp": "",
@@ -1361,7 +1361,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0030",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "662.5",
         "pkAdif": "",
         "pkLfp": "",
@@ -1377,7 +1377,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0031",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "673.5",
         "pkAdif": "",
         "pkLfp": "",
@@ -1393,7 +1393,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0032",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "679.3",
         "pkAdif": "",
         "pkLfp": "",
@@ -1409,7 +1409,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0033",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "680.2",
         "pkAdif": "",
         "pkLfp": "",
@@ -1425,7 +1425,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0034",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "682.0",
         "pkAdif": "",
         "pkLfp": "",
@@ -1441,7 +1441,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0035",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "684.0",
         "pkAdif": "",
         "pkLfp": "",
@@ -1457,7 +1457,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0036",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "703.5",
         "pkAdif": "",
         "pkLfp": "",
@@ -1473,7 +1473,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0037",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "707.1",
         "pkAdif": "",
         "pkLfp": "",
@@ -1489,7 +1489,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0038",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "709.9",
         "pkAdif": "",
         "pkLfp": "",
@@ -1505,7 +1505,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0039",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "710.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -1521,7 +1521,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0040",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "713.2",
         "pkAdif": "",
         "pkLfp": "",
@@ -1537,7 +1537,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0041",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "714.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -1553,7 +1553,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0042",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "715.5",
         "pkAdif": "",
         "pkLfp": "",
@@ -1569,7 +1569,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0043",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "716.8",
         "pkAdif": "",
         "pkLfp": "",
@@ -1585,7 +1585,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0044",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "720.0",
         "pkAdif": "",
         "pkLfp": "",
@@ -1601,7 +1601,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0045",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "723.7",
         "pkAdif": "",
         "pkLfp": "",
@@ -1617,7 +1617,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-note-0046",
         "type": "note",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "",
         "pkAdif": "",
         "pkLfp": "",
@@ -1636,7 +1636,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       {
         "id": "sn-data-0047",
         "type": "data",
-        "reseau": "",
+        "reseau": "ADIF",
         "pkInterne": "749.6",
         "pkAdif": "",
         "pkLfp": "",
