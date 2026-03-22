@@ -5,9 +5,8 @@ import {
   FT_LIGNE_PAIR,
   FT_LIGNE_IMPAIR,
   CSV_ZONES,
-  type FTEntry,
-  type CsvSens,
-} from "../../data/ligneFT";
+} from "../../data/ligneFT.normalized.adapter";
+import type { FTEntry, CsvSens } from "../../data/ligneFT";
 import { logTestEvent } from "../../lib/testLogger";
 import { getFtFranceHhmm } from "../../data/ftFranceTimes"
 
@@ -3669,13 +3668,20 @@ logTestEvent("gps:mode-check", {
 
       const pk = e.pk;
 
-      if ((e as any).vmax_bar && pk) {
-        breakpointsArr.push(pk);
-      }
+      const previousSpeed = currentSpeed;
 
       if (typeof e.vmax === "number" && !isNaN(e.vmax)) {
         currentSpeed = e.vmax;
         currentHighlight = !!(e as any).vmax_highlight;
+      }
+
+      if (
+        pk &&
+        previousSpeed !== null &&
+        currentSpeed !== null &&
+        currentSpeed !== previousSpeed
+      ) {
+        breakpointsArr.push(pk);
       }
 
       if (pk && currentSpeed !== null) {
@@ -3703,6 +3709,9 @@ logTestEvent("gps:mode-check", {
   ): SpeedInfo | null {
     if (!pkStart || isOddFlag === null) return null;
 
+    // IMPORTANT :
+    // on reprend exactement la même orientation que rawEntries
+    // pour éviter un seed calculé dans le mauvais sens.
     let baseOriented: FTEntry[];
     if (isOddFlag) {
       baseOriented = FT_LIGNE_PAIR;
@@ -3713,22 +3722,38 @@ logTestEvent("gps:mode-check", {
     const idxStart = baseOriented.findIndex(
       (e) => !e.isNoteOnly && e.pk === pkStart
     );
-    if (idxStart <= 0) {
-      return null;
-    }
 
     let currentSpeed: number | null = null;
     let currentHighlight = false;
 
-    for (let i = 0; i < idxStart; i++) {
-      const e = baseOriented[i];
-      if (typeof e.vmax === "number" && !isNaN(e.vmax)) {
-        currentSpeed = e.vmax;
-        currentHighlight = !!(e as any).vmax_highlight;
+    if (idxStart > 0) {
+      for (let i = 0; i < idxStart; i++) {
+        const e = baseOriented[i];
+        if (typeof e.vmax === "number" && !isNaN(e.vmax)) {
+          currentSpeed = e.vmax;
+          currentHighlight = !!(e as any).vmax_highlight;
+        }
       }
     }
 
-    if (currentSpeed === null) return null;
+    console.log("[VMAX SEED DEBUG]", JSON.stringify({
+      pkStart,
+      isOddFlag,
+      idxStart,
+      first10: baseOriented
+        .filter((e) => !e.isNoteOnly && e.pk)
+        .slice(0, 10)
+        .map((e) => ({
+          pk: e.pk,
+          vmax: e.vmax ?? null,
+          dependencia: e.dependencia ?? "",
+        })),
+      currentSpeed,
+      currentHighlight,
+    }));
+
+    if (idxStart <= 0 || currentSpeed === null) return null;
+
     return { v: currentSpeed, highlight: currentHighlight };
   }
 
@@ -3866,15 +3891,69 @@ if (hasFranceFtLocal) {
       }
     }
   }
+   // --- Pré-calcul des segments Radio (logique propagation + changement de valeur) ---
+  const radioSegmentIndex: number[] = [];
+  const radioLabelRowIndex = new Map<number, number>();
+  const radioValueBySeg = new Map<number, string>();
 
-  // --- Pré-calcul des segments Bloqueo (timeline type VMAX) ---
+  {
+    let currentRadioSegId = 0;
+    let propagatedRadio = "";
+    let previousSegmentValue = "";
+
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e: any = rawEntries[i];
+
+      if (e?.isNoteOnly) {
+        radioSegmentIndex[i] = currentRadioSegId;
+        continue;
+      }
+
+      const rawVal = String(e?.radio ?? "").trim();
+
+      // Une nouvelle valeur explicite remplace la valeur propagée
+      if (rawVal) {
+        propagatedRadio = rawVal;
+      }
+
+      // Tant qu'on n'a encore aucune valeur radio, pas de segment exploitable
+      if (!propagatedRadio) {
+        radioSegmentIndex[i] = 0;
+        continue;
+      }
+
+      // Nouveau segment au premier texte radio rencontré,
+      // puis à chaque changement de valeur radio
+      if (currentRadioSegId === 0 || propagatedRadio !== previousSegmentValue) {
+        currentRadioSegId++;
+
+        if (!radioLabelRowIndex.has(currentRadioSegId)) {
+          radioLabelRowIndex.set(currentRadioSegId, i);
+        }
+
+        radioValueBySeg.set(currentRadioSegId, propagatedRadio);
+        previousSegmentValue = propagatedRadio;
+      }
+
+      radioSegmentIndex[i] = currentRadioSegId;
+    }
+  }
+
+  console.log(
+    "[RADIO SEGMENTS JSON]",
+    JSON.stringify(Array.from(radioValueBySeg.entries()))
+  );
+
+  // --- Pré-calcul des segments Bloqueo (recalculés dans l’ordre affiché) ---
   const bloqueoSegmentIndex: number[] = [];
   const bloqueoLabelRowIndex = new Map<number, number>();
   const bloqueoValueBySeg = new Map<number, string>();
+  const bloqueoBarRows = new Set<number>();
 
   {
     let currentBloqueoSegId = 0;
     let prevValue = "";
+    let previousDataRowIndex: number | null = null;
 
     for (let i = 0; i < rawEntries.length; i++) {
       const e: any = rawEntries[i];
@@ -3884,16 +3963,15 @@ if (hasFranceFtLocal) {
         continue;
       }
 
-      // Barre de séparation : pas une valeur de segment
-      const bar = e?.bloqueo_bar;
-      if (bar === 1 || bar === 2) {
-        bloqueoSegmentIndex[i] = currentBloqueoSegId;
-        continue;
-      }
-
       const val = String(e?.bloqueo ?? "").trim();
 
       if (val && val !== prevValue) {
+        // À partir du 2e segment, la barre se place sur la ligne de données
+        // juste avant le nouveau texte de Bloqueo.
+        if (currentBloqueoSegId > 0 && previousDataRowIndex !== null) {
+          bloqueoBarRows.add(previousDataRowIndex);
+        }
+
         currentBloqueoSegId =
           currentBloqueoSegId === 0 ? 1 : currentBloqueoSegId + 1;
         prevValue = val;
@@ -3905,10 +3983,11 @@ if (hasFranceFtLocal) {
       }
 
       bloqueoSegmentIndex[i] = currentBloqueoSegId;
+      previousDataRowIndex = i;
     }
   }
 
-  // --- Pré-calcul du type de surlignage CSV (zones par PK) ---
+  // --- Pré-calcul du type de surlignage CSV (stratégie historique basée sur CSV_ZONES) ---
   const csvHighlightByIndex: ("none" | "full" | "top" | "bottom")[] = [];
 
   // Par défaut : aucun surlignage
@@ -3916,26 +3995,33 @@ if (hasFranceFtLocal) {
     csvHighlightByIndex[i] = "none";
   }
 
-  for (let i = 0; i < rawEntries.length; i++) {
-    const e = rawEntries[i];
-    if (!e.pk || e.isNoteOnly) continue;
+  // Première vraie ligne affichée
+  const firstDisplayedDataIndex = (() => {
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e = rawEntries[i];
+      if (!e.pk || e.isNoteOnly) continue;
 
-    const pkNum = Number(e.pk);
-    if (Number.isNaN(pkNum)) continue;
+      const pkNum = Number(e.pk);
+      if (Number.isNaN(pkNum)) continue;
 
-    // Ici, ajoute ta logique pour les autres zones CSV comme avant
-    // ...
-  }
+      return i;
+    }
+    return -1;
+  })();
+
+  // Règle métier :
+  // si la première vraie ligne affichée appartient déjà à une zone CSV,
+  // alors cette première zone visible ne doit pas être surlignée.
+  let firstVisibleCsvZoneSkipped = false;
 
   if (currentCsvSens) {
-    // On traite chaque zone CSV correspondant au sens courant
-    for (const zone of CSV_ZONES) {
-      if (zone.sens !== currentCsvSens) continue;
+    const zonesForSens = CSV_ZONES.filter((z) => z.sens === currentCsvSens);
 
-      const a = Math.min(zone.pkFrom, zone.pkTo);
-      const b = Math.max(zone.pkFrom, zone.pkTo);
+    for (const zone of zonesForSens) {
+      const pkMin = Math.min(zone.pkFrom, zone.pkTo);
+      const pkMax = Math.max(zone.pkFrom, zone.pkTo);
 
-      const indicesDansZone: number[] = [];
+      const matchingIndices: number[] = [];
 
       for (let i = 0; i < rawEntries.length; i++) {
         const e = rawEntries[i];
@@ -3944,70 +4030,148 @@ if (hasFranceFtLocal) {
         const pkNum = Number(e.pk);
         if (Number.isNaN(pkNum)) continue;
 
-        if (pkNum >= a && pkNum <= b) {
-          indicesDansZone.push(i);
+        if (pkNum >= pkMin && pkNum <= pkMax) {
+          matchingIndices.push(i);
         }
       }
 
-      if (indicesDansZone.length === 0) continue;
+      if (matchingIndices.length === 0) continue;
 
-      const first = indicesDansZone[0];
-      const last = indicesDansZone[indicesDansZone.length - 1];
+      const firstZoneIsAlreadyOpenAtTop =
+        !firstVisibleCsvZoneSkipped &&
+        firstDisplayedDataIndex >= 0 &&
+        matchingIndices.includes(firstDisplayedDataIndex);
 
-      // Nouvelle logique : vérifier si la première zone affichée
-      const isFirstZone = first === 0; // Vérification si c'est la première ligne affichée
+      if (firstZoneIsAlreadyOpenAtTop) {
+        firstVisibleCsvZoneSkipped = true;
 
-      for (const idx of indicesDansZone) {
-        if (isFirstZone) {
-          // Ne pas surligner la première zone
-          csvHighlightByIndex[idx] = "none";
-        } else if (first === last) {
-          csvHighlightByIndex[idx] = "full";
-        } else if (idx === first) {
+        console.log(
+          "[CSV FIRST ZONE SKIPPED FT]",
+          JSON.stringify({
+            sens: currentCsvSens,
+            firstDisplayedDataIndex,
+            zone: {
+              pkFrom: zone.pkFrom,
+              pkTo: zone.pkTo,
+            },
+            matchingIndices,
+            matchingPks: matchingIndices.map((idx) => rawEntries[idx]?.pk ?? ""),
+          })
+        );
+
+        continue;
+      }
+
+      if (matchingIndices.length === 1) {
+        csvHighlightByIndex[matchingIndices[0]] = "full";
+        continue;
+      }
+
+      for (let j = 0; j < matchingIndices.length; j++) {
+        const idx = matchingIndices[j];
+
+        if (j === 0) {
           csvHighlightByIndex[idx] = "bottom";
-        } else if (idx === last) {
+        } else if (j === matchingIndices.length - 1) {
           csvHighlightByIndex[idx] = "top";
         } else {
           csvHighlightByIndex[idx] = "full";
         }
       }
     }
-    // Logique conditionnelle : si on est sur la ligne 621.0 et qu'elle est la dernière ligne affichée
-    for (let i = 0; i < rawEntries.length; i++) {
-      const e = rawEntries[i];
-      if (!e.pk || e.isNoteOnly) continue;
-
-      const pkNum = Number(e.pk);
-      if (Number.isNaN(pkNum)) continue;
-
-      // Appliquer le surlignage complet à la ligne 621.0 si c'est la dernière ligne affichée
-      if (e.pk === "621.0" && i === rawEntries.length - 1) {
-        csvHighlightByIndex[i] = "full"; // Surbrillance complète pour la dernière ligne
-      }
-    }
-
-    // 🔁 Post-traitement : remplir les cases ENTRE les barres
-    // On cherche chaque paire "bottom" -> "top" et on met "full"
-    // sur toutes les lignes intermédiaires.
-    let zoneStartIndex: number | null = null;
-
-    for (let i = 0; i < csvHighlightByIndex.length; i++) {
-      const kind = csvHighlightByIndex[i];
-
-      if (kind === "bottom") {
-        // début de zone : on mémorise l'index de la ligne contenant la barre du haut
-        zoneStartIndex = i;
-      } else if (kind === "top" && zoneStartIndex !== null) {
-        // fin de zone : on remplit tout ce qu’il y a entre les deux
-        for (let j = zoneStartIndex + 1; j < i; j++) {
-          if (csvHighlightByIndex[j] === "none") {
-            csvHighlightByIndex[j] = "full";
-          }
-        }
-        zoneStartIndex = null;
-      }
-    }
   }
+
+  console.log(
+    "[CSV ZONES JSON]",
+    JSON.stringify({
+      sens: currentCsvSens,
+      zones: currentCsvSens ? CSV_ZONES.filter((z) => z.sens === currentCsvSens) : [],
+      rows: rawEntries.map((e: any, i: number) => ({
+        i,
+        pk: e?.pk ?? "",
+        note: !!e?.isNoteOnly,
+        highlight: csvHighlightByIndex[i],
+      })),
+    })
+  );
+
+  console.log(
+    "[CSV GIRONA WINDOW FT]",
+    JSON.stringify({
+      sens: currentCsvSens,
+      zones: (currentCsvSens ? CSV_ZONES.filter((z) => z.sens === currentCsvSens) : []).filter(
+        (z) => {
+          const pkMin = Math.min(z.pkFrom, z.pkTo);
+          const pkMax = Math.max(z.pkFrom, z.pkTo);
+          return pkMin <= 715.5 && pkMax >= 714.7;
+        }
+      ),
+      rows: rawEntries
+        .map((e: any, i: number) => ({
+          i,
+          pk: e?.pk ?? "",
+          dependencia: e?.dependencia ?? "",
+          note: !!e?.isNoteOnly,
+          csv: !!e?.csv,
+          highlight: csvHighlightByIndex[i],
+        }))
+        .filter((row) =>
+          ["716.8", "715.5", "714.7", "713.2", "710.7"].includes(row.pk)
+        ),
+    })
+  );
+
+  console.log(
+    "[CSV LA SAGRERA WINDOW FT]",
+    JSON.stringify({
+      sens: currentCsvSens,
+      zones: (currentCsvSens ? CSV_ZONES.filter((z) => z.sens === currentCsvSens) : []).filter(
+        (z) => {
+          const pkMin = Math.min(z.pkFrom, z.pkTo);
+          const pkMax = Math.max(z.pkFrom, z.pkTo);
+          return pkMin <= 629.4 && pkMax >= 627.7;
+        }
+      ),
+      rows: rawEntries
+        .map((e: any, i: number) => ({
+          i,
+          pk: e?.pk ?? "",
+          dependencia: e?.dependencia ?? "",
+          note: !!e?.isNoteOnly,
+          csv: !!e?.csv,
+          highlight: csvHighlightByIndex[i],
+        }))
+        .filter((row) =>
+          ["630.7", "629.4", "627.7", "626.7", "624.3"].includes(row.pk)
+        ),
+    })
+  );
+
+  console.log(
+    "[CSV BARCELONA SANTS WINDOW FT]",
+    JSON.stringify({
+      sens: currentCsvSens,
+      zones: (currentCsvSens ? CSV_ZONES.filter((z) => z.sens === currentCsvSens) : []).filter(
+        (z) => {
+          const pkMin = Math.min(z.pkFrom, z.pkTo);
+          const pkMax = Math.max(z.pkFrom, z.pkTo);
+          return pkMin <= 621.7 && pkMax >= 621.0;
+        }
+      ),
+      rows: rawEntries
+        .map((e: any, i: number) => ({
+          i,
+          pk: e?.pk ?? "",
+          dependencia: e?.dependencia ?? "",
+          note: !!e?.isNoteOnly,
+          csv: !!e?.csv,
+          highlight: csvHighlightByIndex[i],
+        }))
+        .filter((row) =>
+          ["623.8", "621.7", "621.0"].includes(row.pk)
+        ),
+    })
+  );
 
   for (let i = 0; i < rawEntries.length; i++) {
     const e = rawEntries[i];
@@ -4584,6 +4748,10 @@ if (hasFranceFtLocal) {
   // Gestion VMax (scroll intelligent)
   const vPrintedSegments = new Set<number>();
 
+  // Gestion Radio (logique type VMAX)
+  let radioCurrentSegmentId = 0;
+  const radioPrintedSegments = new Set<number>();
+
   // Debug : index de ligne visuelle (toutes les <tr> rendues)
   let renderedRowIndex = 0;
 
@@ -4591,8 +4759,6 @@ if (hasFranceFtLocal) {
   let csvZoneOpen = false;
   // compteur des VRAIES lignes principales (<tr className="ft-row-main">)
   let mainRowCounter = 0;
-  // radio : on veut l'afficher une seule fois dans le viewport
-  let radioPrintedInThisRender = false;
 
   const arrivalEvents: { arrivalMin: number; rowIndex: number }[] = [];
 
@@ -4921,11 +5087,11 @@ const hora = horaAssigned || horaFrance;
 
     const showRcBar = isRcBreakpointHere && i !== rawEntries.length - 1;
 
-// Colonne N (ETCS) : ① uniquement côté Espagne (ADIF / network absent)
+// Colonne N (ETCS) : valeur explicite uniquement, sans fallback ni propagation
 const nivel =
-  (entry as any).network === "RFN" || (entry as any).network === "LFP"
-    ? ""
-    : ((entry as any).etcs ?? "①");
+  typeof (entry as any).etcs === "string"
+    ? (entry as any).etcs.trim()
+    : "";
 
     // --- Vitesse par segment ---
     const segId = speedSegmentIndex[i] ?? 0;
@@ -4941,25 +5107,7 @@ const nivel =
 
     const isLabelRow = labelRowIndex === i;
 
-    // diagnostic VMAX (comme avant)
-    if (isLabelRow && segId > 0) {
-      const segIsVisible =
-        i >= visibleRows.first && i <= visibleRows.last;
 
-      console.log(
-        "[SCROLL INTELLIGENT VMAX]",
-        "segment",
-        segId,
-        "| ligne principale =",
-        i,
-        "| visibleRows =",
-        visibleRows.first, "→", visibleRows.last,
-        "| segmentVisible =",
-        segIsVisible,
-        "| v =",
-        currentSpeedText || "(aucune)"
-      );
-    }
 
     // est-ce qu'il y a une barre de V sur CETTE ligne principale ?
     const isBreakpointRow =
@@ -4969,6 +5117,26 @@ const nivel =
       entry.pk !== lastPk;
 
     const showVBar = !!isBreakpointRow;
+
+    if (
+      !entry.isNoteOnly &&
+      entry.pk &&
+      ["805.5", "802.0", "799.7", "752.4"].includes(entry.pk)
+    ) {
+      console.log(
+        "[VMAX ROW DEBUG]",
+        JSON.stringify({
+          i,
+          pk: entry.pk,
+          segId,
+          labelRowIndex,
+          isLabelRow,
+          currentSpeedText,
+          isBreakpointRow,
+          showVBar,
+        })
+      );
+    }
 
     // Contenu qui sera vraiment rendu plus bas
     let mainRowSpeedContent = "";
@@ -5030,6 +5198,60 @@ const nivel =
 
     const showSpeedSpacer =
       speedSpacerContent && speedSpacerContent.trim() !== "";
+
+    // --- Radio par segment (logique type VMAX) ---
+    const isRadioBreakpointHere =
+      !!(entry as any).radio_bar && i !== firstNonNoteIndex;
+
+    if (radioCurrentSegmentId === 0) {
+      radioCurrentSegmentId = 1;
+    } else if (isRadioBreakpointHere) {
+      radioCurrentSegmentId++;
+    }
+
+    const rawRadio = typeof radio === "string" ? radio.trim() : "";
+
+    let mainRowRadioContent = "";
+    let radioSpacerContent = "";
+
+    const segIdRadio = radioSegmentIndex[i] ?? 0;
+    const labelRowIndexRadio =
+      segIdRadio > 0 ? radioLabelRowIndex.get(segIdRadio) ?? null : null;
+    const radioValue =
+      segIdRadio > 0 ? radioValueBySeg.get(segIdRadio) ?? "" : "";
+
+    const isLabelRowRadio = labelRowIndexRadio === i;
+
+    const visibleStart4 = visibleRows.first;
+    const visibleEnd4 = visibleRows.last;
+    const targetVisible4 = visibleStart4 + 1;
+
+    const isInViewport =
+      i >= visibleStart4 && i <= visibleEnd4;
+
+    const isGoodSpotRadio =
+      mainRowCounter >= targetVisible4 && mainRowCounter <= visibleEnd4;
+
+
+    // --- Ligne principale ---
+    if (segIdRadio === 1 && isLabelRowRadio && radioValue) {
+      mainRowRadioContent = radioValue;
+    }
+
+    // --- Ligne intermédiaire ---
+    if (
+      segIdRadio > 1 &&
+      radioValue &&
+      labelRowIndexRadio !== null &&
+      i === labelRowIndexRadio
+    ) {
+      radioSpacerContent = radioValue;
+    }
+
+          const showRadioBar = false;
+    const showRadioSpacer =
+      radioSpacerContent && radioSpacerContent.trim() !== "";
+
     const showArrivalSpacer =
       horaArrivee && horaArrivee.trim() !== "";
 
@@ -5038,29 +5260,61 @@ const nivel =
     const isCsvStart = highlightKind === "bottom";
     const isCsvEnd = highlightKind === "top";
 
+    // Important : la dernière ligne d'une zone doit être rendue en "full"
+    // dès la ligne principale, sinon le bas manque visuellement.
+    const mainRowHighlightKind =
+      isCsvEnd ? "full" : highlightKind;
+
     let vmaxHighlightClass = "";
+
+    const isLastDisplayedDataRow = i === lastNonNoteIndex;
+
     if (highlightKind === "full") {
       vmaxHighlightClass = " ft-v-csv-full";
     } else if (highlightKind === "top") {
-      vmaxHighlightClass = " ft-v-csv-top";
+      vmaxHighlightClass = isLastDisplayedDataRow
+        ? " ft-v-csv-full"
+        : " ft-v-csv-top";
     } else if (highlightKind === "bottom") {
       vmaxHighlightClass = " ft-v-csv-bottom";
     }
 
-    // Debug CSV : vérifier le mapping index -> kind -> PK / dependencia
-    const pkForLog = entry.pk ?? "";
-    const dependenciaForLog = entry.dependencia ?? "";
-    console.log(
-      "[CSV HIGHLIGHT]",
-      "i=",
-      i,
-      "kind=",
-      highlightKind,
-      "pk=",
-      pkForLog,
-      "dependencia=",
-      dependenciaForLog
-    );
+    if (["715.5", "714.7", "713.2"].includes(entry.pk ?? "")) {
+      console.log(
+        "[CSV GIRONA MAIN FT]",
+        JSON.stringify({
+          pk: entry.pk ?? "",
+          highlightKind,
+          vmaxHighlightClass,
+          showVBar,
+          mainRowSpeedContent,
+        })
+      );
+    }
+
+    if (["629.4", "627.7", "626.7", "624.3"].includes(entry.pk ?? "")) {
+      console.log(
+        "[CSV LA SAGRERA MAIN FT]",
+        JSON.stringify({
+          i,
+          pk: entry.pk ?? "",
+          dependencia: entry.dependencia ?? "",
+          note: !!entry.isNoteOnly,
+          csv: !!entry.csv,
+          highlightKind,
+          isCsvStart,
+          isCsvEnd,
+          mainRowHighlightKind,
+          vmaxHighlightClass,
+          showVBar,
+          mainRowSpeedContent,
+          hasNoteAfter,
+          nextPk: rawEntries[i + 1]?.pk ?? "",
+          nextIsNoteOnly: !!rawEntries[i + 1]?.isNoteOnly,
+          nextDependencia: rawEntries[i + 1]?.dependencia ?? "",
+        })
+      );
+    }
 
     // 1) INTERLIGNES (remarque rouge + heure d'arrivée) AVANT la ligne principale
     //    - Trains PAIRS : remarque rouge + heure d'arrivée sur la même ligne, puis heure de départ (ligne principale)
@@ -5305,16 +5559,16 @@ onClick={() => {
       >
         {(() => {
          // 0) Barre de séparation Bloqueo
-if (bloqueoBar === 1 || bloqueoBar === 2) {
+if (bloqueoBarRows.has(i)) {
   return (
     <td className="ft-td" style={{ position: "relative" }}>
       <div
         style={{
           height: 2,
 
-          width: "calc(100% + 12px)",
-          left: -6,
-          right: -6,
+width: "calc(100% + 2px)",
+left: -1,
+right: -1,
 
           borderRadius: 0,
           background: "currentColor",
@@ -5442,32 +5696,62 @@ if (bloqueoBar === 1 || bloqueoBar === 2) {
         <td className="ft-td">{tecnico}</td>
         <td className="ft-td">{conc}</td>
 
-        <td className="ft-td">
+        <td className="ft-td" style={{ position: "relative" }}>
           {(() => {
-            // 1) cas normal : la toute première vraie ligne est visible
-            const isFirstRow = i === firstNonNoteIndex;
-            const isFirstRowVisible =
-              i >= visibleRows.first && i <= visibleRows.last;
+            const segId = radioSegmentIndex[i] ?? 0;
+            const labelRowIndex =
+              segId > 0 ? radioLabelRowIndex.get(segId) ?? null : null;
+            const segValue =
+              segId > 0 ? radioValueBySeg.get(segId) ?? "" : "";
 
-            if (isFirstRow && isFirstRowVisible) {
-              // on affiche là, et on note qu'on l'a fait
-              radioPrintedInThisRender = true;
-              return radio;
+            const isLabelRow = labelRowIndex === i;
+            const radioBar = segId > 1 && isLabelRow;
+
+            // Segment 1 : affichage direct sur la ligne principale
+            if (segId === 1 && isLabelRow) {
+              return (
+                <>
+                  {segValue}
+                  {radioBar && (
+                    <div
+                      style={{
+                        height: 2,
+width: "calc(100% + 2px)",
+left: -1,
+right: -1,
+                        borderRadius: 0,
+                        background: "currentColor",
+                        opacity: 1,
+                        position: "absolute",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                      }}
+                    />
+                  )}
+                </>
+              );
             }
 
-            // 2) sinon, on la repose sur la 2e ligne principale visible
-            const visibleStart4 = visibleRows.first;
-            const visibleEnd4 = visibleRows.last;
-            const targetVisible4 = visibleStart4 + 1; // comme VMax
-            const isGoodSpot =
-              mainRowCounter >= targetVisible4 && mainRowCounter <= visibleEnd4;
-
-            if (!radioPrintedInThisRender && isGoodSpot) {
-              radioPrintedInThisRender = true;
-              return radio;
+            // Segments suivants : barre seule sur la ligne principale
+            if (radioBar) {
+              return (
+                <div
+                  style={{
+                    height: 2,
+width: "calc(100% + 2px)",
+left: -1,
+right: -1,
+                    borderRadius: 0,
+                    background: "currentColor",
+                    opacity: 1,
+                    position: "absolute",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                  }}
+                />
+              );
             }
 
-            // 3) sinon, rien
             return "";
           })()}
         </td>
@@ -5502,13 +5786,50 @@ if (bloqueoBar === 1 || bloqueoBar === 2) {
       csvHighlightByIndex[i] = "full";
     }
 
-    // 3) LIGNE INTERMÉDIAIRE POUR LA VITESSE (sous la ligne principale)
-    if (showSpeedSpacer) {
+    // 3) LIGNE INTERMÉDIAIRE POUR LA VITESSE / RADIO (sous la ligne principale)
+
+    if (showSpeedSpacer || showRadioSpacer) {
       // Si la zone CSV est ouverte, cette ligne est "entre deux barres" => full
       const vmaxClassForSpeed = csvZoneOpen ? " ft-v-csv-full" : "";
 
+      if (["715.5", "714.7", "713.2", "710.7"].includes(entry.pk ?? "")) {
+        console.log(
+          "[CSV GIRONA SPACER FT]",
+          JSON.stringify({
+            pk: entry.pk ?? "",
+            highlightKind,
+            isCsvStart,
+            isCsvEnd,
+            csvZoneOpen,
+            vmaxClassForSpeed,
+            showSpeedSpacer,
+            showRadioSpacer,
+          })
+        );
+      }
+
+      if (["629.4", "627.7", "626.7", "624.3"].includes(entry.pk ?? "")) {
+        console.log(
+          "[CSV LA SAGRERA SPACER FT]",
+          JSON.stringify({
+            i,
+            pk: entry.pk ?? "",
+            dependencia: entry.dependencia ?? "",
+            highlightKind,
+            isCsvStart,
+            isCsvEnd,
+            csvZoneOpen,
+            vmaxClassForSpeed,
+            showSpeedSpacer,
+            speedSpacerContent,
+            showRadioSpacer,
+            radioSpacerContent,
+          })
+        );
+      }
+
       rows.push(
-        <tr className="ft-row-spacer" key={`speed-${i}`}>
+        <tr className="ft-row-spacer" key={`speed-radio-${i}`}>
           {(() => {
             renderedRowIndex++;
             return <td className="ft-td"></td>;
@@ -5527,7 +5848,9 @@ if (bloqueoBar === 1 || bloqueoBar === 2) {
 
           <td className="ft-td" />
           <td className="ft-td" />
-          <td className="ft-td" />
+
+          <td className="ft-td">{radioSpacerContent}</td>
+
           <td className="ft-td ft-rc-cell" />
           <td className="ft-td ft-td-nivel" />
         </tr>
@@ -5539,6 +5862,23 @@ if (bloqueoBar === 1 || bloqueoBar === 2) {
     if (isOdd && hasNoteAfter && i < rawEntries.length - 1) {
       // Si on est dans une zone CSV, la ligne de note est aussi "dans la zone" => full
       const vmaxClassForNote = csvZoneOpen ? " ft-v-csv-full" : "";
+
+      if (["629.4", "627.7", "626.7", "624.3"].includes(entry.pk ?? "")) {
+        console.log(
+          "[CSV LA SAGRERA NOTE FT]",
+          JSON.stringify({
+            i,
+            pk: entry.pk ?? "",
+            dependencia: entry.dependencia ?? "",
+            highlightKind,
+            csvZoneOpen,
+            vmaxClassForNote,
+            notePk: rawEntries[i + 1]?.pk ?? "",
+            noteIsNoteOnly: !!rawEntries[i + 1]?.isNoteOnly,
+            noteDependencia: rawEntries[i + 1]?.dependencia ?? "",
+          })
+        );
+      }
 
       rows.push(
         <tr className="ft-row-inter" key={`note-${i}`}>
@@ -5956,8 +6296,15 @@ if (bloqueoBar === 1 || bloqueoBar === 2) {
           padding: 2px 4px;
         }
 
-        .ft-row-spacer .ft-td:not(.ft-hora-cell):not(:first-child) {
+        .ft-row-spacer .ft-td:not(.ft-hora-cell):not(:first-child):not(:nth-child(9)) {
           font-size: 0;
+        }
+
+        .ft-row-spacer td:nth-child(9) {
+          font-size: 0.75rem;
+          line-height: 1.1;
+          font-weight: 600;
+          text-align: center;
         }
 
         .ft-row-spacer .ft-hora-cell {
