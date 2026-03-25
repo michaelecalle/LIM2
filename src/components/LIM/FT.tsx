@@ -1639,6 +1639,9 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
 
     // 1) Priorité : lire l'heure directement dans le DOM de la ligne verrouillée
     let rowMin: number | null = null;
+    let rowHoraText: string | null = null;
+    let rowHoraSource: "DOM_DEPART" | "DOM_THEO" | "THEO_FALLBACK" | "NONE" = "NONE";
+
     const container = scrollContainerRef.current;
 
     if (container) {
@@ -1653,7 +1656,10 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
         const theo = tr.querySelector<HTMLSpanElement>(
           "td:nth-child(6) .ft-hora-theo"
         );
-        const txt = ((dep?.textContent ?? theo?.textContent) ?? "").trim();
+
+        const depTxt = (dep?.textContent ?? "").trim();
+        const theoTxt = (theo?.textContent ?? "").trim();
+        const txt = (depTxt || theoTxt || "").trim();
 
         const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(txt);
         if (m) {
@@ -1667,6 +1673,8 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
             Number.isFinite(ss)
           ) {
             rowMin = hh * 60 + mm + ss / 60;
+            rowHoraText = txt;
+            rowHoraSource = depTxt ? "DOM_DEPART" : "DOM_THEO";
           }
         }
       }
@@ -1677,8 +1685,40 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
       const v = horaTheoMinutesByIndex[lockedRowIndex];
       if (typeof v === "number" && Number.isFinite(v)) {
         rowMin = v;
+        rowHoraText = formatMinutesToHora(Math.round(v));
+        rowHoraSource = "THEO_FALLBACK";
       }
     }
+
+    const lockedEntry = rawEntries[lockedRowIndex] as any;
+    const inputEntry = rawEntries[rowIndex] as any;
+
+    logTestEvent("ft:delta:capture-base-from-row", {
+      inputRowIndex: rowIndex,
+      lockedRowIndex,
+      standbyLockedRowCurrent: standbyLockedRowRef.current,
+      selectedRowIndexCurrent: selectedRowIndex,
+      activeRowIndexCurrent: activeRowIndex,
+      recalibrateFromRowCurrent: recalibrateFromRowRef.current,
+
+      inputPk: inputEntry?.pk ?? null,
+      inputPkAdif: inputEntry?.pk_adif ?? null,
+      inputPkLfp: inputEntry?.pk_lfp ?? null,
+      inputPkRfn: inputEntry?.pk_rfn ?? null,
+      inputNetwork: inputEntry?.network ?? null,
+      inputDependencia: inputEntry?.dependencia ?? null,
+
+      lockedPk: lockedEntry?.pk ?? null,
+      lockedPkAdif: lockedEntry?.pk_adif ?? null,
+      lockedPkLfp: lockedEntry?.pk_lfp ?? null,
+      lockedPkRfn: lockedEntry?.pk_rfn ?? null,
+      lockedNetwork: lockedEntry?.network ?? null,
+      lockedDependencia: lockedEntry?.dependencia ?? null,
+
+      horaSource: rowHoraSource,
+      horaText: rowHoraText,
+      rowMin,
+    });
 
     if (rowMin == null) return null;
 
@@ -3397,6 +3437,27 @@ logTestEvent("gps:mode-check", {
             state: gpsStateRef.current,
             reason: "pk_frozen_red_near_commercial_stop",
             stationProxKm: STATION_PROX_KM,
+          });
+
+          // 🔎 DEBUG DIAGNOSTIC standby auto
+          const autoStandbyEntry = rawEntries[rowIndex] as any;
+          const autoStandbyHora = resolveHoraForRowIndex(rowIndex);
+
+          logTestEvent("ft:standby:auto:debug", {
+            rowIndex,
+            pk,
+            deltaKm,
+            selectedRowIndexBefore: selectedRowIndex,
+            activeRowIndexBefore: activeRowIndex,
+            recalibrateFromRowBefore: recalibrateFromRowRef.current,
+            standbyLockedRowBefore: standbyLockedRowRef.current,
+            horaResolved: autoStandbyHora || null,
+            rowPk: autoStandbyEntry?.pk ?? null,
+            rowPkAdif: autoStandbyEntry?.pk_adif ?? null,
+            rowPkLfp: autoStandbyEntry?.pk_lfp ?? null,
+            rowPkRfn: autoStandbyEntry?.pk_rfn ?? null,
+            rowNetwork: autoStandbyEntry?.network ?? null,
+            dependencia: autoStandbyEntry?.dependencia ?? null,
           });
 
           // Visuel + base de recalage (comme un clic Standby)
@@ -5515,6 +5576,40 @@ onClick={() => {
               pk: entry?.pk ?? null,
               dependencia: entry?.dependencia ?? null,
               source: "ft:row-click",
+            });
+
+            // 🔎 DEBUG DIAGNOSTIC reprise standby
+            const clickedRowIndex = i;
+            const lockedRowIndex =
+              standbyLockedRowRef.current != null ? standbyLockedRowRef.current : null;
+            const clickedEntry = rawEntries[clickedRowIndex] as any;
+            const resumeEntry = rawEntries[resumeRowIndex] as any;
+
+            logTestEvent("ft:standby:resume:debug", {
+              clickedRowIndex,
+              lockedRowIndex,
+              resumeRowIndex,
+              selectedRowIndexCurrent: selectedRowIndex,
+              activeRowIndexCurrent: activeRowIndex,
+              recalibrateFromRowCurrent: recalibrateFromRowRef.current,
+              standbyLockedRowCurrent: standbyLockedRowRef.current,
+
+              clickedHora: resolveHoraForRowIndex(clickedRowIndex) || null,
+              resumeHora: resolveHoraForRowIndex(resumeRowIndex) || null,
+
+              clickedPk: clickedEntry?.pk ?? null,
+              clickedPkAdif: clickedEntry?.pk_adif ?? null,
+              clickedPkLfp: clickedEntry?.pk_lfp ?? null,
+              clickedPkRfn: clickedEntry?.pk_rfn ?? null,
+              clickedNetwork: clickedEntry?.network ?? null,
+              clickedDependencia: clickedEntry?.dependencia ?? null,
+
+              resumePk: resumeEntry?.pk ?? null,
+              resumePkAdif: resumeEntry?.pk_adif ?? null,
+              resumePkLfp: resumeEntry?.pk_lfp ?? null,
+              resumePkRfn: resumeEntry?.pk_rfn ?? null,
+              resumeNetwork: resumeEntry?.network ?? null,
+              resumeDependencia: resumeEntry?.dependencia ?? null,
             });
 
             // on recale explicitement la base sur LA ligne verrouillée
