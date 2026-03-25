@@ -2211,10 +2211,22 @@
     },
     "38510": {
       "meta": {
-        "origine": "",
-        "destination": ""
+        "origine": "BARCELONA SANTS",
+        "destination": "CAN TUNIS AV"
       },
-      "byRowKey": {}
+      "byRowKey": {
+        "ns-data-0006": {
+          "hora": "22:00"
+        },
+        "ns-data-0001": {
+          "hora": "22:06",
+          "conc": "1"
+        },
+        "ns-data-0002": {
+          "hora": "22:05",
+          "conc": "5"
+        }
+      }
     },
     "39819": {
       "meta": {
