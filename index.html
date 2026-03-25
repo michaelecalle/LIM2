@@ -4,57 +4,59 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2" />
-    <link rel="manifest" href="/manifest.webmanifest?v=3" />
-    <meta name="apple-mobile-web-app-title" content="LIM" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="manifest" href="/manifest.webmanifest?v=3" />
+<meta name="apple-mobile-web-app-title" content="LIM2" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="apple-mobile-web-app-orientation" content="landscape">
-    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="apple-mobile-web-app-orientation" content="landscape">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
-    <title>LIM</title>
-    <!-- Style minimal pour vérifier le toggle Jour/Nuit indépendamment de Tailwind -->
-    <style>
-      :root {
-        --bg: #f6f7f9;
-        --fg: #0a0a0a;
-      }
-      [data-theme="dark"] {
-        --bg: #0b0f1a;
-        --fg: #e7e9ee;
-      }
-      html, body, #root, main {
-        background: var(--bg);
-        color: var(--fg);
-        min-height: 100%;
-      }
-      /* Rendez le changement évident sur l'en-tête */
-      header {
-        transition: background-color 0.2s ease, color 0.2s ease;
-      }
+<title>LIM2</title>
+<!-- Style minimal pour vérifier le toggle Jour/Nuit indépendamment de Tailwind -->
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --fg: #0a0a0a;
+  }
+  [data-theme="dark"] {
+    --bg: #0b0f1a;
+    --fg: #e7e9ee;
+  }
+  html, body, #root, main {
+    background: var(--bg);
+    color: var(--fg);
+    min-height: 100%;
+  }
+  /* Rendez le changement évident sur l'en-tête */
+  header {
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
 
-      @media screen and (orientation: portrait) {
-        /* On masque l'application normale */
-        #root > * {
-          display: none;
-        }
+  @media screen and (orientation: portrait) {
+    /* On masque l'application normale */
+    #root > * {
+      display: none;
+    }
 
-        /* On affiche un écran de blocage avec un message */
-        #root {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
-          font-size: 1.2rem;
-          padding: 1rem;
-        }
+    /* On affiche un écran de blocage avec un message */
+    #root {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 1.2rem;
+      padding: 1rem;
+    }
 
-        #root::before {
-          content: "Tournez l’iPad en mode paysage pour utiliser LIM.";
-          max-width: 80%;
-        }
+    #root::before {
+      content: "Tournez l’iPad en mode paysage pour utiliser LIM2.";
+      max-width: 80%;
+    }
+  }
+</style>
       }
     </style>
   </head>
