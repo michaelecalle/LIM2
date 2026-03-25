@@ -89,10 +89,22 @@ export interface FTEntry {
   rc?: number;
   rc_bar?: boolean;
 
-  // Autres colonnes à venir
+  // Identifiant de ligne normalisée (clé de jointure avec trains[train].byRowKey)
+  rowKey?: string;
+
+  // Autres colonnes à venir / données train-spécifiques
   etcs?: string;
   hora?: string;
+  com?: string;
+
+  /**
+   * Le fichier normalisé publié par LIM Editor utilise "tecn".
+   * On conserve aussi "tecnico" temporairement pour compatibilité
+   * avec l’existant tant que toute la chaîne Cabin n’a pas été migrée.
+   */
+  tecn?: string;
   tecnico?: string;
+
   conc?: string;
 }
 // -----------------------------------------------------------------------------

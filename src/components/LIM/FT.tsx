@@ -2,8 +2,8 @@
 import FTScrolling from "./FTScrolling"; // Ajouter cette ligne juste après les autres imports
 import React, { useState, useEffect, useMemo } from "react";
 import {
-  FT_LIGNE_PAIR,
-  FT_LIGNE_IMPAIR,
+  getFtLignePair,
+  getFtLigneImpair,
   CSV_ZONES,
 } from "../../data/ligneFT.normalized.adapter";
 import type { FTEntry, CsvSens } from "../../data/ligneFT";
@@ -622,6 +622,8 @@ export default function FT({ variant = "classic" }: FTProps) {
 
   // Position verticale "continue" du train (px dans le viewport scrollable)
   const [trainPosYpx, setTrainPosYpx] = useState<number | null>(null);
+
+
 
   // --- Continuité ORANGE -> RED (ancrage visuel) + anti-retour arrière en RED ---
   const lastTrainPosYpxRef = React.useRef<number | null>(null);
@@ -2160,16 +2162,16 @@ useEffect(() => {
     let oriented: FTEntry[];
 
     if (isOdd) {
-      picked = FT_LIGNE_PAIR;
+      picked = getFtLignePair(trainNumber);
       oriented = picked;
       console.log(
-        "[FT] Sens choisi: IMPAIR (Espagne→France, PK croissants) / Jeu de données = FT_LIGNE_PAIR"
+        "[FT] Sens choisi: IMPAIR (Espagne→France, PK croissants) / Jeu de données = getFtLignePair(trainNumber)"
       );
     } else {
-      picked = FT_LIGNE_IMPAIR;
+      picked = getFtLigneImpair(trainNumber);
       oriented = [...picked].reverse();
       console.log(
-        "[FT] Sens choisi: PAIR (France→Espagne, PK décroissants) / Jeu de données = FT_LIGNE_IMPAIR inversé"
+        "[FT] Sens choisi: PAIR (France→Espagne, PK décroissants) / Jeu de données = getFtLigneImpair(trainNumber) inversé"
       );
     }
 
@@ -2321,6 +2323,61 @@ useEffect(() => {
     return visibleEntries;
   }, [isOdd, trainNumber, routeStart, routeEnd]);
 
+    useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const run = () => {
+      const scrollTop = el.scrollTop;
+      const clientHeight = el.clientHeight;
+
+      const rowEls = el.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main");
+      if (!rowEls.length) return;
+
+      let firstVisible = 0;
+      for (let i = 0; i < rowEls.length; i++) {
+        const r = rowEls[i];
+        const top = r.offsetTop;
+        const bottom = top + r.offsetHeight;
+        if (bottom >= scrollTop) {
+          firstVisible = i;
+          break;
+        }
+      }
+
+      const viewportBottom = scrollTop + clientHeight;
+      let lastVisible = firstVisible;
+      for (let i = firstVisible; i < rowEls.length; i++) {
+        const r = rowEls[i];
+        const top = r.offsetTop;
+        if (top <= viewportBottom) {
+          lastVisible = i;
+        } else {
+          break;
+        }
+      }
+
+      const firstDataAttr = rowEls[firstVisible]?.getAttribute("data-ft-row") ?? "";
+      const lastDataAttr = rowEls[lastVisible]?.getAttribute("data-ft-row") ?? "";
+      const firstDataRow = firstDataAttr ? parseInt(firstDataAttr, 10) : null;
+      const lastDataRow = lastDataAttr ? parseInt(lastDataAttr, 10) : null;
+
+      const nextFirst =
+        typeof firstDataRow === "number" && Number.isFinite(firstDataRow)
+          ? firstDataRow
+          : firstVisible;
+
+      const nextLast =
+        typeof lastDataRow === "number" && Number.isFinite(lastDataRow)
+          ? lastDataRow
+          : lastVisible;
+
+      setVisibleRows({ first: nextFirst, last: nextLast });
+    };
+
+    requestAnimationFrame(run);
+  }, [rawEntries]);
+  
   // Trouve l'index de la ligne FT correspondant au PK GPS,
   // en prenant la dernière ligne "atteinte" (en amont) dans le sens du parcours.
 function findRowIndexFromPk(targetPk: number | null): number | null {
@@ -3714,9 +3771,9 @@ logTestEvent("gps:mode-check", {
     // pour éviter un seed calculé dans le mauvais sens.
     let baseOriented: FTEntry[];
     if (isOddFlag) {
-      baseOriented = FT_LIGNE_PAIR;
+      baseOriented = getFtLignePair(trainNumber);
     } else {
-      baseOriented = [...FT_LIGNE_IMPAIR].reverse();
+      baseOriented = [...getFtLigneImpair(trainNumber)].reverse();
     }
 
     const idxStart = baseOriented.findIndex(
@@ -4495,14 +4552,17 @@ if (hasFranceFtLocal) {
 
       const eligible = isEligible(rawEntries[i]);
 
-      const horaStr =
+      const horaFromNormalized =
+        typeof e?.hora === "string" ? e.hora.trim() : "";
+
+      const horaFromPdf =
         eligible && cursor < heuresDetectees.length
           ? heuresDetectees[cursor]
-          : (e?.hora ?? "");
+          : "";
 
       if (eligible && cursor < heuresDetectees.length) cursor++;
 
-      const horaText = typeof horaStr === "string" ? horaStr.trim() : "";
+      const horaText = (horaFromNormalized || horaFromPdf).trim();
       departHoraTextByIndex[i] = horaText.length > 0 ? horaText : null;
 
       // parseHoraToMinutes existe déjà dans ton fichier
@@ -4911,10 +4971,16 @@ const sitKm =
 const pkKey = (sitKm ?? "").toString().replace(".", ",");
 
 const eligible = isEligible(entry);
-const horaAssigned =
+
+const horaFromNormalized =
+  typeof (entry as any).hora === "string"
+    ? (entry as any).hora.trim()
+    : "";
+
+const horaFromPdf =
   eligible && heuresDetecteesCursor < heuresDetectees.length
     ? heuresDetectees[heuresDetecteesCursor]
-    : (entry as any).hora ?? "";
+    : "";
 
 // Heures France (si dispo) : lookup par n° de train + PK "à la française" (virgule)
 const horaFrance =
@@ -4922,7 +4988,7 @@ const horaFrance =
     ? getFtFranceHhmm(trainNumber, pkKey)
     : "";
 
-const hora = horaAssigned || horaFrance;
+const hora = horaFromNormalized || horaFromPdf || horaFrance;
 
     const depNorm = (entry.dependencia ?? "")
       .toUpperCase()
@@ -4947,31 +5013,48 @@ const hora = horaAssigned || horaFrance;
     const isOriginOrDestinationForHighlight =
       isOriginOrTerminus && !isLimiteAdifLfspa;
 
-    if (hora && isVoyageursStop && !isOriginOrTerminus) {
-      const codesPourHeure = codesCParHeure[hora] ?? [];
-      if (codesPourHeure.length > 0) {
-        com = codesPourHeure.join(" ");
+    // ✅ COM : priorité au fichier normalisé, fallback PDF seulement si absent
+    const comFromNormalizedRaw = (entry as any).com;
+    const comFromNormalized =
+      typeof comFromNormalizedRaw === "string"
+        ? comFromNormalizedRaw.trim()
+        : typeof comFromNormalizedRaw === "number" && Number.isFinite(comFromNormalizedRaw)
+          ? String(comFromNormalizedRaw)
+          : "";
 
-        const firstCode = codesPourHeure[0];
-        const n = Number(firstCode);
-        if (Number.isFinite(n)) {
-          comMinutes = n;
-        } else {
-          console.warn(
-            "[FT] Impossible de parser COM en minutes pour l'heure",
-            hora,
-            "code=",
-            firstCode
-          );
-        }
+    const comFromPdfList =
+      hora && isVoyageursStop && !isOriginOrTerminus
+        ? (codesCParHeure[hora] ?? [])
+        : [];
 
-        if (codesPourHeure.length > 1) {
-          console.warn(
-            "[FT] Plusieurs codes C détectés pour la même heure",
-            hora,
-            codesPourHeure
-          );
-        }
+    const comFromPdf =
+      comFromPdfList.length > 0 ? comFromPdfList.join(" ").trim() : "";
+
+    com = comFromNormalized || comFromPdf;
+
+    if (com) {
+      const firstCode = com.split(/\s+/)[0];
+      const n = Number(firstCode);
+
+      if (Number.isFinite(n)) {
+        comMinutes = n;
+      } else {
+        console.warn(
+          "[FT] Impossible de parser COM en minutes pour la ligne",
+          i,
+          "hora=",
+          hora,
+          "com=",
+          com
+        );
+      }
+
+      if (!comFromNormalized && comFromPdfList.length > 1) {
+        console.warn(
+          "[FT] Plusieurs codes C détectés pour la même heure",
+          hora,
+          comFromPdfList
+        );
       }
     }
 
@@ -4979,11 +5062,27 @@ const hora = horaAssigned || horaFrance;
       heuresDetecteesCursor++;
     }
 
-    const tecnico = (entry as any).tecnico ?? "";
+    // ✅ TECN : priorité au fichier normalisé
+    const tecnicoRaw =
+      (entry as any).tecn ?? (entry as any).tecnico;
 
-    let conc = (entry as any).conc ?? "";
+    const tecnico =
+      typeof tecnicoRaw === "string"
+        ? tecnicoRaw.trim()
+        : typeof tecnicoRaw === "number" && Number.isFinite(tecnicoRaw)
+          ? String(tecnicoRaw)
+          : "";
 
-    // Heure d'arrivée calculée
+    // ✅ CONC : priorité au fichier normalisé, sans recalcul local
+    const concRaw = (entry as any).conc;
+    const conc =
+      typeof concRaw === "string"
+        ? concRaw.trim()
+        : typeof concRaw === "number" && Number.isFinite(concRaw)
+          ? String(concRaw)
+          : "";
+
+    // ✅ Heure d'arrivée calculée à partir du COM effectivement retenu
     let horaArrivee: string | null = null;
     if (hora && comMinutes != null && comMinutes > 0) {
       const depMinutes = parseHoraToMinutes(hora);
@@ -4996,34 +5095,6 @@ const hora = horaAssigned || horaFrance;
           arrivalMin: arrMinutes,
           rowIndex: i,
         });
-      }
-    }
-
-    const prevHoraStr = previousHoraForConc;
-    const currentHoraStr = hora;
-
-    const prevMinutes = parseHoraToMinutes(prevHoraStr);
-    const currentMinutes = parseHoraToMinutes(currentHoraStr);
-
-    if (prevMinutes != null && currentMinutes != null) {
-      const comForThisRow = comMinutes ?? 0;
-      const diff = currentMinutes - prevMinutes - comForThisRow;
-
-      if (diff >= 0 && diff < 6 * 60) {
-        conc = String(diff);
-      } else {
-        console.warn(
-          "[FT] CONC calculé aberrant pour la ligne",
-          i,
-          "prevHora=",
-          prevHoraStr,
-          "hora=",
-          currentHoraStr,
-          "com=",
-          comForThisRow,
-          "diff=",
-          diff
-        );
       }
     }
 

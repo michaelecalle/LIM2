@@ -4,6 +4,11 @@ import { LIGNE_FT_NORMALIZED } from "./normalized/ligneFT.normalized";
 import type { FTEntry, FtNetwork } from "./ligneFT";
 
 type NormalizedRow = (typeof LIGNE_FT_NORMALIZED)["nordSud"]["rows"][number];
+type NormalizedTrainKey = keyof typeof LIGNE_FT_NORMALIZED.trains;
+type NormalizedTrain =
+  (typeof LIGNE_FT_NORMALIZED)["trains"][NormalizedTrainKey];
+type NormalizedTrainRowOverride = NormalizedTrain["byRowKey"][string];
+
 type CsvSens = "PAIR" | "IMPAIR";
 
 type CsvZone = {
@@ -40,6 +45,7 @@ function mapDataRow(row: NormalizedRow): FTEntry {
   const entry: FTEntry = {
     pk: row.sitKm,
     dependencia: row.dependencia,
+    rowKey: row.rowKey,
     ...(row.csv ? { csv: true } : {}),
   };
 
@@ -80,6 +86,7 @@ function mapNoteRow(row: NormalizedRow): FTEntry {
   const entry: FTEntry = {
     pk: "",
     dependencia: "",
+    rowKey: row.rowKey,
     isNoteOnly: true,
     notes: row.notes,
     ...(row.csv ? { csv: true } : {}),
@@ -93,6 +100,9 @@ function mapNoteRow(row: NormalizedRow): FTEntry {
 
   const rc = asOptionalNumber(row.rampCaract);
   if (rc !== undefined) entry.rc = rc;
+
+  const etcs = asNonEmptyString((row as any).etcs);
+  if (etcs !== undefined) entry.etcs = etcs;
 
   return entry;
 }
@@ -118,7 +128,10 @@ function getRowPkNumber(row: NormalizedRow): number | undefined {
  * - si la séquence est coupée par une note (ou fin de tableau),
  *   on s'arrête à la dernière ligne csv:true
  */
-function buildCsvZonesFromDisplayedRows(rows: NormalizedRow[], sens: CsvSens): CsvZone[] {
+function buildCsvZonesFromDisplayedRows(
+  rows: NormalizedRow[],
+  sens: CsvSens
+): CsvZone[] {
   const zones: CsvZone[] = [];
 
   const firstDataIndex = rows.findIndex((row) => getRowPkNumber(row) !== undefined);
@@ -182,6 +195,47 @@ function buildCsvZonesFromDisplayedRows(rows: NormalizedRow[], sens: CsvSens): C
   return zones;
 }
 
+function getTrainOverrides(
+  trainNumber: number | string | null | undefined
+): Record<string, NormalizedTrainRowOverride> {
+  if (trainNumber == null) return {};
+
+  const key = String(trainNumber).trim() as NormalizedTrainKey;
+  const train = LIGNE_FT_NORMALIZED.trains[key];
+
+  if (!train || !train.byRowKey) return {};
+
+  return train.byRowKey;
+}
+
+function applyTrainOverrides(
+  entries: FTEntry[],
+  trainNumber: number | string | null | undefined
+): FTEntry[] {
+  const overridesByRowKey = getTrainOverrides(trainNumber);
+
+  return entries.map((entry) => {
+    const rowKey = (entry as any).rowKey;
+    if (!rowKey || !overridesByRowKey[rowKey]) return entry;
+
+    const override = overridesByRowKey[rowKey];
+    const next: FTEntry = { ...entry };
+
+    const hora = asNonEmptyString(override?.hora);
+    if (hora !== undefined) next.hora = hora;
+
+    const com = asNonEmptyString(override?.com);
+    if (com !== undefined) next.com = com;
+
+    const tecn = asNonEmptyString((override as any)?.tecn);
+    if (tecn !== undefined) next.tecn = tecn;
+
+    const conc = asNonEmptyString(override?.conc);
+    if (conc !== undefined) next.conc = conc;
+
+    return next;
+  });
+}
 function addVmaxBars(entries: FTEntry[]): FTEntry[] {
   let previousEffectiveVmax: number | undefined = undefined;
   let hasPreviousDataRow = false;
@@ -280,16 +334,36 @@ function addRadioBars(entries: FTEntry[]): FTEntry[] {
     return { ...entry, radio_bar: true };
   });
 }
+function buildFtEntries(
+  rows: NormalizedRow[],
+  trainNumber: number | string | null | undefined
+): FTEntry[] {
+  const mapped = rows.map(mapRow);
+  const merged = applyTrainOverrides(mapped, trainNumber);
+  return addRadioBars(addBloqueoBars(addRcBars(addVmaxBars(merged))));
+}
 
 // Jeux de données historiques conservés pour FT.tsx
-const pairBase: FTEntry[] = LIGNE_FT_NORMALIZED.sudNord.rows.map(mapRow);
-const impairBase: FTEntry[] = LIGNE_FT_NORMALIZED.nordSud.rows.map(mapRow);
+const pairBaseRows = LIGNE_FT_NORMALIZED.sudNord.rows;
+const impairBaseRows = LIGNE_FT_NORMALIZED.nordSud.rows;
 
-export const FT_LIGNE_PAIR: FTEntry[] =
-  addRadioBars(addBloqueoBars(addRcBars(addVmaxBars(pairBase))));
+export function getFtLignePair(
+  trainNumber: number | string | null | undefined
+): FTEntry[] {
+  return buildFtEntries(pairBaseRows, trainNumber);
+}
 
-export const FT_LIGNE_IMPAIR: FTEntry[] =
-  addRadioBars(addBloqueoBars(addRcBars(addVmaxBars(impairBase))));
+export function getFtLigneImpair(
+  trainNumber: number | string | null | undefined
+): FTEntry[] {
+  return buildFtEntries(impairBaseRows, trainNumber);
+}
+
+// Compatibilité temporaire avec l’existant tant que FT.tsx
+// n’appelle pas encore les fonctions dépendantes du train.
+export const FT_LIGNE_PAIR: FTEntry[] = getFtLignePair(null);
+
+export const FT_LIGNE_IMPAIR: FTEntry[] = getFtLigneImpair(null);
 
 // CSV_ZONES reconstruites dans l'ordre affiché réel
 // - PAIR   = train pair = nordSud affiché en ordre inversé
