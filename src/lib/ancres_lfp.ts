@@ -22,11 +22,19 @@ export const ANCRES_LFP: AnchorLFP[] = [
 
   {
     pk_lfp: 42.949,
-    s_km: 137.092765,
-    lat: 42.2929145,
-    lon: 2.9308066,
-    index_ruban: 5486,
+    s_km: 138.393795,
+    lat: 42.3042288,
+    lon: 2.9268142,
+    index_ruban: 5538,
     label: 'LLERS',
+  },
+  {
+    pk_lfp: 35.462,
+    s_km: 145.396634,
+    lat: 42.3614335,
+    lon: 2.8944932,
+    index_ruban: 5818,
+    label: 'TUNNEL NORD',
   },
   {
     pk_lfp: 29.735,
