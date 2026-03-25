@@ -36,10 +36,10 @@ export const ANCRES_PK_S: AnchorPkS[] = [
   },
   {
     pk: 710.655,
-    s_km: 95.323812,
-    lat: 41.9475752,
-    lon: 2.8039863,
-    index_ruban: 3816,
+    s_km: 94.774317,
+    lat: 41.9440379,
+    lon: 2.7994688,
+    index_ruban: 3794,
     label: 'BIF. GIRONA MERCADERIES',
   },
   {
@@ -75,7 +75,7 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     label: 'LLINARS-A. V.',
   },
   {
-    pk: 640.904,
+    pk: 640.547,
     s_km: 24.600028,
     lat: 41.5297288,
     lon: 2.2191479,
