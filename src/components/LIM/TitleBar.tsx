@@ -1968,17 +1968,7 @@ ${coords}
       <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />
     </svg>
   )
-  const IconFile = () => (
-    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" className="opacity-80">
-      <path
-        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-        fill="currentColor"
-        fillOpacity=".06"
-      />
-      <path d="M14 2v6h6" fill="none" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  )
-
+const IconFile = () => null
   return (
     <header id="lim-titlebar-root" className="surface-header rounded-2xl px-3 py-2 shadow-sm">
       {pdfLoading && (
