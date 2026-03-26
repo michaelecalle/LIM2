@@ -1210,6 +1210,25 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
+        "id": "sn-data-0056",
+        "rowKey": "sn-data-0056",
+        "type": "data",
+        "reseau": "LFP",
+        "pkInterne": "",
+        "pkAdif": "",
+        "pkLfp": "",
+        "pkRfn": "",
+        "bloqueo": "",
+        "vmax": "",
+        "sitKm": "",
+        "dependencia": "",
+        "radio": "",
+        "rampCaract": "",
+        "csv": false,
+        "notes": [],
+        "etcs": ""
+      },
+      {
         "id": "sn-data-0009",
         "rowKey": "sn-data-0009",
         "type": "data",
@@ -1264,7 +1283,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "rampCaract": "28",
         "csv": false,
         "notes": [
-          "35 VIAS ESTACIONAM. V11, V19 Y V10, V18"
+          "35 VIAS ESTACIONAM. V11, V19 Y V10, V18 TEST"
         ],
         "etcs": "①"
       },
@@ -1288,6 +1307,25 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
+        "id": "sn-data-0057",
+        "rowKey": "sn-data-0057",
+        "type": "data",
+        "reseau": "",
+        "pkInterne": "",
+        "pkAdif": "",
+        "pkLfp": "",
+        "pkRfn": "",
+        "bloqueo": "",
+        "vmax": "",
+        "sitKm": "",
+        "dependencia": "TEST",
+        "radio": "",
+        "rampCaract": "",
+        "csv": false,
+        "notes": [],
+        "etcs": ""
+      },
+      {
         "id": "sn-data-0013",
         "rowKey": "sn-data-0013",
         "type": "data",
@@ -1304,6 +1342,27 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "rampCaract": "28",
         "csv": false,
         "notes": [],
+        "etcs": "①"
+      },
+      {
+        "id": "sn-note-0058",
+        "rowKey": "sn-note-0058",
+        "type": "note",
+        "reseau": "",
+        "pkInterne": "",
+        "pkAdif": "",
+        "pkLfp": "",
+        "pkRfn": "",
+        "bloqueo": "↓ BCA ↓",
+        "vmax": "",
+        "sitKm": "",
+        "dependencia": "",
+        "radio": "◯ GSMR",
+        "rampCaract": "28",
+        "csv": false,
+        "notes": [
+          "TEST NOTE AJOUEE"
+        ],
         "etcs": "①"
       },
       {
@@ -1337,25 +1396,6 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "200",
         "sitKm": "632.4",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "28",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "sn-data-0016",
-        "rowKey": "sn-data-0016",
-        "type": "data",
-        "reseau": "ADIF",
-        "pkInterne": "634.5",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "634.5",
         "dependencia": "",
         "radio": "◯ GSMR",
         "rampCaract": "28",
