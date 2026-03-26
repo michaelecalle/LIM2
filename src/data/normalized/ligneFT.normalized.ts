@@ -1286,6 +1286,25 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
+        "id": "sn-data-0058",
+        "rowKey": "sn-data-0058",
+        "type": "data",
+        "reseau": "",
+        "pkInterne": "",
+        "pkAdif": "",
+        "pkLfp": "",
+        "pkRfn": "",
+        "bloqueo": "",
+        "vmax": "45",
+        "sitKm": "",
+        "dependencia": "",
+        "radio": "",
+        "rampCaract": "",
+        "csv": true,
+        "notes": [],
+        "etcs": ""
+      },
+      {
         "id": "sn-note-0011",
         "rowKey": "sn-note-0011",
         "type": "note",
@@ -1324,6 +1343,25 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "csv": true,
         "notes": [],
         "etcs": "①"
+      },
+      {
+        "id": "sn-data-0059",
+        "rowKey": "sn-data-0059",
+        "type": "data",
+        "reseau": "",
+        "pkInterne": "",
+        "pkAdif": "",
+        "pkLfp": "",
+        "pkRfn": "",
+        "bloqueo": "",
+        "vmax": "45",
+        "sitKm": "",
+        "dependencia": "",
+        "radio": "",
+        "rampCaract": "",
+        "csv": true,
+        "notes": [],
+        "etcs": ""
       },
       {
         "id": "sn-data-0013",
