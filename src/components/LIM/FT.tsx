@@ -4199,6 +4199,87 @@ if (hasFranceFtLocal) {
     }
   }
 
+  // --- Réconciliation CSV stratégie B ---
+  // Une ligne data csv:true sans PK, placée au milieu d'un segment CSV cohérent,
+  // ne doit pas interrompre le surlignage.
+  // On repère les runs de lignes csv:true (les notes sont transparentes),
+  // puis on étend le surlignage à tout le run si au moins une ligne du run
+  // est déjà surlignée par la logique historique basée sur CSV_ZONES.
+  {
+    let currentRun: number[] = [];
+
+    const flushRun = () => {
+      if (currentRun.length === 0) {
+        return;
+      }
+
+      const runHasHistoricalHighlight = currentRun.some(
+        (idx) => csvHighlightByIndex[idx] !== "none"
+      );
+
+      if (!runHasHistoricalHighlight) {
+        currentRun = [];
+        return;
+      }
+
+      if (currentRun.length === 1) {
+        const onlyIdx = currentRun[0];
+        const nextIdx = onlyIdx + 1;
+        const nextHighlight =
+          nextIdx < csvHighlightByIndex.length
+            ? csvHighlightByIndex[nextIdx]
+            : "none";
+
+        csvHighlightByIndex[onlyIdx] =
+          nextHighlight === "top" ? "full" : "full";
+
+        currentRun = [];
+        return;
+      }
+
+      const lastIdx = currentRun[currentRun.length - 1];
+      const nextIdx = lastIdx + 1;
+      const nextHighlight =
+        nextIdx < csvHighlightByIndex.length
+          ? csvHighlightByIndex[nextIdx]
+          : "none";
+
+      const keepHistoricalClosingRow =
+        nextHighlight === "top";
+
+      for (let j = 0; j < currentRun.length; j++) {
+        const idx = currentRun[j];
+
+        if (j === 0) {
+          csvHighlightByIndex[idx] = "bottom";
+        } else if (j === currentRun.length - 1) {
+          csvHighlightByIndex[idx] = keepHistoricalClosingRow ? "full" : "top";
+        } else {
+          csvHighlightByIndex[idx] = "full";
+        }
+      }
+
+      currentRun = [];
+    };
+
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e = rawEntries[i];
+
+      if (e?.isNoteOnly) {
+        continue;
+      }
+
+      if (e?.csv) {
+        currentRun.push(i);
+        continue;
+      }
+
+      flushRun();
+    }
+
+    flushRun();
+  }
+
   console.log(
     "[CSV ZONES JSON]",
     JSON.stringify({
@@ -4259,9 +4340,7 @@ if (hasFranceFtLocal) {
           csv: !!e?.csv,
           highlight: csvHighlightByIndex[i],
         }))
-        .filter((row) =>
-          ["630.7", "629.4", "627.7", "626.7", "624.3"].includes(row.pk)
-        ),
+        .filter((row) => row.i >= 4 && row.i <= 11),
     })
   );
 

@@ -77,6 +77,9 @@ goto :end
 :git_error
 echo.
 echo ❌ Erreur git. Arret.
+echo.
+pause
+endlocal
 exit /b 1
 
 :end
