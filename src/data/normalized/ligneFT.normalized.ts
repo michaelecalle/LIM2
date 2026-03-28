@@ -2285,16 +2285,14 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "com": "1",
           "conc": "10"
         }
-      },
-      "publishState": "local"
+      }
     },
     "9711": {
       "meta": {
         "origine": "",
         "destination": ""
       },
-      "byRowKey": {},
-      "publishState": "local"
+      "byRowKey": {}
     },
     "9712": {
       "meta": {
