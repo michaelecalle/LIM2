@@ -2271,29 +2271,6 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         }
       }
     },
-    "9710": {
-      "meta": {
-        "origine": "PERPIGNAN",
-        "destination": "FRONTIERE"
-      },
-      "byRowKey": {
-        "ns-data-0055": {
-          "hora": "12:00"
-        },
-        "ns-data-0051": {
-          "hora": "12:10",
-          "com": "1",
-          "conc": "10"
-        }
-      }
-    },
-    "9711": {
-      "meta": {
-        "origine": "",
-        "destination": ""
-      },
-      "byRowKey": {}
-    },
     "9712": {
       "meta": {
         "origine": "PERPIGNAN",
