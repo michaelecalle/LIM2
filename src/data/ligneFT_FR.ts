@@ -53,6 +53,4 @@ export const FT_FR_BLOC_VERS_ESPAGNE: FTEntry[] = [
   },
 ];
 
-// Sens Espagne → France : bloc France doit apparaître EN BAS (après la limite)
-// (ordre inversé du bloc ci-dessus)
 export const FT_FR_BLOC_VERS_FRANCE: FTEntry[] = [...FT_FR_BLOC_VERS_ESPAGNE].reverse();
