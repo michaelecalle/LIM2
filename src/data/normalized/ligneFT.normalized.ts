@@ -2288,6 +2288,14 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       },
       "publishState": "local"
     },
+    "9711": {
+      "meta": {
+        "origine": "",
+        "destination": ""
+      },
+      "byRowKey": {},
+      "publishState": "local"
+    },
     "9712": {
       "meta": {
         "origine": "PERPIGNAN",
