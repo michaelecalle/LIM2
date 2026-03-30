@@ -74,14 +74,14 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     index_ruban: 1871,
     label: 'LLINARS-A. V.',
   },
-  {
-    pk: 640.547,
-    s_km: 24.600028,
-    lat: 41.5297288,
-    lon: 2.2191479,
-    index_ruban: 984,
-    label: 'BIF. MOLLET',
-  },
+{
+  pk: 640.547,
+  s_km: 23.799773,
+  lat: 41.5234065,
+  lon: 2.2145575,
+  index_ruban: 952,
+  label: 'BIF. MOLLET',
+},
   {
     pk: 627.7,
     s_km: 11.542919,
