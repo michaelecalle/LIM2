@@ -44,10 +44,10 @@ export const ANCRES_PK_S: AnchorPkS[] = [
   },
   {
     pk: 703.510,
-    s_km: 87.74627,
-    lat: 41.8863998,
-    lon: 2.7665642,
-    index_ruban: 3513,
+    s_km: 87.646222,
+    lat: 41.8855810,
+    lon: 2.7660632,
+    index_ruban: 3509,
     label: "VILOBI D'ONYAR",
   },
   {
@@ -60,10 +60,10 @@ export const ANCRES_PK_S: AnchorPkS[] = [
   },
   {
     pk: 679.275,
-    s_km: 63.152762,
-    lat: 41.7292732,
-    lon: 2.5788827,
-    index_ruban: 2528,
+    s_km: 62.853423,
+    lat: 41.7283965,
+    lon: 2.5754722,
+    index_ruban: 2516,
     label: 'RIELLS-A. V.',
   },
   {

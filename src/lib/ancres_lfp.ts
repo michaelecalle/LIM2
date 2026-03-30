@@ -6,6 +6,7 @@ export type AnchorLFP = {
   lon: number
   index_ruban: number
   label: string
+  enabled?: boolean
 }
 
 
@@ -21,12 +22,13 @@ export const ANCRES_LFP: AnchorLFP[] = [
 },
 
   {
-    pk_lfp: 42.949,
+    pk_lfp: 42.5,
     s_km: 138.393795,
     lat: 42.3042288,
     lon: 2.9268142,
     index_ruban: 5538,
     label: 'LLERS',
+    enabled: false,
   },
   {
     pk_lfp: 35.462,

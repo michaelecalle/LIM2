@@ -150,7 +150,9 @@ const SORTED_ANCHORS_ADIF: PkAnchor[] = toPkAnchors(
 
 // LFP_MAIN (France – PK principal)
 const SORTED_ANCHORS_LFP_MAIN: PkAnchor[] = toPkAnchors(
-  ANCRES_LFP.map((a) => ({ s_km: a.s_km, pk: a.pk_lfp }))
+  ANCRES_LFP
+    .filter((a) => a.enabled !== false)
+    .map((a) => ({ s_km: a.s_km, pk: a.pk_lfp }))
 )
 
 // RFN (France – référentiel national / ex-RFF)
