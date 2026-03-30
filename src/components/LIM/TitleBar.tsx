@@ -2037,7 +2037,11 @@ const IconFile = () => null
 
                   const next = !autoScroll
 
-                  logTestEvent('ui:autoScroll:toggle', { enabled: next, source: 'titlebar' })
+                  logTestEvent('ui:autoScroll:toggle', {
+                    enabled: next,
+                    source: 'titlebar',
+                    standbyMode,
+                  })
 
                   setAutoScroll(next)
                   window.dispatchEvent(
@@ -2051,17 +2055,21 @@ const IconFile = () => null
                     else stopGpsWatch()
                   }
                 }}
-                className={`h-7 w-7 rounded-full flex items-center justify-center text-[11px] transition
+                className={`h-7 px-3 rounded-full flex items-center justify-center text-[11px] transition
                   ${
-                    autoScroll
-                      ? 'bg-emerald-500 text-white'
-                      : 'bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100'
+                    standbyMode
+                      ? 'bg-orange-400 text-white animate-pulse'
+                      : autoScroll
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100'
                   }
                 `}
                 title={
-                  autoScroll
-                    ? 'Désactiver le défilement automatique'
-                    : 'Activer le défilement automatique'
+                  standbyMode
+                    ? 'Standby : cliquer ici pour reprendre'
+                    : autoScroll
+                      ? 'Désactiver le défilement automatique'
+                      : 'Activer le défilement automatique'
                 }
               >
                 {autoScroll ? (

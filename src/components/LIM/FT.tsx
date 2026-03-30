@@ -1450,6 +1450,8 @@ const orangeToRedStartedAtRef = React.useRef<number | null>(null);
           setSelectedRowIndex(idx);
           // Base de recalage pour le futur démarrage réel
           recalibrateFromRowRef.current = idx;
+          // ✅ On verrouille aussi explicitement la ligne de standby
+          standbyLockedRowRef.current = idx;
 
           // On NE démarre PAS l'auto-scroll : autoScrollEnabled reste false
           setAutoScrollEnabled(false);
@@ -1462,6 +1464,37 @@ const orangeToRedStartedAtRef = React.useRef<number | null>(null);
           );
 
           return;
+        }
+      }
+
+      // ✅ Reprise explicite depuis le bouton Play :
+      // - on repart de la ligne verrouillée si elle existe
+      // - on enlève le clignotement rouge
+      // - on relance l'auto-scroll
+      if (enabled && !standby) {
+        const resumeRowIndex =
+          standbyLockedRowRef.current != null &&
+          Number.isFinite(standbyLockedRowRef.current)
+            ? standbyLockedRowRef.current
+            : recalibrateFromRowRef.current != null &&
+              Number.isFinite(recalibrateFromRowRef.current)
+            ? recalibrateFromRowRef.current
+            : null;
+
+        if (resumeRowIndex != null) {
+          logTestEvent("ui:standby:resume", {
+            rowIndex: resumeRowIndex,
+            hora: resolveHoraForRowIndex(resumeRowIndex) || null,
+            pk: rawEntries[resumeRowIndex]?.pk ?? null,
+            dependencia: rawEntries[resumeRowIndex]?.dependencia ?? null,
+            source: "ft:auto-scroll-change",
+          });
+
+          recalibrateFromRowRef.current = resumeRowIndex;
+          setActiveRowIndex(resumeRowIndex);
+          setSelectedRowIndex(null);
+          forceRealignOnResumeRef.current = true;
+          standbyLockedRowRef.current = null;
         }
       }
 
@@ -3563,7 +3596,15 @@ logTestEvent("gps:mode-check", {
               const departHoraText = resolveHoraForRowIndex(idx);
               const departMinutes = parseHoraToMinutes(departHoraText);
 
+              const entryNetwork = String((entry as any)?.network ?? "").trim();
+              const entryPkRfn = String((entry as any)?.pk_rfn ?? "").trim();
+
+              const isForbiddenGpsDeltaAnchor =
+                entryNetwork === "RFN" &&
+                (entryPkRfn === "471.0" || entryPkRfn === "473.3");
+
               const isGpsDeltaAnchor =
+                !isForbiddenGpsDeltaAnchor &&
                 typeof departHoraText === "string" &&
                 departHoraText.trim().length > 0 &&
                 departMinutes != null;
@@ -3573,7 +3614,9 @@ logTestEvent("gps:mode-check", {
                   rowIndex: idx,
                   pk: entry?.pk ?? null,
                   dependencia: entry?.dependencia ?? null,
-                  reason: "gps_row_without_real_departure_time",
+                  reason: isForbiddenGpsDeltaAnchor
+                    ? "gps_row_forbidden_delta_anchor"
+                    : "gps_row_without_real_departure_time",
                 });
               } else {
                 // En mode GPS : si une heure d'arrivée a été calculée pour cette ligne,
@@ -4200,85 +4243,8 @@ if (hasFranceFtLocal) {
   }
 
   // --- Réconciliation CSV stratégie B ---
-  // Une ligne data csv:true sans PK, placée au milieu d'un segment CSV cohérent,
-  // ne doit pas interrompre le surlignage.
-  // On repère les runs de lignes csv:true (les notes sont transparentes),
-  // puis on étend le surlignage à tout le run si au moins une ligne du run
-  // est déjà surlignée par la logique historique basée sur CSV_ZONES.
-  {
-    let currentRun: number[] = [];
-
-    const flushRun = () => {
-      if (currentRun.length === 0) {
-        return;
-      }
-
-      const runHasHistoricalHighlight = currentRun.some(
-        (idx) => csvHighlightByIndex[idx] !== "none"
-      );
-
-      if (!runHasHistoricalHighlight) {
-        currentRun = [];
-        return;
-      }
-
-      if (currentRun.length === 1) {
-        const onlyIdx = currentRun[0];
-        const nextIdx = onlyIdx + 1;
-        const nextHighlight =
-          nextIdx < csvHighlightByIndex.length
-            ? csvHighlightByIndex[nextIdx]
-            : "none";
-
-        csvHighlightByIndex[onlyIdx] =
-          nextHighlight === "top" ? "full" : "full";
-
-        currentRun = [];
-        return;
-      }
-
-      const lastIdx = currentRun[currentRun.length - 1];
-      const nextIdx = lastIdx + 1;
-      const nextHighlight =
-        nextIdx < csvHighlightByIndex.length
-          ? csvHighlightByIndex[nextIdx]
-          : "none";
-
-      const keepHistoricalClosingRow =
-        nextHighlight === "top";
-
-      for (let j = 0; j < currentRun.length; j++) {
-        const idx = currentRun[j];
-
-        if (j === 0) {
-          csvHighlightByIndex[idx] = "bottom";
-        } else if (j === currentRun.length - 1) {
-          csvHighlightByIndex[idx] = keepHistoricalClosingRow ? "full" : "top";
-        } else {
-          csvHighlightByIndex[idx] = "full";
-        }
-      }
-
-      currentRun = [];
-    };
-
-    for (let i = 0; i < rawEntries.length; i++) {
-      const e = rawEntries[i];
-
-      if (e?.isNoteOnly) {
-        continue;
-      }
-
-      if (e?.csv) {
-        currentRun.push(i);
-        continue;
-      }
-
-      flushRun();
-    }
-
-    flushRun();
-  }
+  // Désactivée temporairement pour vérifier si elle casse le rendu historique.
+  // On conserve uniquement la logique historique basée sur CSV_ZONES.
 
   console.log(
     "[CSV ZONES JSON]",
@@ -4963,8 +4929,9 @@ if (hasFranceFtLocal) {
   const arrivalEvents: { arrivalMin: number; rowIndex: number }[] = [];
 
   // Gestion des clics sur le corps de la FT :
-  // - 1er clic en mode horaire : sélection de la ligne la plus proche => Standby
-  // - 2ᵉ clic en Standby : relance du mode horaire
+  // - en mode horaire actif : sélection de la ligne la plus proche => Standby
+  // - en standby : même mécanique, clic près d'une autre ligne => changement de sélection
+  // - la sortie du standby se fait uniquement via le bouton Play
   const handleBodyClick = (e: React.MouseEvent<HTMLDivElement>) => {
     // En mode GPS, le clic sur la fiche train ne doit jamais déclencher Standby / recalage
     if (referenceModeRef.current === "GPS") {
@@ -4978,26 +4945,6 @@ if (hasFranceFtLocal) {
       !autoScrollEnabled &&
       recalibrateFromRowRef.current !== null &&
       selectedRowIndex !== null;
-
-    // 2ᵉ clic : on est en Standby -> on relance le mode horaire
-    if (isStandby) {
-      // on enlève la sélection visuelle (stop clignotement)
-      setSelectedRowIndex(null);
-
-      // on relance le mode horaire
-      window.dispatchEvent(
-        new CustomEvent("ft:auto-scroll-change", {
-          detail: { enabled: true },
-        })
-      );
-      return;
-    }
-
-    // Si on n'est pas en auto-scroll (avant Play ou en pause "normale"),
-    // on ne déclenche pas le Standby / la sélection.
-    if (!autoScrollEnabled) {
-      return;
-    }
 
     const mainRows =
       container.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main");
@@ -5062,19 +5009,59 @@ if (hasFranceFtLocal) {
     const dataIndexAttr = bestRow.getAttribute("data-ft-row");
     const rowIndex = dataIndexAttr ? parseInt(dataIndexAttr, 10) : bestIndex;
 
-    // Visuel : ligne sélectionnée (cadre rouge clignotant)
-    setSelectedRowIndex(rowIndex);
-    // Fonctionnel : base de recalage horaire à partir de cette ligne
-    recalibrateFromRowRef.current = rowIndex;
+    if (!Number.isFinite(rowIndex)) {
+      return;
+    }
 
-    // On coupe l'auto-scroll (équivalent d'un clic sur Pause)
+    // ✅ En standby : même mécanique que pour l'entrée initiale
+    // On prend la ligne la plus proche, mais sans relancer le mode horaire
+    if (isStandby) {
+      if (selectedRowIndex === rowIndex) {
+        return;
+      }
+
+      setSelectedRowIndex(rowIndex);
+      setActiveRowIndex(rowIndex);
+      recalibrateFromRowRef.current = rowIndex;
+      standbyLockedRowRef.current = rowIndex;
+
+      logTestEvent("ui:standby:move-selection", {
+        rowIndex,
+        hora: resolveHoraForRowIndex(rowIndex) || null,
+        pk: rawEntries[rowIndex]?.pk ?? null,
+        dependencia: rawEntries[rowIndex]?.dependencia ?? null,
+        source: "ft:body-click-nearest",
+      });
+
+      return;
+    }
+
+    // Si on n'est pas en auto-scroll (avant Play ou en pause normale), on ne fait rien
+    if (!autoScrollEnabled) {
+      return;
+    }
+
+    // Entrée initiale en standby
+    setSelectedRowIndex(rowIndex);
+    setActiveRowIndex(rowIndex);
+    recalibrateFromRowRef.current = rowIndex;
+    standbyLockedRowRef.current = rowIndex;
+
+    logTestEvent("ui:standby:enter", {
+      rowIndex,
+      hora: resolveHoraForRowIndex(rowIndex) || null,
+      pk: rawEntries[rowIndex]?.pk ?? null,
+      dependencia: rawEntries[rowIndex]?.dependencia ?? null,
+      autoScrollWasEnabled: autoScrollEnabled,
+      source: "ft:body-click-nearest",
+    });
+
     window.dispatchEvent(
       new CustomEvent("ft:auto-scroll-change", {
         detail: { enabled: false },
       })
     );
 
-    // On signale le mode Standby à la TitleBar (🕑 orange)
     window.dispatchEvent(
       new CustomEvent("lim:hourly-mode", {
         detail: { enabled: false, standby: true },
@@ -5615,191 +5602,7 @@ const nivel =
         }
         key={`main-${i}`}
         data-ft-row={i}
-onClick={() => {
-          // En mode GPS, le clic sur une ligne est inopérant (pas de Standby / recalage)
-          if (referenceModeRef.current === "GPS") {
-            return;
-          }
-
-          // on ne sélectionne que les lignes qui ont bien une dependencia et une heure
-          if (!hora || !depNorm) return;
-
-          const isAlreadySelected = selectedRowIndex === i;
-
-          // ✅ Vrai verrou de standby (indépendant du ref de recalage)
-          const lockedStandbyRowIndex = standbyLockedRowRef.current;
-
-          if (
-            lockedStandbyRowIndex != null &&
-            i !== lockedStandbyRowIndex
-          ) {
-            return;
-          }
-
-          // 🚫 En standby, on verrouille la ligne de recalage :
-          // si on clique sur une AUTRE ligne, on ignore ce clic.
-          if (!autoScrollEnabled && selectedRowIndex != null && !isAlreadySelected) {
-            return;
-          }
-
-          // 🟢 Cas 1 : on est à l'arrêt (autoScrollEnabled === false)
-          // ET on reclique sur LA MÊME ligne déjà sélectionnée => on relance le mode horaire
-          if (!autoScrollEnabled && isAlreadySelected) {
-            const resumeRowIndex =
-              lockedStandbyRowIndex != null ? lockedStandbyRowIndex : i;
-
-            // ✅ log rejouable : relance depuis standby + recalage sur cette ligne
-            logTestEvent("ui:standby:resume", {
-              rowIndex: resumeRowIndex,
-              hora,
-              pk: entry?.pk ?? null,
-              dependencia: entry?.dependencia ?? null,
-              source: "ft:row-click",
-            });
-
-            // 🔎 DEBUG DIAGNOSTIC reprise standby
-            const clickedRowIndex = i;
-            const lockedRowIndex =
-              standbyLockedRowRef.current != null ? standbyLockedRowRef.current : null;
-            const clickedEntry = rawEntries[clickedRowIndex] as any;
-            const resumeEntry = rawEntries[resumeRowIndex] as any;
-
-            logTestEvent("ft:standby:resume:debug", {
-              clickedRowIndex,
-              lockedRowIndex,
-              resumeRowIndex,
-              selectedRowIndexCurrent: selectedRowIndex,
-              activeRowIndexCurrent: activeRowIndex,
-              recalibrateFromRowCurrent: recalibrateFromRowRef.current,
-              standbyLockedRowCurrent: standbyLockedRowRef.current,
-
-              clickedHora: resolveHoraForRowIndex(clickedRowIndex) || null,
-              resumeHora: resolveHoraForRowIndex(resumeRowIndex) || null,
-
-              clickedPk: clickedEntry?.pk ?? null,
-              clickedPkAdif: clickedEntry?.pk_adif ?? null,
-              clickedPkLfp: clickedEntry?.pk_lfp ?? null,
-              clickedPkRfn: clickedEntry?.pk_rfn ?? null,
-              clickedNetwork: clickedEntry?.network ?? null,
-              clickedDependencia: clickedEntry?.dependencia ?? null,
-
-              resumePk: resumeEntry?.pk ?? null,
-              resumePkAdif: resumeEntry?.pk_adif ?? null,
-              resumePkLfp: resumeEntry?.pk_lfp ?? null,
-              resumePkRfn: resumeEntry?.pk_rfn ?? null,
-              resumeNetwork: resumeEntry?.network ?? null,
-              resumeDependencia: resumeEntry?.dependencia ?? null,
-            });
-
-            // on recale explicitement la base sur LA ligne verrouillée
-            recalibrateFromRowRef.current = resumeRowIndex;
-
-            // ✅ on réaligne explicitement aussi la ligne active sur LA ligne verrouillée
-            setSelectedRowIndex(resumeRowIndex);
-            setActiveRowIndex(resumeRowIndex);
-
-            // ✅ on autorise un recentrage immédiat unique à la reprise
-            forceRealignOnResumeRef.current = true;
-
-            // ✅ réalignement immédiat du viewport + de la barre sur la ligne reprise
-            {
-              const container = scrollContainerRef.current;
-
-              if (container) {
-                const rowEl = container.querySelector<HTMLTableRowElement>(
-                  `tr.ft-row-main[data-ft-row="${resumeRowIndex}"]`
-                );
-
-                if (rowEl) {
-                  const targetCenterY = container.clientHeight * 0.4;
-                  const rawTargetScrollTop =
-                    rowEl.offsetTop + rowEl.offsetHeight / 2 - targetCenterY;
-
-                  const maxScrollTop = Math.max(
-                    0,
-                    container.scrollHeight - container.clientHeight
-                  );
-
-                  const targetScrollTop = Math.max(
-                    0,
-                    Math.min(rawTargetScrollTop, maxScrollTop)
-                  );
-
-                  isManualScrollRef.current = false;
-                  isProgrammaticScrollRef.current = true;
-                  lastAutoScrollTopRef.current = targetScrollTop;
-
-                  container.scrollTo({
-                    top: targetScrollTop,
-                    behavior: "auto",
-                  });
-
-                  const VISUAL_OFFSET_PX = -2;
-                  const yInViewport =
-                    rowEl.offsetTop +
-                    rowEl.offsetHeight / 2 -
-                    targetScrollTop +
-                    VISUAL_OFFSET_PX;
-
-                  const yClamped = Math.max(
-                    0,
-                    Math.min(yInViewport, container.clientHeight)
-                  );
-
-                  lastTrainPosYpxRef.current = Math.round(yClamped);
-                  setTrainPosYpx(Math.round(yClamped));
-
-                  window.setTimeout(() => {
-                    isProgrammaticScrollRef.current = false;
-                  }, 0);
-                }
-              }
-            }
-
-            // ✅ on libère le verrou seulement au moment de la reprise réelle
-            standbyLockedRowRef.current = null;
-
-            window.dispatchEvent(
-              new CustomEvent("ft:auto-scroll-change", {
-                detail: { enabled: true },
-              })
-            );
-
-            return;
-          }
-
-          // 🟠 Cas 2 : première sélection de la ligne (ou changement de ligne)
-          // -> sélection visuelle + préparation du recalage manuel
-          setSelectedRowIndex(i);
-          setActiveRowIndex(i); // ✅ IMPORTANT : la ligne cliquée devient aussi la "ligne active"
-          recalibrateFromRowRef.current = i;
-          standbyLockedRowRef.current = i;
-
-          // ✅ log rejouable : sélection / entrée standby (préparation recalage)
-          logTestEvent("ui:standby:enter", {
-            rowIndex: i,
-            hora,
-            pk: entry?.pk ?? null,
-            dependencia: entry?.dependencia ?? null,
-            autoScrollWasEnabled: autoScrollEnabled,
-            source: "ft:row-click",
-          });
-
-          // 🔴 Si le mode horaire était en cours, on le coupe et on bascule en standby (icône 🕑 orange)
-          if (autoScrollEnabled) {
-            window.dispatchEvent(
-              new CustomEvent("ft:auto-scroll-change", {
-                detail: { enabled: false },
-              })
-            );
-
-            window.dispatchEvent(
-              new CustomEvent("lim:hourly-mode", {
-                detail: { enabled: false, standby: true },
-              })
-            );
-          }
-        }}
+onClick={undefined}
 
       >
         {(() => {
@@ -6810,7 +6613,8 @@ right: -1,
                             return `${Math.round(clamped)}px`;
                           })(),
 
-                    left: !testModeEnabled ? "18%" : "13%", // hors mode test : bord gauche de Sit Km
+                    transform: "translateY(-6px)",
+                    left: !testModeEnabled ? "18%" : "13%",
                     width: !testModeEnabled ? "10px" : "14%",
                     display: "flex",
                     alignItems: "center",
