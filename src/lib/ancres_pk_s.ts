@@ -83,11 +83,11 @@ export const ANCRES_PK_S: AnchorPkS[] = [
   label: 'BIF. MOLLET',
 },
   {
-    pk: 627.7,
-    s_km: 11.542919,
-    lat: 41.421275,
-    lon: 2.1946217,
-    index_ruban: 462,
+    pk: 627.739,
+    s_km: 11.918290,
+    lat: 41.4245554,
+    lon: 2.1956843,
+    index_ruban: 477,
     label: 'LA SAGRERA AV',
   },
   {
