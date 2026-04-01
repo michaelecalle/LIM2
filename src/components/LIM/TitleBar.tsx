@@ -371,7 +371,7 @@ export default function TitleBar() {
   }
 
   const [testRecording, setTestRecording] = useState(false)
-  const [testModeEnabled, setTestModeEnabled] = useState(true)
+  const [testModeEnabled, setTestModeEnabled] = useState(false)
   const [simulationEnabled, setSimulationEnabled] = useState(false)
 
   useEffect(() => {
@@ -1183,25 +1183,7 @@ ${coords}
 
     if (!testModeEnabled) {
       setTestRecording(false)
-      return
     }
-
-    const bootMode: 'blue' = 'blue'
-
-    const labelParts: string[] = []
-    if (trainDisplay) labelParts.push(`train_${trainDisplay}`)
-    labelParts.push(`mode_${bootMode}`)
-    labelParts.push('auto')
-
-    const label = labelParts.join('_')
-
-    startTestSession(label)
-    logTestEvent('ui:test:auto-start', {
-      train: trainDisplay ?? null,
-      pdfMode: bootMode,
-      label,
-    })
-    setTestRecording(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -2461,27 +2443,17 @@ const IconFile = () => null
                     }
 
                     const wantEnable = window.confirm(
-                      'Activer le mode test ?\n\n(démarre un nouvel enregistrement)'
+                      'Activer le mode test ?\n\n(Cela réaffiche les fonctions de test sans démarrer un nouvel enregistrement.)'
                     )
                     if (!wantEnable) return
 
-                    setTestModeEnabled(true)
-
-                    const nextMode: 'blue' = 'blue'
-                    const labelParts: string[] = []
-                    if (trainDisplay) labelParts.push(`train_${trainDisplay}`)
-                    labelParts.push(`mode_${nextMode}`)
-                    labelParts.push('manual')
-
-                    const label = labelParts.join('_')
-                    startTestSession(label)
-                    logTestEvent('ui:test:manual-start', {
+                    logTestEvent('ui:test:manual-enable', {
                       source: 'settings_toggle',
                       train: trainDisplay ?? null,
-                      pdfMode: nextMode,
-                      label,
+                      testRecording,
                     })
-                    setTestRecording(true)
+
+                    setTestModeEnabled(true)
                   }}
                   className="h-4 w-4 cursor-pointer accent-blue-600"
                 />
@@ -2547,7 +2519,7 @@ const IconFile = () => null
                       }
                     }}
                     className="w-full h-8 px-3 text-xs rounded-md bg-sky-600 text-white font-semibold flex items-center justify-center"
-                    title="Exporter manuellement les logs enregistrés hors mode test"
+                    title="Exporter manuellement les logs de la session en cours"
                   >
                     Exporter les logs
                   </button>
