@@ -67,7 +67,7 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     label: 'RIELLS-A. V.',
   },
   {
-    pk: 662.503,
+    pk: 662.641,
     s_km: 46.749753,
     lat: 41.6494339,
     lon: 2.4219488,
