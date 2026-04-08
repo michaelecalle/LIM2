@@ -305,14 +305,28 @@ function getActiveVariantByRowKey(
   return matchedVariant.byRowKey as Record<string, NormalizedTrainRowOverride>;
 }
 
+function getNormalizedTrain(
+  trainNumber: number | string | null | undefined
+): NormalizedTrain | undefined {
+  if (trainNumber == null) return undefined;
+
+  const key = String(trainNumber).trim() as NormalizedTrainKey;
+  return LIGNE_FT_NORMALIZED.trains[key];
+}
+
+export function getTrainNumeroFrance(
+  trainNumber: number | string | null | undefined
+): string | undefined {
+  const train = getNormalizedTrain(trainNumber);
+  if (!train) return undefined;
+
+  return asNonEmptyString((train as any)?.meta?.numeroFrance);
+}
+
 function getTrainOverrides(
   trainNumber: number | string | null | undefined
 ): Record<string, NormalizedTrainRowOverride> {
-  if (trainNumber == null) return {};
-
-  const key = String(trainNumber).trim() as NormalizedTrainKey;
-  const train = LIGNE_FT_NORMALIZED.trains[key];
-
+  const train = getNormalizedTrain(trainNumber);
   if (!train) return {};
 
   const activeVariantByRowKey = getActiveVariantByRowKey(train);

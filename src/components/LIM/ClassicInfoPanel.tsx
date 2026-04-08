@@ -3,6 +3,7 @@ import React from "react"
 export type InfoData = {
   tren?: string
   trenPadded?: string
+    trenShouldBlink?: boolean
   type?: string
   origenDestino?: string
   fecha?: string
@@ -89,10 +90,18 @@ function isFechaToday(fecha?: string): boolean {
   return dt.getFullYear() === t.getFullYear() && dt.getMonth() === t.getMonth() && dt.getDate() === t.getDate()
 }
 
-export default function ClassicInfoPanel({ data }: { data: InfoData }) {
+export default function ClassicInfoPanel({
+  data,
+  onTrenClick,
+  onTrenDoubleClick,
+}: {
+  data: InfoData
+  onTrenClick?: () => void
+  onTrenDoubleClick?: () => void
+}) {
   const D = data || {}
-  // DISPLAY: prefer trenPadded; else pad tren to 5 digits (keeps leading zero visually)
-  const trainDisplay = D.trenPadded ?? (D.tren ? String(D.tren).padStart(5, '0') : "")
+  const trainDisplay = D.tren ? String(D.tren) : ""
+  const trenShouldBlink = Boolean(D.trenShouldBlink)
   const fechaText = formatFechaLongFr(D.fecha)
   const fechaShouldBlink = Boolean(parseFechaWide(D.fecha)) && !isFechaToday(D.fecha)
 
@@ -146,6 +155,32 @@ export default function ClassicInfoPanel({ data }: { data: InfoData }) {
     return () => obs.disconnect()
   }, [])
 
+  const trenClickTimerRef = React.useRef<number | null>(null)
+  const TREN_DOUBLE_CLICK_DELAY_MS = 250
+
+  React.useEffect(() => {
+    return () => {
+      if (trenClickTimerRef.current != null) {
+        window.clearTimeout(trenClickTimerRef.current)
+        trenClickTimerRef.current = null
+      }
+    }
+  }, [])
+
+  const handleTrenTileClick = () => {
+    if (trenClickTimerRef.current != null) {
+      window.clearTimeout(trenClickTimerRef.current)
+      trenClickTimerRef.current = null
+      onTrenDoubleClick?.()
+      return
+    }
+
+    trenClickTimerRef.current = window.setTimeout(() => {
+      trenClickTimerRef.current = null
+      onTrenClick?.()
+    }, TREN_DOUBLE_CLICK_DELAY_MS)
+  }
+
   return (
     <div className="select-none">
       <style>{`
@@ -178,9 +213,25 @@ export default function ClassicInfoPanel({ data }: { data: InfoData }) {
         }}
       >
         <div className="flex items-stretch">
-          <div style={{ width: 'var(--w-tren)', background: yellow }} className="border-r-2 border-black px-2 py-1 tile-yellow">
+          <div
+            style={{ width: 'var(--w-tren)', background: yellow }}
+            className={`border-r-2 border-black px-2 py-1 tile-yellow ${trenShouldBlink ? 'classic-blink-strong' : ''} ${(onTrenClick || onTrenDoubleClick) ? 'cursor-pointer' : ''}`}
+            onClick={handleTrenTileClick}
+            title={
+              onTrenDoubleClick
+                ? 'Double appui : demander le changement de numéro affiché'
+                : onTrenClick
+                  ? 'Valider le changement de numéro affiché'
+                  : undefined
+            }
+          >
             <div className="text-[11px] font-semibold leading-none">TREN</div>
-            <div ref={trenRef} className="text-[22px] leading-6 tracking-tight font-extrabold">{trainDisplay || '—'}</div>
+            <div
+              ref={trenRef}
+              className={`text-[22px] leading-6 tracking-tight font-extrabold ${trenShouldBlink ? 'classic-blink-text' : ''}`}
+            >
+              {trainDisplay || '—'}
+            </div>
           </div>
 
           <div style={{ width: 'var(--w-type)' }} className="border-r-2 border-black px-2 py-1 grid place-items-center text-center">

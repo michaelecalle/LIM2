@@ -28,7 +28,7 @@ export const ANCRES_LFP: AnchorLFP[] = [
     lon: 2.9268142,
     index_ruban: 5538,
     label: 'LLERS',
-    enabled: false,
+    enabled: true,
   },
   {
     pk_lfp: 35.462,

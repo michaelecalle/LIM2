@@ -25,6 +25,15 @@ type LIMData = {
   operadorLogo?: string
 }
 
+type DisplayedTrainNumberState = {
+  trainNumberEs?: string
+  trainNumberFr?: string
+  displayedSide: 'ES' | 'FR'
+  pendingSide: 'ES' | 'FR' | null
+  isBlinking: boolean
+  displayedNumber?: string
+}
+
 function buildPanelData(src: any): any {
   const d = src || {}
   // Accepte soit les clés déjà "espagnoles", soit les clés du LIMData
@@ -50,6 +59,9 @@ export default function Infos() {
     return (w.__limLastParsed || {}) as LIMData
   })
 
+  const [displayedTrainNumberState, setDisplayedTrainNumberState] =
+    React.useState<DisplayedTrainNumberState | null>(null)
+
   // écoute du parseur LIM -> met à jour les infos brutes
   React.useEffect(() => {
     const onParsed = (e: Event) => {
@@ -62,20 +74,71 @@ export default function Infos() {
     return () => window.removeEventListener('lim:parsed', onParsed as EventListener)
   }, [])
 
-  const panelData = buildPanelData(raw)
+  React.useEffect(() => {
+    const onDisplayedTrainNumberChange = (e: Event) => {
+      const ce = e as CustomEvent
+      const detail = (ce.detail || null) as DisplayedTrainNumberState | null
+      setDisplayedTrainNumberState(detail)
+    }
 
-  // >>> AJOUT CRITIQUE <<< 
-  // Dès qu'on connaît le numéro de train normalisé (panelData.tren),
-  // on le diffuse en global pour FT.
+    window.addEventListener(
+      'lim:displayed-train-number-change',
+      onDisplayedTrainNumberChange as EventListener
+    )
+
+    return () => {
+      window.removeEventListener(
+        'lim:displayed-train-number-change',
+        onDisplayedTrainNumberChange as EventListener
+      )
+    }
+  }, [])
+
+  const panelBaseData = buildPanelData(raw)
+
+  const panelData = {
+    ...panelBaseData,
+    tren:
+      displayedTrainNumberState?.displayedNumber ??
+      panelBaseData.tren,
+    trenShouldBlink:
+      displayedTrainNumberState?.isBlinking ?? false,
+  }
+  const handleTrenClick = React.useCallback(() => {
+    const pendingSide = displayedTrainNumberState?.pendingSide
+    if (!pendingSide) return
+
+    window.dispatchEvent(
+      new CustomEvent('lim:displayed-train-number-commit-request', {
+        detail: {
+          pendingSide,
+          source: 'infos_tren',
+        },
+      })
+    )
+  }, [displayedTrainNumberState?.pendingSide])
+
+  const handleTrenDoubleClick = React.useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent('lim:displayed-train-number-manual-toggle-request', {
+        detail: {
+          source: 'infos_tren',
+        },
+      })
+    )
+  }, [])
+  // >>> AJOUT CRITIQUE <<<
+  // Le numéro interne diffusé pour FT doit rester le numéro Espagne issu du PDF,
+  // indépendamment du numéro actuellement affiché dans le panneau.
   const lastDispatchedTrainRef = React.useRef<number | null>(null)
 
   React.useEffect(() => {
-    const trenStr = panelData?.tren ?? ""
-    if (!trenStr) return
+    const rawTrainStr = String(raw?.tren ?? raw?.train ?? "").replace(/^0(?=\d)/, "")
+    if (!rawTrainStr) return
 
-    const n = parseInt(trenStr, 10)
+    const n = parseInt(rawTrainStr, 10)
     if (Number.isNaN(n)) {
-      console.warn("[Infos] tren présent mais non numérique :", trenStr)
+      console.warn("[Infos] raw train présent mais non numérique :", rawTrainStr)
       return
     }
 
@@ -94,13 +157,19 @@ export default function Infos() {
       })
     )
     console.log("[Infos] dispatch lim:train-change trainNumber=", n)
-  }, [panelData?.tren])
+  }, [raw?.tren, raw?.train])
   // <<< FIN AJOUT CRITIQUE <<<
 
 
   return (
     <section className="group/infos relative">
-      <ClassicInfoPanel data={panelData} />
+      <ClassicInfoPanel
+        data={panelData}
+        onTrenClick={
+          displayedTrainNumberState?.pendingSide ? handleTrenClick : undefined
+        }
+        onTrenDoubleClick={handleTrenDoubleClick}
+      />
     </section>
   )
 }

@@ -1,0 +1,520 @@
+﻿# Manuel utilisateur LIM
+
+https://lim2.vercel.app/
+
+## Sommaire
+
+1. Présentation générale de l’application
+2. Prérequis et préparation de l’iPad
+3. Installation de l’application sur l’iPad
+4. Prise en main rapide
+5. Description détaillée de l’interface
+6. Utilisation normale en situation
+7. Cas particuliers et mode secours
+8. Test, logs et remontée d’anomalies
+9. Limites et précautions d’usage
+
+---
+
+*Document de travail en cours de rédaction. Le sommaire est validé à ce stade et pourra encore évoluer légèrement si nécessaire pendant la rédaction.*
+
+## 1. Présentation générale de l’application
+
+**LIM** est une application d’aide à la lecture et au suivi des informations utiles à la conduite sur la ligne **Perpignan-Barcelona**.  
+Elle a été conçue pour regrouper, dans une interface simple sur iPad, plusieurs informations issues du document de référence du train *(le LIM reçu par mail)*, ainsi que des données de ligne et de positionnement.
+
+Son objectif est de rendre la consultation de ces informations plus lisible, plus rapide et plus pratique en situation réelle, en particulier pendant le suivi du parcours.
+
+L’application permet notamment :
+- d’importer le PDF du train ;
+- d’afficher automatiquement les informations principales de la fiche train ;
+- de visualiser les données utiles de la ligne dans un format adapté à l’usage sur tablette ;
+- d’utiliser, lorsque les conditions le permettent, une localisation GPS pour faciliter le suivi de la progression sur la ligne.
+
+LIM est actuellement en phase de test en conditions réelles.  
+Les versions mises à disposition peuvent donc encore évoluer, être ajustées ou corrigées à partir des retours terrain.
+
+**Cette application constitue un outil d’assistance et de confort de consultation. Elle ne remplace pas les documents, procédures, règles métier ou références réglementaires applicables, qui restent les seules références de base pour l’exploitation.**
+
+## 2. Prérequis et préparation de l’iPad
+
+Les manipulations décrites dans cette section sont **conseillées pour faciliter l’utilisation de l’application**, mais elles ne sont pas toutes obligatoires.
+
+Avant les premiers essais, il est recommandé de préparer l’iPad de façon simple afin de rendre l’utilisation de LIM plus fluide et plus pratique en situation.
+
+### 2.1. Éviter la mise en veille de l’écran
+
+Pour limiter les interruptions pendant l’utilisation, il est conseillé de configurer l’iPad de manière à éviter l’extinction automatique de l’écran pendant l’usage de l’application.
+
+Si vous utilisez **Accès guidé**, le réglage à utiliser est le suivant :
+
+**Réglages > Accessibilité > Accès guidé > Verrouillage auto de l’écran > Jamais**
+
+L’objectif est de conserver l’écran actif pendant l’utilisation de LIM, afin d’éviter d’avoir à rallumer l’iPad ou à réafficher l’application en cours de trajet.
+
+### 2.2. Créer un dossier dédié dans l’application Fichiers
+
+Il est également conseillé de créer dans l’application **Fichiers** un dossier dédié, par exemple nommé :
+
+**LIM**
+
+Ce dossier permettra de regrouper au même endroit les fichiers PDF reçus par mail et utilisés ensuite dans l’application.
+
+Méthode conseillée :
+1. ouvrir l’application **Fichiers** ;
+2. aller dans **Emplacements > Sur mon iPad** ;
+3. toucher l’icône **+** en haut à droite pour créer un dossier ;
+4. nommer ce dossier, par exemple **LIM** ;
+5. faire ensuite un **appui long** sur le dossier créé ;
+6. choisir **Ajouter aux favoris**.
+
+Ce rangement n’est pas obligatoire, mais il facilite nettement la recherche et l’importation des fichiers PDF au moment de l’utilisation.
+
+## 3. Installation de l’application sur l’iPad
+
+LIM s’utilise sur iPad à partir d’un lien web.  
+Pour un usage plus simple et plus confortable, il est fortement conseillé de l’installer sur l’écran d’accueil afin de l’ouvrir ensuite comme une application.
+
+Le document de diffusion pourra contenir :
+- le **lien direct** vers l’application ;
+- un **QR code** permettant d’ouvrir ce lien rapidement sur l’iPad.
+
+### 3.1. Ouvrir le lien avec Safari
+
+Pour l’installation, il est recommandé d’utiliser **Safari** sur l’iPad.
+
+Ouvrir le lien de l’application soit :
+- directement depuis le lien https://lim2.vercel.app/;
+- soit en scannant le QR code prévu à cet effet sur la couverture de ce document.
+
+### 3.2. Ajouter LIM à l’écran d’accueil
+
+Une fois l’application ouverte dans Safari :
+
+1. toucher le bouton **Partager**  ;
+2. choisir **Sur l’écran d’accueil** ;
+3. valider l’ajout.
+
+Une icône LIM apparaît alors sur l’écran d’accueil de l’iPad.
+
+### 3.3. Utilisation ensuite
+
+Après cette installation initiale, il est conseillé d’ouvrir LIM directement depuis l’icône créée sur l’écran d’accueil, et non en repassant à chaque fois par le navigateur.
+
+Cela permet une utilisation plus rapide, plus simple, et plus proche d’une application classique sur iPad.
+
+**Note :** si l’application a été correctement fermée puis relancée, les mises à jour disponibles sont normalement prises en compte automatiquement.
+
+
+## 4. Prise en main rapide
+
+Pour une première utilisation, la procédure conseillée est la suivante :
+
+1. ouvrir l’application LIM depuis l’icône ajoutée à l’écran d’accueil ;
+2. autoriser l’accès à la localisation lorsque l’iPad le demande ;
+3. toucher **Importer PDF** ;
+4. aller chercher le fichier PDF du train dans le dossier prévu dans l’application **Fichiers** ;
+5. vérifier que les informations principales du train s’affichent correctement ;
+6. utiliser ensuite l’application normalement pendant le trajet.
+
+En cas de problème d’importation ou d’affichage, il est possible d’utiliser le **mode secours**, décrit plus loin dans ce document.
+
+
+## 5. Description détaillée de l’interface
+
+Cette section décrit les éléments d’interface présents de manière générale dans l’application. Les comportements détaillés seront expliqués dans les sections suivantes.
+
+
+
+### 5.1. Horloge
+
+Affiche l’heure courante. Elle reste visible en permanence.
+
+### 5.2. Mode jour / nuit
+
+Permet de basculer entre un affichage clair (jour) et sombre (nuit), afin d’adapter le contraste à l’environnement.
+
+### 5.3. Réglage de la luminosité
+
+Une glissière permet d’ajuster la luminosité de l’application en faisant glisser le doigt.
+
+### 5.4. Bouton « Importer PDF »
+
+Permet d’importer le PDF du train préalablement enregistré sur l’iPad.
+
+Le fonctionnement détaillé de l’import et le comportement associé sont décrits dans la section 6.
+
+### 5.5. Paramètres (roue dentée)
+
+Le bouton paramètres donne accès à plusieurs fonctions :
+- activation du **mode test** ;
+- activation de l’**OCR online** ;
+- export des logs (hors mode test) ;
+- accès à la section **À propos** (version et changelog).
+
+Chaque fonction est détaillée plus loin dans le manuel.
+
+### 5.6. Organisation de l’écran après import du PDF
+
+
+
+Une fois le PDF importé, l’écran se structure en trois zones principales :
+- la zone **Infos** ;
+- la zone **LTV** ;
+- la zone **Fiche train**.
+
+Ces zones contiennent les informations utiles à la lecture du train et au suivi du parcours.
+
+En touchant le titre dans la barre supérieure, il est possible d’activer un **mode plié** qui masque les zones **Infos** et **LTV** afin de ne conserver que la zone **Fiche train**.
+
+
+
+Le détail du contenu et du fonctionnement de ces différentes zones est présenté dans la section 6.
+
+## 6. Utilisation normale en situation
+
+### 6.1. Enregistrement du PDF du train
+
+Le document LIM est reçu par mail sous forme de fichier PDF.
+
+Avant d’utiliser l’application, il est nécessaire d’enregistrer ce fichier sur l’iPad.
+
+Méthode simple conseillée :
+1. ouvrir le mail contenant le LIM ;
+2. repérer la pièce jointe PDF ;
+3. toucher l’icône de téléchargement associée au fichier  ;
+4. enregistrer le fichier dans le dossier **LIM** créé précédemment.
+
+
+
+Le fichier pourra ensuite être importé dans l’application.
+
+*Capture d’écran à prévoir : pièce jointe PDF dans le mail, avec le bouton de téléchargement mis en évidence.*
+
+### 6.2. Import du PDF dans l’application
+
+Pour importer un PDF dans LIM :
+
+1. toucher le bouton **Importer PDF** ;
+2. sélectionner le fichier souhaité dans la fenêtre qui s’ouvre (dossier **LIM** recommandé).
+
+Une fois le fichier sélectionné, l’application lance automatiquement le traitement du document.
+
+### 6.2.1. Traitement et reconnaissance du document
+
+Après import, une reconnaissance optique des caractères (OCR) est effectuée afin d’extraire les informations du PDF.
+
+Par défaut, cette reconnaissance est réalisée **en ligne**.
+
+Conséquences :
+- la vitesse de traitement dépend de la qualité du réseau ;
+- en cas de réseau faible, le traitement peut être plus long ;
+- en absence de réseau, le traitement peut échouer.
+
+### 6.2.2. Option OCR hors ligne
+
+Il est possible de désactiver l’OCR en ligne dans les paramètres (option **OCR online**).
+
+
+Dans ce cas, une reconnaissance **hors ligne** est utilisée.
+
+Cette solution peut être utile en absence de réseau, mais :
+- la qualité de reconnaissance peut être moins fiable ;
+- certains documents peuvent être moins bien interprétés.
+
+Le choix entre OCR en ligne et hors ligne dépend donc des conditions de réseau et du résultat obtenu.
+
+Le fonctionnement détaillé de l’affichage après import est décrit dans la suite de cette section.
+
+### 6.3. Affichage après import du PDF
+
+### 6.3.1. Zone Infos
+
+La zone **Infos** se situe en haut de l’écran (en mode non plié).  
+Elle regroupe les informations générales relatives au train et au parcours.
+
+Ces informations sont issues de la lecture du PDF importé.
+
+La zone Infos affiche notamment :
+- le numéro du train ;
+- la catégorie du train ;
+- l’origine et la destination ;
+- la date du jour ;
+- la composition et le matériel ;
+- le ou les numéros de ligne ;
+- la longueur et la masse du train.
+
+Si la date lue sur le PDF diffère de la date réelle, l’information de date clignote afin d’attirer l’attention du conducteur.
+
+Cette zone permet :
+- de vérifier rapidement que le bon train est chargé ;
+- de disposer d’une vue synthétique des informations principales.
+
+En mode **plié**, la zone Infos est masquée afin de libérer de l’espace pour la fiche train.
+
+### 6.3.2. Zone LTV
+
+La zone **LTV** affiche les informations de limitations temporaires de vitesse présentes dans le document LIM.
+
+Selon la manière dont ces informations sont intégrées dans le PDF, le fonctionnement de cette zone peut varier.
+
+En pratique, deux cas principaux peuvent se présenter :
+
+- **Cas 1 : LTV détectée automatiquement**  
+- **Cas 2 : LTV non détectée → recadrage manuel**
+
+### 6.3.2.1. Cas 1 : LTV détectée automatiquement
+
+Lorsque la zone LTV est identifiable dans le PDF, l’application propose une ou plusieurs images correspondant aux LTV.
+
+Par défaut, l’image la plus probable est affichée en premier.
+
+L’utilisateur peut alors :
+- naviguer entre les différentes images proposées ;
+- sélectionner une ou plusieurs images ;
+- valider son choix.
+
+Un bouton de **recadrage manuel** permet également de basculer vers le mode manuel si aucune des images proposées ne correspond.
+
+### 6.3.2.2. Cas 2 : recadrage manuel
+
+Dans certains cas, aucune zone LTV n’est correctement détectée.
+
+L’application propose alors un affichage du PDF permettant de sélectionner manuellement la zone LTV.
+
+L’utilisateur dispose d’un outil de recadrage composé de quatre lignes rouges délimitant la zone sélectionnée.
+
+Pour effectuer le recadrage :
+- déplacer les lignes rouges en faisant glisser le doigt afin d’encadrer la zone LTV ;
+- utiliser les boutons permettant de faire monter ou descendre la page pour accéder à d’autres parties du document si nécessaire ;
+- valider le recadrage à l’aide du bouton **Valider**.
+
+Un bouton **Réinitialiser** permet de revenir à la position initiale des lignes rouges.
+
+Une fois le recadrage validé, la zone LTV est intégrée dans l’application.
+
+Il est possible de revenir au recadrage à tout moment en touchant de nouveau la zone LTV.
+
+*Captures d’écran à prévoir :*
+
+### 6.3.3. Zone fiche train (FT)
+
+La zone **Fiche train** constitue la partie principale de l’application.
+
+Elle vise à reproduire le plus fidèlement possible la présentation du document LIM, tel qu’il est fourni au format papier ou PDF.
+
+L’objectif est de permettre une lecture familière et directe des informations, dans un format adapté à l’écran de l’iPad.
+
+Les éléments dynamiques liés à l’utilisation en situation (défilement automatique, indicateur de position, etc.) sont décrits dans les sections suivantes.
+- écran de sélection avec navigation entre images LTV ;
+- bouton de sélection / validation ;
+- bouton recadrage manuel ;
+- écran de recadrage manuel.
+
+
+
+### 6.4. Utilisation en situation (mode conduite)
+
+Avant toute utilisation en situation, il est fortement recommandé de passer l’iPad en **mode guidé** afin d’éviter toute mise en veille de l’écran pendant le trajet.
+
+Au moment du départ du train, le conducteur peut activer le **mode conduite**.
+
+Pour cela :
+- toucher le bouton  (lecture) situé dans la barre supérieure ;
+- le bouton devient **vert** , indiquant que le mode conduite est actif.
+
+L’activation du mode conduite déclenche le défilement automatique de la fiche train.
+
+### 6.4.1. Indicateurs d’état
+
+#### Indicateur GPS
+
+Un indicateur permet de connaître l’état du signal GPS :
+
+- : pas de signal GPS ;
+- : signal GPS dégradé ;
+- : signal GPS exploitable.
+
+Cet indicateur permet d’évaluer rapidement la fiabilité de la position utilisée par l’application.
+
+#### Indicateur du mode horaire
+
+Un second indicateur renseigne sur le mode de fonctionnement du défilement :
+
+- : défilement basé sur la géolocalisation (mode GPS) ;
+- : défilement basé sur les horaires ;
+- : mode **standby**.
+
+Le mode standby sera détaillé dans la section consacrée au défilement horaire.
+
+Ces indicateurs influencent directement le comportement de la fiche train en mode conduite.
+
+### 6.4.2. Activation et effets du mode conduite
+
+Lors de l’activation du mode conduite (bouton ), l’application :
+
+- lance le défilement automatique de la fiche train ;
+- affiche l’**avance ou le retard estimé** à côté de l’horloge.
+
+L’affichage de l’avance/retard est :
+- **gris** si l’écart est inférieur à 5 minutes ; + 2min
+- **rouge** si l’écart est supérieur ou égal à 5 minutes. – 15 min
+
+### 6.4.3. Fonctionnement en mode GPS
+
+En utilisation normale, le fonctionnement principal est le **mode GPS**.
+
+Dans ce mode :
+- l’indicateur GPS est **vert** ; 
+- la fiche train défile en suivant la progression réelle du train.
+
+Sur la fiche train, dans la colonne des kilomètres :
+- une **petite flèche verte** indique la position estimée du train.
+
+
+Par ailleurs :
+- un appui sur l’indicateur GPS affiche pendant **10 secondes** le **PK estimé en temps réel**.
+
+
+
+### 6.4.4. Fonctionnement en mode horaire
+
+Lorsque le signal GPS n’est plus suffisamment fiable, l’application bascule automatiquement en **mode horaire**.
+
+Ce cas se produit notamment lors de la traversée de tunnels.
+
+Dans ce mode :
+- le défilement de la fiche train est basé sur les horaires théoriques du document, **en tenant compte de l’avance ou du retard éventuel** ;
+- l’indicateur du mode horaire passe en **vert** ; 
+- l’indicateur GPS est généralement **orange** ou **rouge** .
+
+Le passage en mode horaire permet d’assurer une continuité de l’affichage même en absence de géolocalisation exploitable.
+
+Le fonctionnement détaillé (recalage, standby, etc.) est décrit dans les sections suivantes.
+
+
+
+### 6.4.5. Recalage en mode horaire
+
+En mode horaire, la position du train est estimée à partir des horaires théoriques.
+
+Il peut arriver que cette estimation ne corresponde pas exactement à la progression réelle du train.
+
+Dans ce cas, il est possible d’effectuer un **recalage manuel** afin d’ajuster le défilement de la fiche train.
+
+Pour effectuer un recalage :
+- sélectionner une ligne en touchant la fiche train ;
+- la ligne sélectionnée clignote en **rouge** ; Note : il est possible de modifier la ligne sélectionnée en en touchant une autre
+
+- le bouton lecture devient orange clignotant ; 
+- l’indicateur d’état du mode horaire devient orange 
+- l’application passe en **mode standby** (défilement temporairement interrompu).
+
+Pour reprendre le défilement :
+- toucher le bouton .
+
+Le bouton, qui était **orange** en mode standby, redevient **vert** lorsque le défilement reprend.
+
+Le défilement est alors recalé sur la ligne sélectionnée.
+
+L’**avance ou le retard** est recalculé automatiquement en fonction de l’heure théorique de cette ligne.
+
+La sortie du mode horaire est automatique dès que le signal GPS redevient suffisamment fiable.
+
+### 7. Cas particuliers
+
+### 7.1. Arrêts en gare
+
+Lorsqu’un arrêt en gare est détecté, l’application passe automatiquement en **mode standby**.
+
+Dans ce mode :
+- le défilement est interrompu ;
+- la ligne correspondant à la gare est sélectionnée.
+
+Pour reprendre le défilement au moment du départ :
+- toucher le bouton .
+
+Le bouton repasse alors en **vert** et le défilement reprend.
+
+Ce fonctionnement est identique quel que soit le type de gare (souterraine ou à l’air libre).
+
+Si, pour une raison quelconque, l’arrêt n’est pas détecté automatiquement, le conducteur peut déclencher manuellement le **mode standby** en sélectionnant une ligne comme décrit dans la section précédente.
+
+### 7.2. Mode secours
+
+Après import du PDF, l’application est par défaut en **mode normal**.
+
+En appuyant sur le bouton **Normal**, il est possible de basculer en **mode secours**.
+
+
+
+
+Le mode secours permet d’afficher le PDF importé de manière brute, sans traitement.
+
+Dans ce mode :
+- aucun défilement automatique n’est actif ;
+- aucune automatisation (GPS, mode horaire, etc.) n’est utilisée ;
+- le document est affiché tel qu’il a été reçu.
+
+Ce mode peut être utilisé en cas de problème avec l’interprétation du document ou en solution de secours.
+
+
+
+
+### 8. Mode test
+
+Le **mode test** permet d’afficher des informations supplémentaires destinées au diagnostic et à l’amélioration de l’application.
+
+Il peut être activé depuis le menu des paramètres.
+
+### 8.1. Informations supplémentaires affichées
+
+Lorsque le mode test est activé, des éléments complémentaires apparaissent à l’écran :
+
+- affichage de l’**avance/retard à la seconde** ; 
+- affichage d’un **indicateur de position en mode horaire** (approximation de la position)  en rouge ;
+- affichage d’une indicateur de « ligne active » sur laquelle le défilement automatique s’aligne en bleu.
+
+- affichage d’**heures de passage calculées automatiquement** sur certains points de la ligne.
+
+
+L’indicateur de position en mode horaire est volontairement **approximatif** et n’est pas utilisé en exploitation normale.
+
+En mode test, l’indicateur de position en mode GPS est également **plus visible**.
+
+
+En mode test, le PK est visible en permanence dans l’indicateur d’état GPS, à condition qu’il soit vert.
+
+
+
+### 8.2. Enregistrement des informations de diagnostic
+
+Que le mode test soit activé ou non, l’application enregistre des informations de diagnostic.
+
+Ces informations sont **anonymes** et servent uniquement à analyser le fonctionnement de l’application.
+
+### 8.3. Export des logs
+
+Les informations de diagnostic peuvent être exportées sous forme de fichier.
+
+Deux cas sont possibles :
+
+- **en mode test** :
+  - à la fin du test, appuyer sur le bouton **STOP** ;
+
+  - l’application propose l’export d’un fichier de log ;
+  - ce fichier doit être transmis (par exemple par mail) pour analyse.
+
+- **hors mode test** :
+  - il est possible d’exporter les logs manuellement depuis le menu des paramètres ;
+  - utiliser le bouton **Exporter les logs**.
+
+
+
+
+### 9. Évolutions prévues
+
+L’objectif à terme est de réduire au maximum la dépendance aux fichiers PDF, dont la qualité peut être variable.
+
+L’application évoluera progressivement vers l’utilisation de données directement éditables via l’application LIM Editor, afin d’améliorer la fiabilité et la cohérence des informations affichées.
+

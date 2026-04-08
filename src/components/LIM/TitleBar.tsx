@@ -17,6 +17,7 @@ import { RIBBON_POINTS } from '../../lib/ligne050_ribbon_dense'
 import { getOcrOnlineEnabled, setOcrOnlineEnabled } from '../../lib/ocrSettings'
 
 import { APP_VERSION } from '../version'
+import { getTrainNumeroFrance } from '../../data/ligneFT.normalized.adapter'
 
 type LIMFields = {
   tren?: string
@@ -24,6 +25,17 @@ type LIMFields = {
   type?: string
   composicion?: string
   unit?: string
+}
+
+type NumberingSide = 'ES' | 'FR'
+
+type DisplayedTrainNumberState = {
+  trainNumberEs: string | undefined
+  trainNumberFr: string | undefined
+  displayedSide: NumberingSide
+  pendingSide: NumberingSide | null
+  isBlinking: boolean
+  displayedNumber: string | undefined
 }
 
 function toTitleNumber(s?: string | null): string | undefined {
@@ -952,11 +964,304 @@ ${coords}
     return rawComp ? String(rawComp) : undefined
   })
 
+  const [displayedTrainNumberState, setDisplayedTrainNumberState] =
+    useState<DisplayedTrainNumberState>({
+      trainNumberEs: undefined,
+      trainNumberFr: undefined,
+      displayedSide: 'ES',
+      pendingSide: null,
+      isBlinking: false,
+      displayedNumber: undefined,
+    })
+  const applyDisplayedTrainNumberState = (
+    nextState: DisplayedTrainNumberState,
+    meta?: { source?: string; reason?: string }
+  ) => {
+    setDisplayedTrainNumberState(nextState)
+
+    window.dispatchEvent(
+      new CustomEvent('lim:displayed-train-number-change', {
+        detail: nextState,
+      })
+    )
+
+    logTestEvent('ui:displayed-train-number-change', {
+      source: meta?.source ?? 'titlebar',
+      reason: meta?.reason ?? 'unspecified',
+      trainNumberEs: nextState.trainNumberEs ?? null,
+      trainNumberFr: nextState.trainNumberFr ?? null,
+      displayedSide: nextState.displayedSide,
+      pendingSide: nextState.pendingSide,
+      isBlinking: nextState.isBlinking,
+      displayedNumber: nextState.displayedNumber ?? null,
+    })
+  }
+    const buildDisplayedTrainNumberState = (params: {
+    trainNumberEs?: string
+    trainNumberFr?: string
+    displayedSide: NumberingSide
+    pendingSide?: NumberingSide | null
+    isBlinking?: boolean
+  }): DisplayedTrainNumberState => {
+    const trainNumberEs = params.trainNumberEs
+    const trainNumberFr = params.trainNumberFr
+    const displayedSide = params.displayedSide
+    const pendingSide = params.pendingSide ?? null
+    const isBlinking = params.isBlinking ?? false
+
+    const visibleSide: NumberingSide =
+      isBlinking && pendingSide ? pendingSide : displayedSide
+
+    const displayedNumber =
+      visibleSide === 'FR'
+        ? trainNumberFr ?? trainNumberEs
+        : trainNumberEs ?? trainNumberFr
+
+    return {
+      trainNumberEs,
+      trainNumberFr,
+      displayedSide,
+      pendingSide,
+      isBlinking,
+      displayedNumber,
+    }
+  }
+    const displayedTrainNumberStateRef = useRef<DisplayedTrainNumberState>(
+    displayedTrainNumberState
+  )
+
+  useEffect(() => {
+    displayedTrainNumberStateRef.current = displayedTrainNumberState
+  }, [displayedTrainNumberState])
+
+  useEffect(() => {
+    return () => {
+      if (titleBarLongPressTimerRef.current != null) {
+        window.clearTimeout(titleBarLongPressTimerRef.current)
+        titleBarLongPressTimerRef.current = null
+      }
+    }
+  }, [])
+
+  const NUMBERING_SWITCH_ANCHORS = {
+    DOWN: {
+      label: 'LLERS',
+      triggerSkm: 138.393795 - 0.3,
+      targetSide: 'ES' as NumberingSide,
+    },
+    UP: {
+      label: 'FIGUERES-VILAFANT',
+      triggerSkm: 133.765372 + 0.3,
+      targetSide: 'FR' as NumberingSide,
+    },
+  }
+
+  const numberingAnchorTriggeredRef = useRef(false)
+  const TITLEBAR_LONG_PRESS_MS = 500
+  const titleBarLongPressTimerRef = useRef<number | null>(null)
+  const titleBarLongPressTriggeredRef = useRef(false)
+  const titleBarPointerGestureIdRef = useRef(0)
+  const titleBarLongPressGestureIdRef = useRef(0)
+
+  const applyDisplayedTrainNumberSide = (
+    displayedSide: NumberingSide,
+    meta?: {
+      trainNumberEs?: string
+      trainNumberFr?: string
+      pendingSide?: NumberingSide | null
+      isBlinking?: boolean
+      source?: string
+      reason?: string
+    }
+  ) => {
+    const current = displayedTrainNumberStateRef.current
+
+    const nextState = buildDisplayedTrainNumberState({
+      trainNumberEs: meta?.trainNumberEs ?? current.trainNumberEs,
+      trainNumberFr: meta?.trainNumberFr ?? current.trainNumberFr,
+      displayedSide,
+      pendingSide: meta?.pendingSide ?? null,
+      isBlinking: meta?.isBlinking ?? false,
+    })
+
+    applyDisplayedTrainNumberState(nextState, {
+      source: meta?.source ?? 'titlebar',
+      reason: meta?.reason ?? `switch_to_${displayedSide}`,
+    })
+  }
+    const applyDisplayedTrainNumberPendingSide = (
+    pendingSide: NumberingSide | null,
+    meta?: {
+      displayedSide?: NumberingSide
+      trainNumberEs?: string
+      trainNumberFr?: string
+      isBlinking?: boolean
+      source?: string
+      reason?: string
+    }
+  ) => {
+    const current = displayedTrainNumberStateRef.current
+
+    const nextState = buildDisplayedTrainNumberState({
+      trainNumberEs: meta?.trainNumberEs ?? current.trainNumberEs,
+      trainNumberFr: meta?.trainNumberFr ?? current.trainNumberFr,
+      displayedSide: meta?.displayedSide ?? current.displayedSide,
+      pendingSide,
+      isBlinking: meta?.isBlinking ?? pendingSide != null,
+    })
+
+    applyDisplayedTrainNumberState(nextState, {
+      source: meta?.source ?? 'titlebar',
+      reason: meta?.reason ?? (pendingSide ? `pending_${pendingSide}` : 'pending_clear'),
+    })
+  }
+    const armDisplayedTrainNumberPendingSide = (
+    targetSide: NumberingSide,
+    meta?: {
+      trainNumberEs?: string
+      trainNumberFr?: string
+      source?: string
+      reason?: string
+    }
+  ) => {
+    const current = displayedTrainNumberStateRef.current
+
+    const trainNumberEs = meta?.trainNumberEs ?? current.trainNumberEs
+    const trainNumberFr = meta?.trainNumberFr ?? current.trainNumberFr
+
+    if (targetSide === current.displayedSide) return
+
+    if (current.pendingSide === targetSide && current.isBlinking) return
+
+    const hasTargetNumber =
+      targetSide === 'FR'
+        ? typeof trainNumberFr === 'string' && trainNumberFr.trim() !== ''
+        : typeof trainNumberEs === 'string' && trainNumberEs.trim() !== ''
+
+    if (!hasTargetNumber) return
+
+    applyDisplayedTrainNumberPendingSide(targetSide, {
+      displayedSide: current.displayedSide,
+      trainNumberEs,
+      trainNumberFr,
+      isBlinking: true,
+      source: meta?.source ?? 'titlebar',
+      reason: meta?.reason ?? `arm_pending_${targetSide}`,
+    })
+  }
+    useEffect(() => {
+    const onCommitRequest = () => {
+      const current = displayedTrainNumberStateRef.current
+      const pendingSide = current.pendingSide
+
+      if (!pendingSide) return
+
+      applyDisplayedTrainNumberSide(pendingSide, {
+        trainNumberEs: current.trainNumberEs,
+        trainNumberFr: current.trainNumberFr,
+        pendingSide: null,
+        isBlinking: false,
+        source: 'infos_tren',
+        reason: 'manual_commit_pending_side',
+      })
+    }
+
+    const onManualToggleRequest = () => {
+      const current = displayedTrainNumberStateRef.current
+
+      const hasNumeroFrance =
+        typeof current.trainNumberFr === 'string' &&
+        current.trainNumberFr.trim() !== ''
+
+      if (!hasNumeroFrance) return
+
+      const targetSide: NumberingSide =
+        current.displayedSide === 'ES' ? 'FR' : 'ES'
+
+      armDisplayedTrainNumberPendingSide(targetSide, {
+        trainNumberEs: current.trainNumberEs,
+        trainNumberFr: current.trainNumberFr,
+        source: 'infos_tren',
+        reason: 'manual_toggle_request',
+      })
+    }
+
+    window.addEventListener(
+      'lim:displayed-train-number-commit-request',
+      onCommitRequest as EventListener
+    )
+    window.addEventListener(
+      'lim:displayed-train-number-manual-toggle-request',
+      onManualToggleRequest as EventListener
+    )
+
+    return () => {
+      window.removeEventListener(
+        'lim:displayed-train-number-commit-request',
+        onCommitRequest as EventListener
+      )
+      window.removeEventListener(
+        'lim:displayed-train-number-manual-toggle-request',
+        onManualToggleRequest as EventListener
+      )
+    }
+  }, [])
+  useEffect(() => {
+    numberingAnchorTriggeredRef.current = false
+
+    const numeroEs = trainDisplay
+    const numeroFr = numeroEs ? getTrainNumeroFrance(numeroEs) : undefined
+
+    const numeroEsAsNumber =
+      typeof numeroEs === 'string' && numeroEs.trim() !== ''
+        ? Number(numeroEs)
+        : NaN
+
+    const hasNumeroFrance = typeof numeroFr === 'string' && numeroFr.trim() !== ''
+    const shouldStartInFrance =
+      hasNumeroFrance &&
+      Number.isFinite(numeroEsAsNumber) &&
+      numeroEsAsNumber % 2 === 0
+
+    const displayedSide: NumberingSide = shouldStartInFrance ? 'FR' : 'ES'
+
+
+    const nextState = buildDisplayedTrainNumberState({
+      trainNumberEs: numeroEs,
+      trainNumberFr: numeroFr,
+      displayedSide,
+      pendingSide: null,
+      isBlinking: false,
+    })
+
+    console.log('[TitleBar][displayed-train-number:init]', {
+      trainDisplay,
+      numeroEs,
+      numeroFr,
+      numeroEsAsNumber,
+      hasNumeroFrance,
+      shouldStartInFrance,
+      displayedSide,
+      displayedNumber: nextState.displayedNumber,
+      nextState,
+    })
+
+    applyDisplayedTrainNumberSide(displayedSide, {
+      trainNumberEs: numeroEs,
+      trainNumberFr: numeroFr,
+      pendingSide: null,
+      isBlinking: false,
+      source: 'titlebar',
+      reason: hasNumeroFrance ? 'initial_rule_fr_if_es_even_else_es' : 'initial_rule_es_only',
+    })
+  }, [trainDisplay])
+
   // =========================
   // Direction attendue (PK)
   // =========================
   type ExpectedDir = 'UP' | 'DOWN'
   const [expectedDir, setExpectedDir] = useState<ExpectedDir | null>(null)
+  const expectedDirRef = useRef<ExpectedDir | null>(null)
   const expectedDirLockedRef = useRef(false)
   const expectedDirSourceRef = useRef<'train_number' | 'manual' | null>(null)
   const expectedDirTrainRef = useRef<string | null>(null)
@@ -1008,10 +1313,15 @@ ${coords}
   }, [trainDisplay])
 
   useEffect(() => {
+    expectedDirRef.current = expectedDir
+  }, [expectedDir])
+
+  useEffect(() => {
     const reset = () => {
       expectedDirLockedRef.current = false
       expectedDirTrainRef.current = null
       expectedDirSourceRef.current = null
+      numberingAnchorTriggeredRef.current = false
       setExpectedDir(null)
       logTestEvent('direction:reset', { source: 'clear_pdf' })
     }
@@ -1050,26 +1360,13 @@ ${coords}
     }
   }, [])
 
-  const CHANGELOG_TEXT = `🆕 Changelog – Optimisation du moteur de localisation GPS
+  const CHANGELOG_TEXT = `🆕 Changelog
 
-🧭 Géométrie de ligne — ruban nettoyé et étendu
-- Nettoyage complet du ruban géographique : suppression des branches parasites OSM.
-- Recalage global de la géométrie pour obtenir une distance cohérente avec le terrain réel.
-- Extension du ruban vers le nord : intégration des portions LFP et RFN (préparation future).
-
-📍 Ancres PK — correction et enrichissement
-- Repositionnement des ancres existantes pour correspondre au ruban nettoyé.
-- Ajout de nouvelles ancres sur les zones LFP et RFN (provisoires, validation terrain prévue).
-- Amélioration de la cohérence PK ↔ distance ruban sur l’ensemble de la ligne.
-
-🚆 Localisation GPS
-- Optimisation indirecte du moteur GPS grâce à une géométrie et des ancres plus fiables.
-- Réduction des bascules de branche et amélioration de la stabilité du PK estimé.
-- Meilleure continuité de localisation hors zones tunnel.
-
-ℹ️ Note
-- Les nouvelles ancres LFP et RFN sont préparatoires pour une future extension de l’application.
-- Le fonctionnement actuel reste centré sur la portion ADIF.
+- Fiabilisation de la localisation GPS avec nettoyage du ruban, correction des ancres et ajout de divers garde-fous.
+- Ajout de la section Perpignan–Figueres dans la fiche train.
+- Ajout de la gestion de la double numérotation des trains.
+- Préparation de la transition de la source des données : certaines données ne reposent plus uniquement sur le PDF et sont désormais fournies par LIM Editor.
+- Corrections de bugs divers.
 `
 
   useEffect(() => {
@@ -1736,7 +2033,63 @@ ${coords}
           ? Math.trunc(d.timestamp)
           : Date.now()
 
+      const previousFix = lastGpsFixRef.current
       lastGpsFixRef.current = { ts, nearestIdx, s_km, onLine }
+
+      const expectedDirNow = expectedDirRef.current
+
+      if (typeof s_km === 'number' && Number.isFinite(s_km)) {
+        if (s_km < 150 && s_km > 120) {
+          console.log('[Numbering][GPS][DIAG]', {
+            expectedDir: expectedDirNow,
+            onLine,
+            s_km,
+            nearestIdx,
+            numberingAnchorTriggered: numberingAnchorTriggeredRef.current,
+          })
+        }
+      }
+
+      if (
+        onLine === true &&
+        typeof s_km === 'number' &&
+        Number.isFinite(s_km) &&
+        expectedDirNow &&
+        !numberingAnchorTriggeredRef.current
+      ) {
+        const currentNumbering = displayedTrainNumberStateRef.current
+        const hasNumeroFrance =
+          typeof currentNumbering.trainNumberFr === 'string' &&
+          currentNumbering.trainNumberFr.trim() !== ''
+
+        const hasNoPendingSide = currentNumbering.pendingSide == null
+
+        if (hasNumeroFrance && hasNoPendingSide) {
+          const anchor =
+            expectedDirNow === 'DOWN'
+              ? NUMBERING_SWITCH_ANCHORS.DOWN
+              : NUMBERING_SWITCH_ANCHORS.UP
+
+          const triggerReached =
+            expectedDirNow === 'DOWN'
+              ? s_km <= anchor.triggerSkm
+              : s_km >= anchor.triggerSkm
+
+          if (
+            triggerReached &&
+            currentNumbering.displayedSide !== anchor.targetSide
+          ) {
+            numberingAnchorTriggeredRef.current = true
+
+            armDisplayedTrainNumberPendingSide(anchor.targetSide, {
+              trainNumberEs: currentNumbering.trainNumberEs,
+              trainNumberFr: currentNumbering.trainNumberFr,
+              source: 'gps_anchor',
+              reason: `anchor_${anchor.label}_arm_pending_${anchor.targetSide}`,
+            })
+          }
+        }
+      }
 
       const now = ts
       if (nearestIdx != null && onLine === true) {
@@ -1897,7 +2250,15 @@ ${coords}
     console.log('[TitleBar] Arrêt watchPosition GPS')
   }
 
-  const titleSuffix = trainDisplay ? ` ${trainDisplay}` : ''
+  const titleBarDisplayedTrainNumber =
+    displayedTrainNumberState.displayedNumber ?? trainDisplay
+
+  const titleBarTrainShouldBlink = Boolean(displayedTrainNumberState.isBlinking)
+
+  const titleSuffix = titleBarDisplayedTrainNumber
+    ? ` ${titleBarDisplayedTrainNumber}`
+    : ''
+
   const baseTitle = `LIM${titleSuffix}`
 
   const extendedParts: string[] = []
@@ -1908,7 +2269,21 @@ ${coords}
   const fullTitle =
     folded && extendedParts.length > 0 ? `${baseTitle} - ${extendedParts.join(' - ')}` : baseTitle
 
-  const handleTitleClick = () => {
+  const runTitleBarSingleClickAction = () => {
+    const currentNumbering = displayedTrainNumberStateRef.current
+
+    if (currentNumbering.pendingSide) {
+      window.dispatchEvent(
+        new CustomEvent('lim:displayed-train-number-commit-request', {
+          detail: {
+            pendingSide: currentNumbering.pendingSide,
+            source: 'titlebar',
+          },
+        })
+      )
+      return
+    }
+
     if (ftViewMode === 'FR') {
       logTestEvent('ui:blocked', {
         control: 'infosLtvFold',
@@ -1935,6 +2310,76 @@ ${coords}
       )
       return next
     })
+  }
+
+  const startTitleBarLongPress = (gestureId: number) => {
+    const currentNumbering = displayedTrainNumberStateRef.current
+
+    if (currentNumbering.pendingSide) return
+
+    if (titleBarLongPressTimerRef.current != null) {
+      window.clearTimeout(titleBarLongPressTimerRef.current)
+      titleBarLongPressTimerRef.current = null
+    }
+
+    titleBarLongPressTriggeredRef.current = false
+
+    titleBarLongPressTimerRef.current = window.setTimeout(() => {
+      titleBarLongPressTimerRef.current = null
+
+      const latestNumbering = displayedTrainNumberStateRef.current
+      if (latestNumbering.pendingSide) return
+
+      titleBarLongPressTriggeredRef.current = true
+      titleBarLongPressGestureIdRef.current = gestureId
+
+      window.dispatchEvent(
+        new CustomEvent('lim:displayed-train-number-manual-toggle-request', {
+          detail: {
+            source: 'titlebar',
+          },
+        })
+      )
+    }, TITLEBAR_LONG_PRESS_MS)
+  }
+
+  const clearTitleBarLongPress = () => {
+    if (titleBarLongPressTimerRef.current != null) {
+      window.clearTimeout(titleBarLongPressTimerRef.current)
+      titleBarLongPressTimerRef.current = null
+    }
+  }
+
+  const handleTitlePointerDown = () => {
+    const nextGestureId = titleBarPointerGestureIdRef.current + 1
+    titleBarPointerGestureIdRef.current = nextGestureId
+    startTitleBarLongPress(nextGestureId)
+  }
+
+  const handleTitlePointerUp = () => {
+    clearTitleBarLongPress()
+  }
+
+  const handleTitlePointerLeave = () => {
+    clearTitleBarLongPress()
+  }
+
+  const handleTitlePointerCancel = () => {
+    clearTitleBarLongPress()
+  }
+
+  const handleTitleClick = () => {
+    if (titleBarPointerGestureIdRef.current === titleBarLongPressGestureIdRef.current) {
+      titleBarLongPressTriggeredRef.current = false
+      return
+    }
+
+    if (titleBarLongPressTriggeredRef.current) {
+      titleBarLongPressTriggeredRef.current = false
+      return
+    }
+
+    runTitleBarSingleClickAction()
   }
 
   const IconSun = () => (
@@ -2181,10 +2626,22 @@ const IconFile = () => null
           <button
             type="button"
             onClick={handleTitleClick}
+            onPointerDown={handleTitlePointerDown}
+            onPointerUp={handleTitlePointerUp}
+            onPointerLeave={handleTitlePointerLeave}
+            onPointerCancel={handleTitlePointerCancel}
             className="max-w-full truncate text-[18px] leading-none font-semibold tracking-tight bg-transparent border-0 cursor-pointer"
             title={folded ? 'Afficher les blocs INFOS et LTV' : 'Afficher uniquement la zone FT'}
           >
-            {fullTitle}
+            <span>LIM</span>
+            {titleSuffix && (
+              <span className={titleBarTrainShouldBlink ? 'classic-blink-text' : ''}>
+                {titleSuffix}
+              </span>
+            )}
+            {folded && extendedParts.length > 0 && (
+              <span>{` - ${extendedParts.join(' - ')}`}</span>
+            )}
           </button>
         </div>
 
