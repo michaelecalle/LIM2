@@ -2250,16 +2250,38 @@ ${coords}
     console.log('[TitleBar] Arrêt watchPosition GPS')
   }
 
-  const titleBarDisplayedTrainNumber =
-    displayedTrainNumberState.displayedNumber ?? trainDisplay
+  const titleBarCommittedTrainNumber =
+    displayedTrainNumberState.displayedSide === 'FR'
+      ? displayedTrainNumberState.trainNumberFr ??
+        displayedTrainNumberState.trainNumberEs ??
+        trainDisplay
+      : displayedTrainNumberState.trainNumberEs ??
+        displayedTrainNumberState.trainNumberFr ??
+        trainDisplay
+
+  const titleBarPendingTrainNumber =
+    displayedTrainNumberState.pendingSide === 'FR'
+      ? displayedTrainNumberState.trainNumberFr ??
+        displayedTrainNumberState.trainNumberEs ??
+        null
+      : displayedTrainNumberState.pendingSide === 'ES'
+        ? displayedTrainNumberState.trainNumberEs ??
+          displayedTrainNumberState.trainNumberFr ??
+          null
+        : null
 
   const titleBarTrainShouldBlink = Boolean(displayedTrainNumberState.isBlinking)
 
-  const titleSuffix = titleBarDisplayedTrainNumber
-    ? ` ${titleBarDisplayedTrainNumber}`
+  const titleSuffix = titleBarCommittedTrainNumber
+    ? ` ${titleBarCommittedTrainNumber}`
     : ''
 
-  const baseTitle = `LIM${titleSuffix}`
+  const titlePendingSuffix =
+    titleBarTrainShouldBlink && titleBarPendingTrainNumber
+      ? ` → ${titleBarPendingTrainNumber}`
+      : ''
+
+  const baseTitle = `LIM${titleSuffix}${titlePendingSuffix}`
 
   const extendedParts: string[] = []
   if (trainType && String(trainType).trim().length > 0) extendedParts.push(String(trainType).trim())
@@ -2269,48 +2291,46 @@ ${coords}
   const fullTitle =
     folded && extendedParts.length > 0 ? `${baseTitle} - ${extendedParts.join(' - ')}` : baseTitle
 
-  const runTitleBarSingleClickAction = () => {
-    const currentNumbering = displayedTrainNumberStateRef.current
+const runTitleBarSingleClickAction = () => {
+  const currentNumbering = displayedTrainNumberStateRef.current
 
-    if (currentNumbering.pendingSide) {
-      window.dispatchEvent(
-        new CustomEvent('lim:displayed-train-number-commit-request', {
-          detail: {
-            pendingSide: currentNumbering.pendingSide,
-            source: 'titlebar',
-          },
-        })
-      )
-      return
-    }
-
-    if (ftViewMode === 'FR') {
-      logTestEvent('ui:blocked', {
-        control: 'infosLtvFold',
-        source: 'titlebar',
-        reason: 'ftfrance_active',
+  if (currentNumbering.pendingSide) {
+    window.dispatchEvent(
+      new CustomEvent('lim:displayed-train-number-commit-request', {
+        detail: {
+          pendingSide: currentNumbering.pendingSide,
+          source: 'titlebar',
+        },
       })
-      return
-    }
-
-    if (simulationEnabled) {
-      logTestEvent('ui:blocked', { control: 'infosLtvFold', source: 'titlebar' })
-      return
-    }
-
-    setFolded((prev) => {
-      const next = !prev
-
-      logTestEvent('ui:infos-ltv:fold-change', { folded: next, source: 'titlebar' })
-
-      window.dispatchEvent(
-        new CustomEvent('lim:infos-ltv-fold-change', {
-          detail: { folded: next },
-        })
-      )
-      return next
-    })
+    )
+    return
   }
+
+  if (ftViewMode === 'FR') {
+    logTestEvent('ui:blocked', {
+      control: 'infosLtvFold',
+      source: 'titlebar',
+      reason: 'ftfrance_active',
+    })
+    return
+  }
+
+  if (simulationEnabled) {
+    logTestEvent('ui:blocked', { control: 'infosLtvFold', source: 'titlebar' })
+    return
+  }
+
+  const next = !folded
+  setFolded(next)
+
+  logTestEvent('ui:infos-ltv:fold-change', { folded: next, source: 'titlebar' })
+
+  window.dispatchEvent(
+    new CustomEvent('lim:infos-ltv-fold-change', {
+      detail: { folded: next },
+    })
+  )
+}
 
   const startTitleBarLongPress = (gestureId: number) => {
     const currentNumbering = displayedTrainNumberStateRef.current
@@ -2634,10 +2654,21 @@ const IconFile = () => null
             title={folded ? 'Afficher les blocs INFOS et LTV' : 'Afficher uniquement la zone FT'}
           >
             <span>LIM</span>
-            {titleSuffix && (
-              <span className={titleBarTrainShouldBlink ? 'classic-blink-text' : ''}>
-                {titleSuffix}
-              </span>
+            {(titleSuffix || titlePendingSuffix) && (
+              <>
+                {titleSuffix && <span>{titleSuffix}</span>}
+                {titlePendingSuffix && (
+                  <span
+                    className={
+                      titleBarTrainShouldBlink
+                        ? 'inline-block whitespace-nowrap classic-blink-text'
+                        : 'inline-block whitespace-nowrap'
+                    }
+                  >
+                    {titlePendingSuffix}
+                  </span>
+                )}
+              </>
             )}
             {folded && extendedParts.length > 0 && (
               <span>{` - ${extendedParts.join(' - ')}`}</span>
