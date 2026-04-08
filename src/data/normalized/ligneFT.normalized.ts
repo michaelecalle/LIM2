@@ -2113,7 +2113,8 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     "9707": {
       "meta": {
         "origine": "BARCELONA SANTS",
-        "destination": "PERPIGNAN"
+        "destination": "PERPIGNAN",
+        "numeroFrance": "9706"
       },
       "byRowKey": {
         "sn-data-0006": {
@@ -2194,6 +2195,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "meta": {
             "origine": "BARCELONA SANTS",
             "destination": "PERPIGNAN",
+            "numeroFrance": "9706",
             "validity": {
               "startDate": "",
               "endDate": "",
@@ -2288,7 +2290,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     "9709": {
       "meta": {
         "origine": "BARCELONA SANTS",
-        "destination": "PERPIGNAN"
+        "destination": "PERPIGNAN",
+        "numeroEspagne": "",
+        "numeroFrance": "9708",
+        "categorieEspagne": "",
+        "categorieFrance": "",
+        "composition": ""
       },
       "byRowKey": {
         "sn-data-0006": {
@@ -2369,7 +2376,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     "9712": {
       "meta": {
         "origine": "PERPIGNAN",
-        "destination": "BARCELONA SANTS"
+        "destination": "BARCELONA SANTS",
+        "numeroEspagne": "",
+        "numeroFrance": "9713",
+        "categorieEspagne": "",
+        "categorieFrance": "",
+        "composition": ""
       },
       "byRowKey": {
         "ns-data-0055": {
@@ -2450,7 +2462,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     "9714": {
       "meta": {
         "origine": "PERPIGNAN",
-        "destination": "BARCELONA SANTS"
+        "destination": "BARCELONA SANTS",
+        "numeroEspagne": "",
+        "numeroFrance": "9715",
+        "categorieEspagne": "",
+        "categorieFrance": "",
+        "composition": ""
       },
       "byRowKey": {
         "ns-data-0055": {
@@ -2531,7 +2548,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     "38510": {
       "meta": {
         "origine": "BARCELONA SANTS",
-        "destination": "CAN TUNIS AV"
+        "destination": "CAN TUNIS AV",
+        "numeroEspagne": "",
+        "numeroFrance": "",
+        "categorieEspagne": "",
+        "categorieFrance": "",
+        "composition": ""
       },
       "byRowKey": {
         "ns-data-0006": {
@@ -2550,7 +2572,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     "39819": {
       "meta": {
         "origine": "CAN TUNIS AV",
-        "destination": "BARCELONA SANTS"
+        "destination": "BARCELONA SANTS",
+        "numeroEspagne": "",
+        "numeroFrance": "",
+        "categorieEspagne": "",
+        "categorieFrance": "",
+        "composition": ""
       },
       "byRowKey": {
         "sn-data-0001": {
