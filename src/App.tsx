@@ -551,10 +551,21 @@ export default function App() {
                   : "h-full flex flex-col items-center justify-center rounded-2xl bg-zinc-100 text-zinc-200"
               }
             >
-              <div className="text-[600px] leading-none font-semibold tracking-tight select-none">
+              <div className="text-[300px] leading-none font-semibold tracking-tight select-none">
                 LIM
               </div>
-              <div className="mt-2 text-7xl italic tracking-wide select-none">
+
+              <div className={isDark ? "mt-4 max-w-5xl px-10 text-center text-[28px] leading-tight font-medium italic select-none text-zinc-100" : "mt-4 max-w-5xl px-10 text-center text-[28px] leading-tight font-medium italic select-none text-zinc-900"}>
+                Cette application constitue un outil d’assistance et de confort de
+                consultation.
+                <br />
+                Elle ne remplace pas les documents, procédures, règles métier ou
+                références réglementaires applicables,
+                <br />
+                qui restent les seules références de base pour l’exploitation.
+              </div>
+
+              <div className="mt-6 text-7xl italic tracking-wide select-none">
                 Version {APP_VERSION}
               </div>
             </div>
