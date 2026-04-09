@@ -104,8 +104,8 @@ export function buildTestLogFile(): {
   const bodyLines = events.map((e) => JSON.stringify(e))
   const text = headerLines.join('\n') + bodyLines.join('\n') + '\n'
 
-  // Le nom de fichier doit rester stable et explicite
-  const filename = `LIM_testlog_${sessionId}.log`
+  // Nom de fichier lisible pour l’exploitation
+  const filename = buildFriendlyLogFilename(events, sessionId)
 
   // En environnement navigateur seulement
   if (typeof Blob === 'undefined') {
@@ -399,6 +399,106 @@ export async function flushQueuedTestLogUploads(
   // remaining (approx) : on relit une petite tranche
   const remaining = (await dbGetOldestUploads(9999)).length
   return { sent, remaining }
+}
+
+export type CurrentTestExportNaming = {
+  trainNumber: string
+  datePart: string
+  timePart: string
+  logFilename: string
+  pdfFilename: string
+  zipFilename: string
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+function normalizeTrainNumberForFilename(raw: unknown): string | null {
+  if (raw == null) return null
+
+  const m = String(raw).match(/\d+/)
+  if (!m) return null
+
+  const n = parseInt(m[0], 10)
+  if (!Number.isFinite(n)) return null
+
+  return String(n)
+}
+
+function extractTrainNumberFromEvents(events: TestLogEvent[]): string | null {
+  for (const evt of events) {
+    const p = evt?.payload
+
+    const candidates = [
+      p?.train,
+      p?.trainNumber,
+      p?.trainNumberEs,
+      p?.displayedNumber,
+    ]
+
+    for (const candidate of candidates) {
+      const normalized = normalizeTrainNumberForFilename(candidate)
+      if (normalized) return normalized
+    }
+  }
+
+  return null
+}
+
+function formatLocalDateForFilename(d: Date): string {
+  if (isNaN(d.getTime())) return 'date_inconnue'
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+function formatLocalTimeForFilename(d: Date): string {
+  if (isNaN(d.getTime())) return 'heure_inconnue'
+  return `${pad2(d.getHours())}h${pad2(d.getMinutes())}`
+}
+
+function buildFriendlyExportNaming(
+  events: TestLogEvent[],
+  sessionId: string
+): CurrentTestExportNaming {
+  const startedAt = events[0]?.t ?? null
+  const startedDate = startedAt ? new Date(startedAt) : new Date()
+
+  if (isNaN(startedDate.getTime())) {
+    return {
+      trainNumber: 'train_inconnu',
+      datePart: 'date_inconnue',
+      timePart: 'heure_inconnue',
+      logFilename: `LIM_testlog_${sessionId}.log`,
+      pdfFilename: `PDF_utilise_${sessionId}.pdf`,
+      zipFilename: `LIM_export_${sessionId}.zip`,
+    }
+  }
+
+  const trainNumber = extractTrainNumberFromEvents(events) ?? 'train_inconnu'
+  const datePart = formatLocalDateForFilename(startedDate)
+  const timePart = formatLocalTimeForFilename(startedDate)
+
+  return {
+    trainNumber,
+    datePart,
+    timePart,
+    logFilename: `${trainNumber} du ${datePart} - ${timePart}.log`,
+    pdfFilename: `${trainNumber} du ${datePart}.pdf`,
+    zipFilename: `${trainNumber} du ${datePart} - ${timePart}.zip`,
+  }
+}
+
+export function getCurrentTestExportNaming(): CurrentTestExportNaming | null {
+  if (events.length === 0) return null
+
+  const sessionId =
+    currentSessionId ?? new Date().toISOString().replace(/[:.]/g, '-')
+
+  return buildFriendlyExportNaming(events, sessionId)
+}
+
+function buildFriendlyLogFilename(events: TestLogEvent[], sessionId: string): string {
+  return buildFriendlyExportNaming(events, sessionId).logFilename
 }
 
 /**

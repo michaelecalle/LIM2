@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  buildTestLogFile,
   startTestSession,
   stopTestSession,
   exportTestLogLocal,
+  getCurrentTestExportNaming,
   logTestEvent,
 } from '../../lib/testLogger'
 
@@ -437,14 +439,10 @@ export default function TitleBar() {
   const [gpsReplayBusy, setGpsReplayBusy] = useState(false)
   const [gpsReplayProgress, setGpsReplayProgress] = useState(0)
 
-  const downloadTextFile = (
-    filename: string,
-    content: string,
-    mime = 'text/plain'
-  ) => {
-    const blob = new Blob([content], { type: mime })
-    const url = URL.createObjectURL(blob)
+  const downloadBlobFile = (filename: string, blob: Blob): boolean => {
+    if (typeof document === 'undefined') return false
 
+    const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = filename
@@ -452,6 +450,7 @@ export default function TitleBar() {
 
     try {
       a.click()
+      return true
     } finally {
       a.remove()
       window.setTimeout(() => {
@@ -460,6 +459,230 @@ export default function TitleBar() {
         } catch {}
       }, 1500)
     }
+  }
+
+  const downloadTextFile = (
+    filename: string,
+    content: string,
+    mime = 'text/plain'
+  ) => {
+    const blob = new Blob([content], { type: mime })
+    return downloadBlobFile(filename, blob)
+  }
+
+  type ZipEntryInput = {
+    filename: string
+    blob: Blob
+    modifiedAt?: Date
+  }
+
+  const sanitizeArchiveEntryFilename = (name: string): string =>
+    String(name || '')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .trim() || 'fichier'
+
+  const ZIP_CRC32_TABLE = (() => {
+    const table = new Uint32Array(256)
+
+    for (let i = 0; i < 256; i++) {
+      let c = i
+      for (let j = 0; j < 8; j++) {
+        c = (c & 1) !== 0 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+      }
+      table[i] = c >>> 0
+    }
+
+    return table
+  })()
+
+  const encodeZipText = (value: string): Uint8Array => {
+    return new TextEncoder().encode(value)
+  }
+
+  const concatUint8Arrays = (parts: Uint8Array[]): Uint8Array => {
+    let total = 0
+    for (const part of parts) total += part.length
+
+    const out = new Uint8Array(total)
+    let offset = 0
+
+    for (const part of parts) {
+      out.set(part, offset)
+      offset += part.length
+    }
+
+    return out
+  }
+
+  const crc32Bytes = (bytes: Uint8Array): number => {
+    let crc = 0xffffffff
+
+    for (let i = 0; i < bytes.length; i++) {
+      crc = ZIP_CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8)
+    }
+
+    return (crc ^ 0xffffffff) >>> 0
+  }
+
+  const toDosDateTime = (input?: Date) => {
+    const d = input && !isNaN(input.getTime()) ? input : new Date()
+
+    const year = Math.max(1980, d.getFullYear())
+    const month = d.getMonth() + 1
+    const day = d.getDate()
+    const hours = d.getHours()
+    const minutes = d.getMinutes()
+    const seconds = Math.floor(d.getSeconds() / 2)
+
+    const dosTime = (hours << 11) | (minutes << 5) | seconds
+    const dosDate = ((year - 1980) << 9) | (month << 5) | day
+
+    return { dosDate, dosTime }
+  }
+
+  const buildZipBlob = async (entries: ZipEntryInput[]): Promise<Blob> => {
+    const localParts: Uint8Array[] = []
+    const centralParts: Uint8Array[] = []
+    let offset = 0
+
+    for (const entry of entries) {
+      const safeName = sanitizeArchiveEntryFilename(entry.filename)
+      const nameBytes = encodeZipText(safeName)
+      const fileBytes = new Uint8Array(await entry.blob.arrayBuffer())
+      const crc32 = crc32Bytes(fileBytes)
+      const { dosDate, dosTime } = toDosDateTime(entry.modifiedAt)
+
+      const localHeader = new Uint8Array(30 + nameBytes.length)
+      const localView = new DataView(localHeader.buffer)
+
+      localView.setUint32(0, 0x04034b50, true)
+      localView.setUint16(4, 20, true)
+      localView.setUint16(6, 0x0800, true)
+      localView.setUint16(8, 0, true)
+      localView.setUint16(10, dosTime, true)
+      localView.setUint16(12, dosDate, true)
+      localView.setUint32(14, crc32, true)
+      localView.setUint32(18, fileBytes.length, true)
+      localView.setUint32(22, fileBytes.length, true)
+      localView.setUint16(26, nameBytes.length, true)
+      localView.setUint16(28, 0, true)
+      localHeader.set(nameBytes, 30)
+
+      localParts.push(localHeader, fileBytes)
+
+      const centralHeader = new Uint8Array(46 + nameBytes.length)
+      const centralView = new DataView(centralHeader.buffer)
+
+      centralView.setUint32(0, 0x02014b50, true)
+      centralView.setUint16(4, 20, true)
+      centralView.setUint16(6, 20, true)
+      centralView.setUint16(8, 0x0800, true)
+      centralView.setUint16(10, 0, true)
+      centralView.setUint16(12, dosTime, true)
+      centralView.setUint16(14, dosDate, true)
+      centralView.setUint32(16, crc32, true)
+      centralView.setUint32(20, fileBytes.length, true)
+      centralView.setUint32(24, fileBytes.length, true)
+      centralView.setUint16(28, nameBytes.length, true)
+      centralView.setUint16(30, 0, true)
+      centralView.setUint16(32, 0, true)
+      centralView.setUint16(34, 0, true)
+      centralView.setUint16(36, 0, true)
+      centralView.setUint32(38, 0, true)
+      centralView.setUint32(42, offset, true)
+      centralHeader.set(nameBytes, 46)
+
+      centralParts.push(centralHeader)
+
+      offset += localHeader.length + fileBytes.length
+    }
+
+    const centralDirectory = concatUint8Arrays(centralParts)
+
+    const endRecord = new Uint8Array(22)
+    const endView = new DataView(endRecord.buffer)
+    endView.setUint32(0, 0x06054b50, true)
+    endView.setUint16(4, 0, true)
+    endView.setUint16(6, 0, true)
+    endView.setUint16(8, entries.length, true)
+    endView.setUint16(10, entries.length, true)
+    endView.setUint32(12, centralDirectory.length, true)
+    endView.setUint32(16, offset, true)
+    endView.setUint16(20, 0, true)
+
+    const zipBytes = concatUint8Arrays([
+      ...localParts,
+      centralDirectory,
+      endRecord,
+    ])
+
+    return new Blob([zipBytes], { type: 'application/zip' })
+  }
+
+  const exportCurrentTestBundleLocal = async (): Promise<boolean> => {
+    const builtLog = buildTestLogFile()
+    if (!builtLog.ok || !builtLog.blob) return false
+
+    const pdfFile = currentPdfFileRef.current
+    if (!pdfFile) {
+      return exportTestLogLocal()
+    }
+
+    const naming = getCurrentTestExportNaming()
+    const logFilename =
+      naming?.logFilename ??
+      builtLog.filename ??
+      'LIM_testlog.log'
+
+    const pdfFilename =
+      naming?.pdfFilename ??
+      sanitizeArchiveEntryFilename(pdfFile.name)
+
+    const zipFilename =
+      naming?.zipFilename ??
+      'LIM_export_test.zip'
+
+    const pdfModifiedAt =
+      typeof pdfFile.lastModified === 'number' && Number.isFinite(pdfFile.lastModified)
+        ? new Date(pdfFile.lastModified)
+        : new Date()
+
+    const zipBlob = await buildZipBlob([
+      {
+        filename: logFilename,
+        blob: builtLog.blob,
+        modifiedAt: new Date(),
+      },
+      {
+        filename: pdfFilename,
+        blob: pdfFile,
+        modifiedAt: pdfModifiedAt,
+      },
+    ])
+
+    try {
+      const navAny = typeof navigator !== 'undefined' ? (navigator as any) : null
+      const canShare = !!navAny?.share && !!navAny?.canShare
+
+      if (canShare && typeof File !== 'undefined') {
+        const zipFile = new File([zipBlob], zipFilename, {
+          type: 'application/zip',
+        })
+
+        if (navAny.canShare({ files: [zipFile] })) {
+          await navAny.share({
+            files: [zipFile],
+            title: 'LIM — export test',
+            text: zipFilename,
+          })
+          return true
+        }
+      }
+    } catch {
+      // On ignore et on retombe sur le fallback téléchargement.
+    }
+
+    return downloadBlobFile(zipFilename, zipBlob)
   }
 
   const buildRibbonKml = () => {
@@ -1594,6 +1817,10 @@ ${coords}
 
   // ----- IMPORT PDF -----
   const inputRef = useRef<HTMLInputElement>(null)
+  const currentPdfFileRef = useRef<File | null>(null)
+  const currentPdfIdRef = useRef<string | null>(null)
+  const currentPdfReplayKeyRef = useRef<string | null>(null)
+
   const handleImportClick = () => inputRef.current?.click()
 
   const computePdfId = async (file: File): Promise<string> => {
@@ -1664,6 +1891,10 @@ ${coords}
         replayKey,
         storage: 'local',
       })
+
+      currentPdfFileRef.current = file
+      currentPdfIdRef.current = pdfId
+      currentPdfReplayKeyRef.current = replayKey
 
       window.dispatchEvent(
         new CustomEvent('lim:import-pdf', {
@@ -2271,17 +2502,33 @@ ${coords}
         : null
 
   const titleBarTrainShouldBlink = Boolean(displayedTrainNumberState.isBlinking)
+  const [titleBarBlinkVisible, setTitleBarBlinkVisible] = useState(true)
 
-  const titleSuffix = titleBarCommittedTrainNumber
-    ? ` ${titleBarCommittedTrainNumber}`
-    : ''
+  useEffect(() => {
+    if (!titleBarTrainShouldBlink) {
+      setTitleBarBlinkVisible(true)
+      return
+    }
+
+    setTitleBarBlinkVisible(true)
+
+    const intervalId = window.setInterval(() => {
+      setTitleBarBlinkVisible((prev) => !prev)
+    }, 500)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [titleBarTrainShouldBlink])
+
+  const titleSuffix = titleBarCommittedTrainNumber ?? ''
 
   const titlePendingSuffix =
     titleBarTrainShouldBlink && titleBarPendingTrainNumber
-      ? ` → ${titleBarPendingTrainNumber}`
+      ? `→ ${titleBarPendingTrainNumber}`
       : ''
 
-  const baseTitle = `LIM${titleSuffix}${titlePendingSuffix}`
+  const baseTitle = `LIM${titleSuffix ? ` ${titleSuffix}` : ''}${titlePendingSuffix ? ` ${titlePendingSuffix}` : ''}`
 
   const extendedParts: string[] = []
   if (trainType && String(trainType).trim().length > 0) extendedParts.push(String(trainType).trim())
@@ -2653,29 +2900,36 @@ const IconFile = () => null
             onPointerUp={handleTitlePointerUp}
             onPointerLeave={handleTitlePointerLeave}
             onPointerCancel={handleTitlePointerCancel}
-            className="max-w-full truncate text-[18px] leading-none font-semibold tracking-tight bg-transparent border-0 cursor-pointer"
+            className="max-w-full text-[18px] leading-none font-semibold tracking-tight bg-transparent border-0 cursor-pointer"
             title={folded ? 'Afficher les blocs INFOS et LTV' : 'Afficher uniquement la zone FT'}
           >
-            <span>LIM</span>
-            {(titleSuffix || titlePendingSuffix) && (
-              <>
-                {titleSuffix && <span>{titleSuffix}</span>}
-                {titlePendingSuffix && (
-                  <span
-                    className={
-                      titleBarTrainShouldBlink
-                        ? 'inline-block whitespace-nowrap classic-blink-text'
-                        : 'inline-block whitespace-nowrap'
-                    }
-                  >
-                    {titlePendingSuffix}
-                  </span>
-                )}
-              </>
-            )}
-            {folded && extendedParts.length > 0 && (
-              <span>{` - ${extendedParts.join(' - ')}`}</span>
-            )}
+            <span className="inline-flex max-w-full items-baseline overflow-hidden">
+              <span className="shrink-0">LIM</span>
+
+              {titleSuffix && (
+                <span className="shrink-0 ml-1">
+                  {titleSuffix}
+                </span>
+              )}
+
+              {titlePendingSuffix && (
+                <span
+                  className={
+                    titleBarTrainShouldBlink
+                      ? 'shrink-0 whitespace-nowrap ml-1 classic-blink-text'
+                      : 'shrink-0 whitespace-nowrap ml-1'
+                  }
+                >
+                  {titlePendingSuffix}
+                </span>
+              )}
+
+              {folded && extendedParts.length > 0 && (
+                <span className="min-w-0 truncate">
+                  {` - ${extendedParts.join(' - ')}`}
+                </span>
+              )}
+            </span>
           </button>
         </div>
 
@@ -2778,6 +3032,10 @@ const IconFile = () => null
                 setTrainType(undefined)
                 setTrainComposition(undefined)
 
+                currentPdfFileRef.current = null
+                currentPdfIdRef.current = null
+                currentPdfReplayKeyRef.current = null
+
                 window.dispatchEvent(new CustomEvent('lim:clear-pdf'))
                 window.dispatchEvent(new CustomEvent('ft:clear-pdf'))
                 window.dispatchEvent(new CustomEvent('lim:pdf-raw', { detail: { file: null } }))
@@ -2841,14 +3099,6 @@ const IconFile = () => null
                 setScheduleDeltaIsLarge(false)
                 setScheduleDeltaSec(null)
 
-                setPdfMode('blue')
-                setPdfLoading(false)
-                stopPdfLoadingGuard()
-
-                window.dispatchEvent(new CustomEvent('lim:clear-pdf'))
-                window.dispatchEvent(new CustomEvent('ft:clear-pdf'))
-                window.dispatchEvent(new CustomEvent('lim:pdf-raw', { detail: { file: null } }))
-
                 if (testRecording) {
                   logTestEvent('ui:test:stop', { source: 'titlebar_stop_button' })
                   stopTestSession()
@@ -2856,23 +3106,25 @@ const IconFile = () => null
                 }
 
                 try {
-                  const exported = await exportTestLogLocal()
+                  const exported = await exportCurrentTestBundleLocal()
                   if (!exported) {
-                    window.alert('Aucun événement de test à exporter.')
-                    logTestEvent('testlog:export:failed', {
-                      reason: 'no_events',
-                      source: 'titlebar_stop_button',
-                    })
-                  } else {
-                    logTestEvent('testlog:exported', { source: 'titlebar_stop_button' })
+                    window.alert('Aucun élément de test à exporter.')
                   }
                 } catch (err: any) {
-                  window.alert('Export local des logs impossible.')
-                  logTestEvent('testlog:export:failed', {
-                    reason: err?.message ?? String(err),
-                    source: 'titlebar_stop_button',
-                  })
+                  window.alert('Export local du paquet de test impossible.')
                 }
+
+                setPdfMode('blue')
+                setPdfLoading(false)
+                stopPdfLoadingGuard()
+
+                currentPdfFileRef.current = null
+                currentPdfIdRef.current = null
+                currentPdfReplayKeyRef.current = null
+
+                window.dispatchEvent(new CustomEvent('lim:clear-pdf'))
+                window.dispatchEvent(new CustomEvent('ft:clear-pdf'))
+                window.dispatchEvent(new CustomEvent('lim:pdf-raw', { detail: { file: null } }))
 
                 setTestModeEnabled(false)
               }}
@@ -2989,9 +3241,9 @@ const IconFile = () => null
                       })
 
                       try {
-                        const exported = await exportTestLogLocal()
+                        const exported = await exportCurrentTestBundleLocal()
                         if (!exported) {
-                          window.alert('Aucun log à exporter.')
+                          window.alert('Aucun élément de test à exporter.')
                           logTestEvent('testlog:export:failed', {
                             reason: 'no_events',
                             source: 'settings_manual_export',
@@ -3002,7 +3254,7 @@ const IconFile = () => null
                           })
                         }
                       } catch (err: any) {
-                        window.alert('Export local des logs impossible.')
+                        window.alert('Export local du paquet de test impossible.')
                         logTestEvent('testlog:export:failed', {
                           reason: err?.message ?? String(err),
                           source: 'settings_manual_export',
@@ -3010,9 +3262,9 @@ const IconFile = () => null
                       }
                     }}
                     className="w-full h-8 px-3 text-xs rounded-md bg-sky-600 text-white font-semibold flex items-center justify-center"
-                    title="Exporter manuellement les logs de la session en cours"
+                    title="Exporter manuellement le paquet de test de la session en cours"
                   >
-                    Exporter les logs
+                    Exporter log + PDF
                   </button>
 
                   <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />

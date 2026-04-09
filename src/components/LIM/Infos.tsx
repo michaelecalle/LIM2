@@ -96,6 +96,26 @@ export default function Infos() {
 
   const panelBaseData = buildPanelData(raw)
 
+  const trenCommitted =
+    displayedTrainNumberState?.displayedSide === 'FR'
+      ? displayedTrainNumberState.trainNumberFr ??
+        displayedTrainNumberState.trainNumberEs ??
+        panelBaseData.tren
+      : displayedTrainNumberState?.trainNumberEs ??
+        displayedTrainNumberState?.trainNumberFr ??
+        panelBaseData.tren
+
+  const trenPending =
+    displayedTrainNumberState?.pendingSide === 'FR'
+      ? displayedTrainNumberState.trainNumberFr ??
+        displayedTrainNumberState.trainNumberEs ??
+        null
+      : displayedTrainNumberState?.pendingSide === 'ES'
+        ? displayedTrainNumberState.trainNumberEs ??
+          displayedTrainNumberState.trainNumberFr ??
+          null
+        : null
+
   const panelData = {
     ...panelBaseData,
     tren:
@@ -103,6 +123,9 @@ export default function Infos() {
       panelBaseData.tren,
     trenShouldBlink:
       displayedTrainNumberState?.isBlinking ?? false,
+    trenCommitted,
+    trenPending: trenPending ?? undefined,
+    trenPendingActive: Boolean(displayedTrainNumberState?.pendingSide && trenPending),
   }
   const handleTrenClick = React.useCallback(() => {
     const pendingSide = displayedTrainNumberState?.pendingSide
@@ -118,7 +141,7 @@ export default function Infos() {
     )
   }, [displayedTrainNumberState?.pendingSide])
 
-  const handleTrenDoubleClick = React.useCallback(() => {
+  const handleTrenLongPress = React.useCallback(() => {
     window.dispatchEvent(
       new CustomEvent('lim:displayed-train-number-manual-toggle-request', {
         detail: {
@@ -168,7 +191,7 @@ export default function Infos() {
         onTrenClick={
           displayedTrainNumberState?.pendingSide ? handleTrenClick : undefined
         }
-        onTrenDoubleClick={handleTrenDoubleClick}
+        onTrenLongPress={handleTrenLongPress}
       />
     </section>
   )

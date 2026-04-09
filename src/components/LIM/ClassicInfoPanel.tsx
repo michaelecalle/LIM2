@@ -3,7 +3,10 @@ import React from "react"
 export type InfoData = {
   tren?: string
   trenPadded?: string
-    trenShouldBlink?: boolean
+  trenShouldBlink?: boolean
+  trenCommitted?: string
+  trenPending?: string
+  trenPendingActive?: boolean
   type?: string
   origenDestino?: string
   fecha?: string
@@ -93,14 +96,23 @@ function isFechaToday(fecha?: string): boolean {
 export default function ClassicInfoPanel({
   data,
   onTrenClick,
+  onTrenLongPress,
   onTrenDoubleClick,
 }: {
   data: InfoData
   onTrenClick?: () => void
+  onTrenLongPress?: () => void
   onTrenDoubleClick?: () => void
 }) {
   const D = data || {}
   const trainDisplay = D.tren ? String(D.tren) : ""
+  const trenCommitted = D.trenCommitted ? String(D.trenCommitted) : ""
+  const trenPending = D.trenPending ? String(D.trenPending) : ""
+  const trenCommittedDisplay = trenCommitted || trainDisplay || '—'
+  const trenPendingActive = Boolean(D.trenPendingActive && trenPending)
+  const trainMeasureText = trenPendingActive
+    ? `${trenCommittedDisplay} → ${trenPending}`
+    : (trainDisplay || '—')
   const trenShouldBlink = Boolean(D.trenShouldBlink)
   const fechaText = formatFechaLongFr(D.fecha)
   const fechaShouldBlink = Boolean(parseFechaWide(D.fecha)) && !isFechaToday(D.fecha)
@@ -134,7 +146,7 @@ export default function ClassicInfoPanel({
     const ty = typeRef.current?.scrollWidth || 0
     if (t) setWTren(t + pad)
     if (ty) setWType(ty + pad)
-  }, [trainDisplay, D.type])
+  }, [trainMeasureText, D.type])
 
   const [isNight, setIsNight] = React.useState<boolean>(false)
   React.useEffect(() => {
@@ -155,31 +167,50 @@ export default function ClassicInfoPanel({
     return () => obs.disconnect()
   }, [])
 
-  const trenClickTimerRef = React.useRef<number | null>(null)
-  const TREN_DOUBLE_CLICK_DELAY_MS = 250
+  const trenLongPressTimerRef = React.useRef<number | null>(null)
+  const trenLongPressTriggeredRef = React.useRef(false)
+  const TREN_LONG_PRESS_DELAY_MS = 500
 
-  React.useEffect(() => {
-    return () => {
-      if (trenClickTimerRef.current != null) {
-        window.clearTimeout(trenClickTimerRef.current)
-        trenClickTimerRef.current = null
-      }
+  const handleTrenLongPress = onTrenLongPress ?? onTrenDoubleClick
+
+  const clearTrenLongPressTimer = React.useCallback(() => {
+    if (trenLongPressTimerRef.current != null) {
+      window.clearTimeout(trenLongPressTimerRef.current)
+      trenLongPressTimerRef.current = null
     }
   }, [])
 
-  const handleTrenTileClick = () => {
-    if (trenClickTimerRef.current != null) {
-      window.clearTimeout(trenClickTimerRef.current)
-      trenClickTimerRef.current = null
-      onTrenDoubleClick?.()
+  React.useEffect(() => {
+    return () => {
+      clearTrenLongPressTimer()
+    }
+  }, [clearTrenLongPressTimer])
+
+  const startTrenLongPress = React.useCallback(() => {
+    if (!handleTrenLongPress) return
+
+    trenLongPressTriggeredRef.current = false
+    clearTrenLongPressTimer()
+
+    trenLongPressTimerRef.current = window.setTimeout(() => {
+      trenLongPressTimerRef.current = null
+      trenLongPressTriggeredRef.current = true
+      handleTrenLongPress()
+    }, TREN_LONG_PRESS_DELAY_MS)
+  }, [clearTrenLongPressTimer, handleTrenLongPress])
+
+  const cancelTrenLongPress = React.useCallback(() => {
+    clearTrenLongPressTimer()
+  }, [clearTrenLongPressTimer])
+
+  const handleTrenTileClick = React.useCallback(() => {
+    if (trenLongPressTriggeredRef.current) {
+      trenLongPressTriggeredRef.current = false
       return
     }
 
-    trenClickTimerRef.current = window.setTimeout(() => {
-      trenClickTimerRef.current = null
-      onTrenClick?.()
-    }, TREN_DOUBLE_CLICK_DELAY_MS)
-  }
+    onTrenClick?.()
+  }, [onTrenClick])
 
   return (
     <div className="select-none">
@@ -215,11 +246,16 @@ export default function ClassicInfoPanel({
         <div className="flex items-stretch">
           <div
             style={{ width: 'var(--w-tren)', background: yellow }}
-            className={`border-r-2 border-black px-2 py-1 tile-yellow ${trenShouldBlink ? 'classic-blink-strong' : ''} ${(onTrenClick || onTrenDoubleClick) ? 'cursor-pointer' : ''}`}
+            className={`border-r-2 border-black px-2 py-1 tile-yellow ${trenShouldBlink ? 'classic-blink-strong' : ''} ${(onTrenClick || handleTrenLongPress) ? 'cursor-pointer' : ''}`}
+            onPointerDown={startTrenLongPress}
+            onPointerUp={cancelTrenLongPress}
+            onPointerLeave={cancelTrenLongPress}
+            onPointerCancel={cancelTrenLongPress}
+            onContextMenu={(e) => e.preventDefault()}
             onClick={handleTrenTileClick}
             title={
-              onTrenDoubleClick
-                ? 'Double appui : demander le changement de numéro affiché'
+              handleTrenLongPress
+                ? 'Appui long : demander le changement de numéro affiché'
                 : onTrenClick
                   ? 'Valider le changement de numéro affiché'
                   : undefined
@@ -228,9 +264,21 @@ export default function ClassicInfoPanel({
             <div className="text-[11px] font-semibold leading-none">TREN</div>
             <div
               ref={trenRef}
-              className={`text-[22px] leading-6 tracking-tight font-extrabold ${trenShouldBlink ? 'classic-blink-text' : ''}`}
+              className="text-[22px] leading-6 tracking-tight font-extrabold whitespace-nowrap"
             >
-              {trainDisplay || '—'}
+              {trenPendingActive ? (
+                <>
+                  <span>{trenCommittedDisplay}</span>
+                  <span className="mx-1">→</span>
+                  <span className={trenShouldBlink ? 'classic-blink-text' : ''}>
+                    {trenPending}
+                  </span>
+                </>
+              ) : (
+                <span className={trenShouldBlink ? 'classic-blink-text' : ''}>
+                  {trainDisplay || '—'}
+                </span>
+              )}
             </div>
           </div>
 
