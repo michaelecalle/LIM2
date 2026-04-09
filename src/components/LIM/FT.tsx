@@ -538,6 +538,18 @@ export default function FT({ variant = "classic" }: FTProps) {
         detail: { mode: referenceMode },
       })
     );
+
+    if (referenceMode === "GPS") {
+      window.dispatchEvent(
+        new CustomEvent("lim:hourly-mode", {
+          detail: { enabled: false, standby: false },
+        })
+      );
+
+      logTestEvent("ft:standby:visual-clear", {
+        reason: "reference_mode_gps",
+      });
+    }
   }, [referenceMode]);
 
   // écoute du mode test (ON/OFF)
@@ -595,6 +607,12 @@ export default function FT({ variant = "classic" }: FTProps) {
       fixedDelay: number       // minutes (arrondi, pour l'affichage actuel)
       deltaSec: number         // secondes (signé, exact au moment du Play)
     } | null>(null);
+
+  const lastDeltaRecalageRef = React.useRef<{
+    rowIndex: number;
+    source: "MANUAL" | "GPS";
+    ts: number;
+  } | null>(null);
 
   // Ligne cible pour un recalage manuel (mode Standby)
   const recalibrateFromRowRef = React.useRef<number | null>(null);
@@ -1770,6 +1788,20 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
     const forcedIndex = recalibrateFromRowRef.current;
     if (forcedIndex != null) {
       autoScrollBaseRef.current = captureBaseFromRowIndex(forcedIndex);
+
+      if (autoScrollBaseRef.current) {
+        lastDeltaRecalageRef.current = {
+          rowIndex: forcedIndex,
+          source: "MANUAL",
+          ts: Date.now(),
+        };
+
+        logTestEvent("ft:delta:recalage:mark", {
+          rowIndex: forcedIndex,
+          source: "MANUAL",
+        });
+      }
+
       recalibrateFromRowRef.current = null;
     } else {
       autoScrollBaseRef.current = captureBaseFromFirstRow();
@@ -3590,146 +3622,174 @@ logTestEvent("gps:mode-check", {
             if (isNewAnchor) {
               lastAnchoredRowRef.current = idx;
 
-              // ✅ Définition métier d’un point d’ancrage GPS :
-              // ligne portant une heure de départ RÉELLE (non interpolée),
-              // qu’elle vienne du PDF Espagne ou des données fixes France.
-              const departHoraText = resolveHoraForRowIndex(idx);
-              const departMinutes = parseHoraToMinutes(departHoraText);
+              const lastDeltaRecalage = lastDeltaRecalageRef.current;
+              const gpsRecalageBlockedByManual =
+                lastDeltaRecalage != null &&
+                lastDeltaRecalage.source === "MANUAL" &&
+                lastDeltaRecalage.rowIndex === idx;
 
-              const entryNetwork = String((entry as any)?.network ?? "").trim();
-              const entryPkRfn = String((entry as any)?.pk_rfn ?? "").trim();
-
-              const isForbiddenGpsDeltaAnchor =
-                entryNetwork === "RFN" &&
-                (entryPkRfn === "471.0" || entryPkRfn === "473.3");
-
-              const isGpsDeltaAnchor =
-                !isForbiddenGpsDeltaAnchor &&
-                typeof departHoraText === "string" &&
-                departHoraText.trim().length > 0 &&
-                departMinutes != null;
-
-              if (!isGpsDeltaAnchor) {
+              if (gpsRecalageBlockedByManual) {
                 logTestEvent("ft:delta:gps-recalage:skip", {
                   rowIndex: idx,
                   pk: entry?.pk ?? null,
                   dependencia: entry?.dependencia ?? null,
-                  reason: isForbiddenGpsDeltaAnchor
-                    ? "gps_row_forbidden_delta_anchor"
-                    : "gps_row_without_real_departure_time",
+                  reason: "manual_recalage_already_done_on_same_row",
+                  lastDeltaRecalageSource: lastDeltaRecalage.source,
+                  lastDeltaRecalageTs: lastDeltaRecalage.ts,
                 });
               } else {
-                // En mode GPS : si une heure d'arrivée a été calculée pour cette ligne,
-                // on l'utilise pour le calcul du delta (objectif : heure réelle d'arrivée).
-                let usedMinutes: number | null = departMinutes;
-                let usedHoraText: string = departHoraText;
-                let usedSource: "DEPART" | "ARRIVEE" = "DEPART";
+                // ✅ Définition métier d’un point d’ancrage GPS :
+                // ligne portant une heure de départ RÉELLE (non interpolée),
+                // qu’elle vienne du PDF Espagne ou des données fixes France.
+                const departHoraText = resolveHoraForRowIndex(idx);
+                const departMinutes = parseHoraToMinutes(departHoraText);
 
-                let arrivalMinutes: number | null = null;
-                const arrivalList = arrivalEventsRef.current || [];
-                const arrivalMatch = arrivalList.find((ev) => ev.rowIndex === idx);
+                const entryNetwork = String((entry as any)?.network ?? "").trim();
+                const entryPkRfn = String((entry as any)?.pk_rfn ?? "").trim();
 
-                if (arrivalMatch && Number.isFinite(arrivalMatch.arrivalMin)) {
-                  arrivalMinutes = arrivalMatch.arrivalMin;
-                }
+                const isForbiddenGpsDeltaAnchor =
+                  entryNetwork === "RFN" &&
+                  (entryPkRfn === "471.0" || entryPkRfn === "473.3");
 
-                if (referenceModeRef.current === "GPS" && arrivalMinutes != null) {
-                  usedMinutes = arrivalMinutes;
-                  usedHoraText = formatMinutesToHora(arrivalMinutes);
-                  usedSource = "ARRIVEE";
-                }
+                const isGpsDeltaAnchor =
+                  !isForbiddenGpsDeltaAnchor &&
+                  typeof departHoraText === "string" &&
+                  departHoraText.trim().length > 0 &&
+                  departMinutes != null;
 
-                if (usedMinutes != null) {
-                  // 1) On note la ligne pour les futurs démarrages du mode horaire
-                  recalibrateFromRowRef.current = idx;
-
-                  // 2) On recalcule le delta réel (maintenant - heure utilisée)
-                  const now = new Date();
-
-                  const nowMinInt = now.getHours() * 60 + now.getMinutes();
-                  const nowMinFloat = nowMinInt + now.getSeconds() / 60;
-                  const nowTotalSec = nowMinInt * 60 + now.getSeconds();
-
-                  const usedTotalSec = usedMinutes * 60;
-                  const deltaSec = nowTotalSec - usedTotalSec;
-                  const fixedDelay = Math.round(deltaSec / 60);
-
-                  // 3) On recale la base interne du mode horaire sur cette ligne
-                  autoScrollBaseRef.current = {
-                    realMinInt: nowMinInt,
-                    realMinFloat: nowMinFloat,
-                    firstHoraMin: usedMinutes,
-                    fixedDelay,
-                    deltaSec,
-                  };
-
-                  // 4) On met à jour immédiatement le delta affiché dans la TitleBar
-                  const text =
-                    fixedDelay === 0
-                      ? "0 min"
-                      : fixedDelay > 0
-                      ? `+ ${fixedDelay} min`
-                      : `- ${-fixedDelay} min`;
-
-                  if (effectiveFtView === "ES") {
-                    window.dispatchEvent(
-                      new CustomEvent("lim:schedule-delta", {
-                        detail: {
-                          text,
-                          isLargeDelay: Math.abs(fixedDelay) >= 5,
-                          deltaSec,
-                        },
-                      })
-                    );
-                  }
-
-                  const nowHHMM =
-                    now.getHours().toString().padStart(2, "0") +
-                    ":" +
-                    now.getMinutes().toString().padStart(2, "0");
-
-                  console.log(
-                    "[FT][gps] Recalage horaire via GPS (real-anchor) — source=",
-                    usedSource,
-                    "| used=",
-                    usedHoraText,
-                    "(",
-                    usedMinutes,
-                    "min ) / now=",
-                    nowHHMM,
-                    " => delta=",
-                    fixedDelay,
-                    "min (ligne index=",
-                    idx,
-                    ")"
-                  );
-
-                  logTestEvent("ft:delta:gps-recalage", {
-                    rowIndex: idx,
-                    nowHHMM,
-                    fixedDelay,
-                    deltaSec,
-                    pk: entry?.pk ?? null,
-                    dependencia: entry?.dependencia ?? null,
-
-                    // détails recalage
-                    usedSource,
-                    usedHora: usedHoraText,
-                    usedMinutes,
-
-                    // debug ancrage
-                    anchorType: "REAL_DEPARTURE_TIME",
-                    departHora: departHoraText || null,
-                    departMinutes: departMinutes ?? null,
-                    arrivalMinutes,
-                  });
-                } else {
+                if (!isGpsDeltaAnchor) {
                   logTestEvent("ft:delta:gps-recalage:skip", {
                     rowIndex: idx,
                     pk: entry?.pk ?? null,
                     dependencia: entry?.dependencia ?? null,
-                    reason: "gps_anchor_without_usable_time",
+                    reason: isForbiddenGpsDeltaAnchor
+                      ? "gps_row_forbidden_delta_anchor"
+                      : "gps_row_without_real_departure_time",
                   });
+                } else {
+                  // En mode GPS : si une heure d'arrivée a été calculée pour cette ligne,
+                  // on l'utilise pour le calcul du delta (objectif : heure réelle d'arrivée).
+                  let usedMinutes: number | null = departMinutes;
+                  let usedHoraText: string = departHoraText;
+                  let usedSource: "DEPART" | "ARRIVEE" = "DEPART";
+
+                  let arrivalMinutes: number | null = null;
+                  const arrivalList = arrivalEventsRef.current || [];
+                  const arrivalMatch = arrivalList.find((ev) => ev.rowIndex === idx);
+
+                  if (arrivalMatch && Number.isFinite(arrivalMatch.arrivalMin)) {
+                    arrivalMinutes = arrivalMatch.arrivalMin;
+                  }
+
+                  if (referenceModeRef.current === "GPS" && arrivalMinutes != null) {
+                    usedMinutes = arrivalMinutes;
+                    usedHoraText = formatMinutesToHora(arrivalMinutes);
+                    usedSource = "ARRIVEE";
+                  }
+
+                  if (usedMinutes != null) {
+                    // 1) On note la ligne pour les futurs démarrages du mode horaire
+                    recalibrateFromRowRef.current = idx;
+
+                    // 2) On recalcule le delta réel (maintenant - heure utilisée)
+                    const now = new Date();
+
+                    const nowMinInt = now.getHours() * 60 + now.getMinutes();
+                    const nowMinFloat = nowMinInt + now.getSeconds() / 60;
+                    const nowTotalSec = nowMinInt * 60 + now.getSeconds();
+
+                    const usedTotalSec = usedMinutes * 60;
+                    const deltaSec = nowTotalSec - usedTotalSec;
+                    const fixedDelay = Math.round(deltaSec / 60);
+
+                    // 3) On recale la base interne du mode horaire sur cette ligne
+                    autoScrollBaseRef.current = {
+                      realMinInt: nowMinInt,
+                      realMinFloat: nowMinFloat,
+                      firstHoraMin: usedMinutes,
+                      fixedDelay,
+                      deltaSec,
+                    };
+
+                    lastDeltaRecalageRef.current = {
+                      rowIndex: idx,
+                      source: "GPS",
+                      ts: Date.now(),
+                    };
+
+                    logTestEvent("ft:delta:recalage:mark", {
+                      rowIndex: idx,
+                      source: "GPS",
+                    });
+
+                    // 4) On met à jour immédiatement le delta affiché dans la TitleBar
+                    const text =
+                      fixedDelay === 0
+                        ? "0 min"
+                        : fixedDelay > 0
+                        ? `+ ${fixedDelay} min`
+                        : `- ${-fixedDelay} min`;
+
+                    if (effectiveFtView === "ES") {
+                      window.dispatchEvent(
+                        new CustomEvent("lim:schedule-delta", {
+                          detail: {
+                            text,
+                            isLargeDelay: Math.abs(fixedDelay) >= 5,
+                            deltaSec,
+                          },
+                        })
+                      );
+                    }
+
+                    const nowHHMM =
+                      now.getHours().toString().padStart(2, "0") +
+                      ":" +
+                      now.getMinutes().toString().padStart(2, "0");
+
+                    console.log(
+                      "[FT][gps] Recalage horaire via GPS (real-anchor) — source=",
+                      usedSource,
+                      "| used=",
+                      usedHoraText,
+                      "(",
+                      usedMinutes,
+                      "min ) / now=",
+                      nowHHMM,
+                      " => delta=",
+                      fixedDelay,
+                      "min (ligne index=",
+                      idx,
+                      ")"
+                    );
+
+                    logTestEvent("ft:delta:gps-recalage", {
+                      rowIndex: idx,
+                      nowHHMM,
+                      fixedDelay,
+                      deltaSec,
+                      pk: entry?.pk ?? null,
+                      dependencia: entry?.dependencia ?? null,
+
+                      // détails recalage
+                      usedSource,
+                      usedHora: usedHoraText,
+                      usedMinutes,
+
+                      // debug ancrage
+                      anchorType: "REAL_DEPARTURE_TIME",
+                      departHora: departHoraText || null,
+                      departMinutes: departMinutes ?? null,
+                      arrivalMinutes,
+                    });
+                  } else {
+                    logTestEvent("ft:delta:gps-recalage:skip", {
+                      rowIndex: idx,
+                      pk: entry?.pk ?? null,
+                      dependencia: entry?.dependencia ?? null,
+                      reason: "gps_anchor_without_usable_time",
+                    });
+                  }
                 }
               }
             }

@@ -2459,16 +2459,19 @@ const IconFile = () => null
               }
             >
               {scheduleDelta}
-              {testModeEnabled &&
-                typeof scheduleDeltaSec === 'number' &&
-                Number.isFinite(scheduleDeltaSec) && (
-                  <>
-                    {' '}
-                    <span className="opacity-80 text-zinc-900 dark:text-zinc-100">
-                      {formatSignedHMS(scheduleDeltaSec)}
-                    </span>
-                  </>
-                )}
+{testModeEnabled &&
+  typeof scheduleDeltaSec === 'number' &&
+  Number.isFinite(scheduleDeltaSec) && (
+    <>
+      {' '}
+      <span
+        className="opacity-90"
+        style={{ color: dark ? '#e5e7eb' : '#374151' }}
+      >
+        {formatSignedHMS(scheduleDeltaSec)}
+      </span>
+    </>
+  )}
             </span>
           )}
 
