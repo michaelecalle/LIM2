@@ -2301,8 +2301,8 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "destination": "PERPIGNAN",
         "numeroEspagne": "",
         "numeroFrance": "9708",
-        "categorieEspagne": "",
-        "categorieFrance": "",
+        "categorieEspagne": "T200",
+        "categorieFrance": "300",
         "composition": "US"
       },
       "byRowKey": {
@@ -2387,8 +2387,8 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "destination": "PERPIGNAN",
             "numeroEspagne": "",
             "numeroFrance": "9708",
-            "categorieEspagne": "",
-            "categorieFrance": "",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
             "composition": "US",
             "validity": {
               "startDate": "",
@@ -2488,8 +2488,8 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "destination": "BARCELONA SANTS",
         "numeroEspagne": "",
         "numeroFrance": "9713",
-        "categorieEspagne": "",
-        "categorieFrance": "",
+        "categorieEspagne": "T200",
+        "categorieFrance": "300",
         "composition": "US"
       },
       "byRowKey": {
@@ -2574,8 +2574,8 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "destination": "BARCELONA SANTS",
             "numeroEspagne": "",
             "numeroFrance": "9713",
-            "categorieEspagne": "",
-            "categorieFrance": "",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
             "composition": "US",
             "validity": {
               "startDate": "",
@@ -2675,8 +2675,8 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "destination": "BARCELONA SANTS",
         "numeroEspagne": "",
         "numeroFrance": "9715",
-        "categorieEspagne": "",
-        "categorieFrance": "",
+        "categorieEspagne": "T200",
+        "categorieFrance": "300",
         "composition": "US"
       },
       "byRowKey": {
@@ -2761,8 +2761,8 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "destination": "BARCELONA SANTS",
             "numeroEspagne": "",
             "numeroFrance": "9715",
-            "categorieEspagne": "",
-            "categorieFrance": "",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
             "composition": "US",
             "validity": {
               "startDate": "",
@@ -2862,7 +2862,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "destination": "CAN TUNIS AV",
         "numeroEspagne": "",
         "numeroFrance": "",
-        "categorieEspagne": "",
+        "categorieEspagne": "T300",
         "categorieFrance": "",
         "composition": "US"
       },
@@ -2886,7 +2886,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "destination": "CAN TUNIS AV",
             "numeroEspagne": "",
             "numeroFrance": "",
-            "categorieEspagne": "",
+            "categorieEspagne": "T300",
             "categorieFrance": "",
             "composition": "US",
             "validity": {
@@ -2925,7 +2925,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "destination": "BARCELONA SANTS",
         "numeroEspagne": "",
         "numeroFrance": "",
-        "categorieEspagne": "",
+        "categorieEspagne": "T300",
         "categorieFrance": "",
         "composition": "US"
       },
@@ -2949,7 +2949,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "destination": "BARCELONA SANTS",
             "numeroEspagne": "",
             "numeroFrance": "",
-            "categorieEspagne": "",
+            "categorieEspagne": "T300",
             "categorieFrance": "",
             "composition": "US",
             "validity": {
