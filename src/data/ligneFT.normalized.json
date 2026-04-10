@@ -2299,8 +2299,8 @@
         "destination": "PERPIGNAN",
         "numeroEspagne": "",
         "numeroFrance": "9708",
-        "categorieEspagne": "",
-        "categorieFrance": "",
+        "categorieEspagne": "T200",
+        "categorieFrance": "300",
         "composition": "US"
       },
       "byRowKey": {
@@ -2385,8 +2385,8 @@
             "destination": "PERPIGNAN",
             "numeroEspagne": "",
             "numeroFrance": "9708",
-            "categorieEspagne": "",
-            "categorieFrance": "",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
             "composition": "US",
             "validity": {
               "startDate": "",
@@ -2486,8 +2486,8 @@
         "destination": "BARCELONA SANTS",
         "numeroEspagne": "",
         "numeroFrance": "9713",
-        "categorieEspagne": "",
-        "categorieFrance": "",
+        "categorieEspagne": "T200",
+        "categorieFrance": "300",
         "composition": "US"
       },
       "byRowKey": {
@@ -2572,8 +2572,8 @@
             "destination": "BARCELONA SANTS",
             "numeroEspagne": "",
             "numeroFrance": "9713",
-            "categorieEspagne": "",
-            "categorieFrance": "",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
             "composition": "US",
             "validity": {
               "startDate": "",
@@ -2673,8 +2673,8 @@
         "destination": "BARCELONA SANTS",
         "numeroEspagne": "",
         "numeroFrance": "9715",
-        "categorieEspagne": "",
-        "categorieFrance": "",
+        "categorieEspagne": "T200",
+        "categorieFrance": "300",
         "composition": "US"
       },
       "byRowKey": {
@@ -2759,8 +2759,8 @@
             "destination": "BARCELONA SANTS",
             "numeroEspagne": "",
             "numeroFrance": "9715",
-            "categorieEspagne": "",
-            "categorieFrance": "",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
             "composition": "US",
             "validity": {
               "startDate": "",
@@ -2860,7 +2860,7 @@
         "destination": "CAN TUNIS AV",
         "numeroEspagne": "",
         "numeroFrance": "",
-        "categorieEspagne": "",
+        "categorieEspagne": "T300",
         "categorieFrance": "",
         "composition": "US"
       },
@@ -2884,7 +2884,7 @@
             "destination": "CAN TUNIS AV",
             "numeroEspagne": "",
             "numeroFrance": "",
-            "categorieEspagne": "",
+            "categorieEspagne": "T300",
             "categorieFrance": "",
             "composition": "US",
             "validity": {
@@ -2923,7 +2923,7 @@
         "destination": "BARCELONA SANTS",
         "numeroEspagne": "",
         "numeroFrance": "",
-        "categorieEspagne": "",
+        "categorieEspagne": "T300",
         "categorieFrance": "",
         "composition": "US"
       },
@@ -2947,7 +2947,7 @@
             "destination": "BARCELONA SANTS",
             "numeroEspagne": "",
             "numeroFrance": "",
-            "categorieEspagne": "",
+            "categorieEspagne": "T300",
             "categorieFrance": "",
             "composition": "US",
             "validity": {
