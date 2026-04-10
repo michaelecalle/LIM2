@@ -2229,6 +2229,10 @@ ${coords}
 
       if (state === 'GREEN') {
         setGpsState(2)
+
+        // ✅ Au retour réel en GPS, on réaligne aussi l’état visuel du bouton Play
+        setAutoScroll(true)
+
         if (typeof pk === 'number' && Number.isFinite(pk)) {
           setGpsPkDisplay(pk.toFixed(1))
         } else {

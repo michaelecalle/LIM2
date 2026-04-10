@@ -75254,8 +75254,8 @@
     </Placemark>
 
     <Placemark>
-      <name>ADIF 662.503 — LLINARS-A. V.</name>
-      <description><![CDATA[<b>Famille :</b> ADIF<br><b>Label :</b> LLINARS-A. V.<br><b>pk :</b> 662.503<br><b>s_km :</b> 46.749753<br><b>index_ruban :</b> 1871<br><b>lat :</b> 41.6494339<br><b>lon :</b> 2.4219488]]></description>
+      <name>ADIF 662.641 — LLINARS-A. V.</name>
+      <description><![CDATA[<b>Famille :</b> ADIF<br><b>Label :</b> LLINARS-A. V.<br><b>pk :</b> 662.641<br><b>s_km :</b> 46.749753<br><b>index_ruban :</b> 1871<br><b>lat :</b> 41.6494339<br><b>lon :</b> 2.4219488]]></description>
       <styleUrl>#adifAnchor</styleUrl>
       <Point>
         <coordinates>2.4219488,41.6494339,0</coordinates>
@@ -75272,11 +75272,11 @@
     </Placemark>
 
     <Placemark>
-      <name>ADIF 627.7 — LA SAGRERA AV</name>
-      <description><![CDATA[<b>Famille :</b> ADIF<br><b>Label :</b> LA SAGRERA AV<br><b>pk :</b> 627.7<br><b>s_km :</b> 11.542919<br><b>index_ruban :</b> 462<br><b>lat :</b> 41.421275<br><b>lon :</b> 2.1946217]]></description>
+      <name>ADIF 627.739 — LA SAGRERA AV</name>
+      <description><![CDATA[<b>Famille :</b> ADIF<br><b>Label :</b> LA SAGRERA AV<br><b>pk :</b> 627.739<br><b>s_km :</b> 11.91829<br><b>index_ruban :</b> 477<br><b>lat :</b> 41.4245554<br><b>lon :</b> 2.1956843]]></description>
       <styleUrl>#adifAnchor</styleUrl>
       <Point>
-        <coordinates>2.1946217,41.421275,0</coordinates>
+        <coordinates>2.1956843,41.4245554,0</coordinates>
       </Point>
     </Placemark>
 

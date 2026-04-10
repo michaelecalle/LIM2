@@ -129,6 +129,10 @@ let activePkRef: PkRef | null = null
 let pendingPkRef: PkRef | null = null
 let pendingPkRefCount = 0
 
+// ✅ Verrou unidirectionnel en sens UP : une fois passé en LFP/RFN,
+// on n'autorise plus jamais de retour vers ADIF pendant cette session.
+let northboundPkRefFloor: PkRef | null = null
+
 const REF_SWITCH_CONFIRM_POINTS = 3
 const REF_SWITCH_MAX_DISTANCE_M = 80
 
@@ -141,7 +145,14 @@ const S_LFP_MAIN_TO_LINK = 180.849045
 const S_LINK_TO_RFN = 182.972053
 
 const toPkAnchors = (arr: Array<{ s_km: number; pk: number }>): PkAnchor[] =>
-  [...arr].sort((a, b) => a.s_km - b.s_km)
+  [...arr]
+    .filter(
+      (a): a is PkAnchor =>
+        !!a &&
+        Number.isFinite(a.s_km) &&
+        Number.isFinite(a.pk)
+    )
+    .sort((a, b) => a.s_km - b.s_km)
 
 // ADIF (Espagne)
 const SORTED_ANCHORS_ADIF: PkAnchor[] = toPkAnchors(
@@ -211,6 +222,106 @@ function pkRefFromS(s_km: number | null | undefined): PkRef | null {
   return "RFN"
 }
 
+const REF_SWITCH_BACKTRACK_HYSTERESIS_KM = 0.35
+
+type RibbonTravelDir = 1 | -1 | 0
+
+const PK_REF_RANK: Record<PkRef, number> = {
+  ADIF: 0,
+  LFP_MAIN: 1,
+  LFP_LINK: 2,
+  RFN: 3,
+}
+
+function getRibbonTravelDir(
+  currentIdx: number,
+  previousIdx: number | null
+): RibbonTravelDir {
+  if (previousIdx == null || !Number.isFinite(previousIdx)) return 0
+  if (currentIdx > previousIdx) return 1
+  if (currentIdx < previousIdx) return -1
+  return 0
+}
+
+function boundaryBetweenRefs(a: PkRef, b: PkRef): number | null {
+  const ra = PK_REF_RANK[a]
+  const rb = PK_REF_RANK[b]
+
+  const min = Math.min(ra, rb)
+  const max = Math.max(ra, rb)
+
+  if (min === 0 && max === 1) return S_ADIF_TO_LFP_MAIN
+  if (min === 1 && max === 2) return S_LFP_MAIN_TO_LINK
+  if (min === 2 && max === 3) return S_LINK_TO_RFN
+
+  return null
+}
+
+function stabilizePkRefCandidate(
+  s_km: number | null | undefined,
+  currentRef: PkRef | null,
+  ribbonTravelDir: RibbonTravelDir
+): PkRef | null {
+  const rawRef = pkRefFromS(s_km)
+
+  if (rawRef == null || currentRef == null || rawRef === currentRef) {
+    return rawRef
+  }
+
+  if (ribbonTravelDir === 0 || s_km == null || !Number.isFinite(s_km)) {
+    return rawRef
+  }
+
+  const currentRank = PK_REF_RANK[currentRef]
+  const rawRank = PK_REF_RANK[rawRef]
+  const boundary = boundaryBetweenRefs(currentRef, rawRef)
+
+  if (boundary == null) return rawRef
+
+  const movingNorth = ribbonTravelDir === 1
+  const northwardSwitch = rawRank > currentRank
+
+  if (northwardSwitch) {
+    if (movingNorth) return rawRef
+
+    return s_km >= boundary + REF_SWITCH_BACKTRACK_HYSTERESIS_KM
+      ? rawRef
+      : currentRef
+  }
+
+  if (!movingNorth) return rawRef
+
+  return s_km <= boundary - REF_SWITCH_BACKTRACK_HYSTERESIS_KM
+    ? rawRef
+    : currentRef
+}
+
+// ✅ En sens UP, on interdit tout retour vers un référentiel "plus au sud"
+// une fois qu'on a confirmé un référentiel au moins LFP_MAIN.
+function applyDirectionalPkRefFloor(ref: PkRef | null): PkRef | null {
+  if (ref == null) return null
+  if (expectedDirection !== 1) return ref
+  if (northboundPkRefFloor == null) return ref
+
+  const refRank = PK_REF_RANK[ref]
+  const floorRank = PK_REF_RANK[northboundPkRefFloor]
+
+  return refRank >= floorRank ? ref : northboundPkRefFloor
+}
+
+function advanceDirectionalPkRefLock(ref: PkRef | null): void {
+  if (ref == null) return
+  if (expectedDirection !== 1) return
+  if (PK_REF_RANK[ref] < PK_REF_RANK["LFP_MAIN"]) return
+
+  if (
+    northboundPkRefFloor == null ||
+    PK_REF_RANK[ref] > PK_REF_RANK[northboundPkRefFloor]
+  ) {
+    northboundPkRefFloor = ref
+  }
+}
+
 /**
  * À partir d'un abscisse s (en km le long du ruban), renvoie un PK interpolé
  * à partir de la table d’ancres du référentiel actif.
@@ -227,10 +338,13 @@ function pkFromS(s_km: number | null | undefined): number | null {
  */
 function pkFromSForRef(s_km: number, ref: PkRef): number | null {
   const anchors = ANCHORS_BY_REF[ref]
-  if (!anchors || anchors.length === 0) return null
+  if (!Array.isArray(anchors) || anchors.length === 0) return null
 
   const first = anchors[0]
   const last = anchors[anchors.length - 1]
+
+  if (!first || !last) return null
+  if (!Number.isFinite(first.s_km) || !Number.isFinite(last.s_km)) return null
 
   if (s_km < first.s_km) {
     return null
@@ -305,6 +419,7 @@ function attachExpectedDirectionListenerIfNeeded() {
       activePkRef = null
       pendingPkRef = null
       pendingPkRefCount = 0
+      northboundPkRefFloor = null
     }
   }
 
@@ -325,6 +440,7 @@ export function resetGpsPkEngineMemory(): void {
   activePkRef = null
   pendingPkRef = null
   pendingPkRefCount = 0
+  northboundPkRefFloor = null
 }
 
 /**
@@ -347,6 +463,7 @@ export function setExpectedDirectionForReplay(
   activePkRef = null
   pendingPkRef = null
   pendingPkRefCount = 0
+  northboundPkRefFloor = null
 }
 
 /**
@@ -363,6 +480,7 @@ export async function initGpsPkEngine(): Promise<void> {
   activePkRef = null
   pendingPkRef = null
   pendingPkRefCount = 0
+  northboundPkRefFloor = null
 
   expectedDirection = null
   expectedDirectionTrain = null
@@ -508,7 +626,6 @@ export function projectGpsToPk(
     let dir: 1 | -1 | null = null
 
     // ===== 1) Pas de candidate exploitable =====
-    // (on reprend ton bloc existant tel quel, sans toucher aux garde-fous)
     if (
       lastAcceptedPk &&
       Number.isFinite(lastAcceptedPk.pk) &&
@@ -584,11 +701,14 @@ export function projectGpsToPk(
   const distance_m = bestDist
 
   // ===== Transition ref : confirmation par 3 points consécutifs (si proche ruban) =====
-  const refNow = pkRefFromS(s_km)
+  const ribbonTravelDir = getRibbonTravelDir(bestIdx, lastAcceptedIdx)
+  const rawRefNow = stabilizePkRefCandidate(s_km, activePkRef, ribbonTravelDir)
+  const refNow = applyDirectionalPkRefFloor(rawRefNow)
 
   // init du ref actif dès qu'on a une abscisse exploitable
   if (activePkRef == null && refNow != null) {
     activePkRef = refNow
+    advanceDirectionalPkRefLock(activePkRef)
   }
 
   let refChangeConfirmed = false
@@ -617,6 +737,7 @@ export function projectGpsToPk(
 
       if (pendingPkRefCount >= REF_SWITCH_CONFIRM_POINTS) {
         activePkRef = refNow
+        advanceDirectionalPkRefLock(activePkRef)
         pendingPkRef = null
         pendingPkRefCount = 0
         refChangeConfirmed = true
@@ -704,19 +825,41 @@ export function projectGpsToPk(
       const deltaPk = pkCandidate - lastAcceptedPk.pk
       jumpKm = Math.abs(deltaPk)
 
-      // direction du mouvement proposé (GPS observé)
-      dir = deltaPk >= 0 ? 1 : -1
+      const lastAcceptedPoint =
+        typeof lastAcceptedIdx === "number" && Number.isFinite(lastAcceptedIdx)
+          ? RIBBON_POINTS[lastAcceptedIdx] ?? null
+          : null
+
+      const lastAcceptedSkm =
+        lastAcceptedPoint && Number.isFinite(lastAcceptedPoint.s_km)
+          ? lastAcceptedPoint.s_km
+          : null
+
+      const deltaSkm =
+        typeof lastAcceptedSkm === "number" && Number.isFinite(lastAcceptedSkm)
+          ? s_km - lastAcceptedSkm
+          : null
+
+      const directionDistanceKm =
+        typeof deltaSkm === "number" && Number.isFinite(deltaSkm)
+          ? Math.abs(deltaSkm)
+          : jumpKm
+
+      // direction physique du mouvement observé sur le ruban
+      dir =
+        typeof deltaSkm === "number" && Number.isFinite(deltaSkm)
+          ? deltaSkm >= 0
+            ? 1
+            : -1
+          : deltaPk >= 0
+            ? 1
+            : -1
 
       // --- garde-fou saut ---
-      // ✅ Comparaison stabilisée au pas du ruban :
-      // - on "arrondit vers le haut" le jump (pire cas)
-      // - on "arrondit vers le bas" le seuil (pire cas)
-      // Puis on applique la comparaison sur ces valeurs quantifiées.
       const jumpKmQ = ceilToQuantumKm(jumpKm, JUMP_COMPARE_QUANTUM_KM)
       const allowedJumpKmQ = floorToQuantumKm(allowedJumpKm, JUMP_COMPARE_QUANTUM_KM)
 
       if (jumpKmQ > allowedJumpKmQ) {
-        // Début ou poursuite d'une série de rejets
         if (rejectStreakStartMs == null) {
           rejectStreakStartMs = nowMs
         }
@@ -724,36 +867,28 @@ export function projectGpsToPk(
         const rejectElapsed = nowMs - rejectStreakStartMs
 
         if (rejectElapsed >= RELOCK_AFTER_MS) {
-          // ✅ Relock : on accepte le PK malgré le saut
           pk = pkCandidate
           acceptedMode = "relock"
-          // Relock = vrai mouvement (saut important) => on rafraîchit toujours le temps
           lastAcceptedPk = { pk: pkCandidate, atMs: nowMs }
           lastAcceptedIdx = bestIdx
           decisionReason = "accepted"
-
-          // reset streak
           rejectStreakStartMs = null
         } else {
-          // rejet normal
           pk = lastAcceptedPk.pk
           decisionReason = "rejected_jump"
         }
       } else {
-        // saut acceptable -> reset streak
         rejectStreakStartMs = null
 
         // --- garde-fou direction attendue ---
         if (
           expectedDirection != null &&
           dir !== expectedDirection &&
-          jumpKm >= DIRECTION_CHANGE_THRESHOLD_KM
+          directionDistanceKm >= DIRECTION_CHANGE_THRESHOLD_KM
         ) {
           pk = lastAcceptedPk.pk
 
           // ✅ IMPORTANT : on rafraîchit le timestamp même en rejet direction
-          // Sinon dtMs gonfle, allowedJumpKm devient énorme, et le relock (basé sur rejected_jump)
-          // ne peut plus jamais se déclencher.
           lastAcceptedPk = { pk: lastAcceptedPk.pk, atMs: nowMs }
 
           decisionReason = "rejected_direction"
