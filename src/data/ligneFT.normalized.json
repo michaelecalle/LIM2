@@ -2112,7 +2112,11 @@
       "meta": {
         "origine": "BARCELONA SANTS",
         "destination": "PERPIGNAN",
-        "numeroFrance": "9706"
+        "numeroEspagne": "",
+        "numeroFrance": "9706",
+        "categorieEspagne": "T200",
+        "categorieFrance": "300",
+        "composition": "US"
       },
       "byRowKey": {
         "sn-data-0006": {
@@ -2193,7 +2197,11 @@
           "meta": {
             "origine": "BARCELONA SANTS",
             "destination": "PERPIGNAN",
+            "numeroEspagne": "",
             "numeroFrance": "9706",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
+            "composition": "US",
             "validity": {
               "startDate": "",
               "endDate": "",
@@ -2203,6 +2211,104 @@
                 "wednesday": true,
                 "thursday": true,
                 "friday": true,
+                "saturday": false,
+                "sunday": false
+              }
+            }
+          },
+          "byRowKey": {
+            "sn-data-0006": {
+              "hora": "16:24"
+            },
+            "sn-data-0012": {
+              "hora": "16:30",
+              "conc": "6"
+            },
+            "sn-data-0019": {
+              "hora": "16:39",
+              "conc": "9"
+            },
+            "sn-data-0020": {
+              "hora": "16:39",
+              "conc": "0"
+            },
+            "sn-data-0023": {
+              "hora": "16:41",
+              "conc": "2"
+            },
+            "sn-data-0030": {
+              "hora": "16:46",
+              "conc": "5"
+            },
+            "sn-data-0032": {
+              "hora": "16:52",
+              "conc": "6"
+            },
+            "sn-data-0034": {
+              "hora": "16:53",
+              "conc": "1"
+            },
+            "sn-data-0036": {
+              "hora": "17:00",
+              "conc": "7"
+            },
+            "sn-data-0039": {
+              "hora": "17:02",
+              "conc": "2"
+            },
+            "sn-data-0041": {
+              "hora": "17:08",
+              "com": "3",
+              "conc": "6"
+            },
+            "sn-data-0047": {
+              "hora": "17:26",
+              "conc": "18"
+            },
+            "sn-data-0048": {
+              "hora": "17:31",
+              "conc": "5"
+            },
+            "sn-data-0049": {
+              "hora": "17:35",
+              "conc": "4"
+            },
+            "sn-data-0050": {
+              "hora": "17:36",
+              "conc": "1"
+            },
+            "sn-data-0051": {
+              "hora": "17:38",
+              "conc": "2"
+            },
+            "sn-data-0052": {
+              "hora": "17:39",
+              "conc": "1"
+            },
+            "sn-data-0055": {
+              "hora": "17:50",
+              "conc": "11"
+            }
+          }
+        },
+        {
+          "meta": {
+            "origine": "BARCELONA SANTS",
+            "destination": "PERPIGNAN",
+            "numeroEspagne": "",
+            "numeroFrance": "9706",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
+            "composition": "UM",
+            "validity": {
+              "startDate": "",
+              "endDate": "",
+              "days": {
+                "monday": false,
+                "tuesday": false,
+                "wednesday": false,
+                "thursday": false,
+                "friday": false,
                 "saturday": true,
                 "sunday": true
               }
@@ -2293,7 +2399,7 @@
         "numeroFrance": "9708",
         "categorieEspagne": "",
         "categorieFrance": "",
-        "composition": ""
+        "composition": "US"
       },
       "byRowKey": {
         "sn-data-0006": {
@@ -2369,7 +2475,108 @@
           "hora": "10:52",
           "conc": "11"
         }
-      }
+      },
+      "variants": [
+        {
+          "meta": {
+            "origine": "BARCELONA SANTS",
+            "destination": "PERPIGNAN",
+            "numeroEspagne": "",
+            "numeroFrance": "9708",
+            "categorieEspagne": "",
+            "categorieFrance": "",
+            "composition": "US",
+            "validity": {
+              "startDate": "",
+              "endDate": "",
+              "days": {
+                "monday": true,
+                "tuesday": true,
+                "wednesday": true,
+                "thursday": true,
+                "friday": true,
+                "saturday": true,
+                "sunday": true
+              }
+            }
+          },
+          "byRowKey": {
+            "sn-data-0006": {
+              "hora": "9:26"
+            },
+            "sn-data-0012": {
+              "hora": "9:32",
+              "conc": "6"
+            },
+            "sn-data-0019": {
+              "hora": "9:41",
+              "conc": "9"
+            },
+            "sn-data-0020": {
+              "hora": "9:41",
+              "conc": "0"
+            },
+            "sn-data-0023": {
+              "hora": "9:43",
+              "conc": "2"
+            },
+            "sn-data-0030": {
+              "hora": "9:48",
+              "conc": "5"
+            },
+            "sn-data-0032": {
+              "hora": "9:54",
+              "conc": "6"
+            },
+            "sn-data-0034": {
+              "hora": "9:55",
+              "conc": "1"
+            },
+            "sn-data-0036": {
+              "hora": "10:02",
+              "conc": "7"
+            },
+            "sn-data-0039": {
+              "hora": "10:04",
+              "conc": "2"
+            },
+            "sn-data-0041": {
+              "hora": "10:10",
+              "conc": "6",
+              "com": "3"
+            },
+            "sn-data-0047": {
+              "hora": "10:28",
+              "conc": "18",
+              "com": "3"
+            },
+            "sn-data-0048": {
+              "hora": "10:33",
+              "conc": "5"
+            },
+            "sn-data-0049": {
+              "hora": "10:37",
+              "conc": "4"
+            },
+            "sn-data-0050": {
+              "hora": "10:38",
+              "conc": "1"
+            },
+            "sn-data-0051": {
+              "hora": "10:40",
+              "conc": "2"
+            },
+            "sn-data-0052": {
+              "hora": "10:41",
+              "conc": "1"
+            },
+            "sn-data-0055": {
+              "hora": "10:52",
+              "conc": "11"
+            }
+          }
+        }
+      ]
     },
     "9712": {
       "meta": {
@@ -2379,7 +2586,7 @@
         "numeroFrance": "9713",
         "categorieEspagne": "",
         "categorieFrance": "",
-        "composition": ""
+        "composition": "US"
       },
       "byRowKey": {
         "ns-data-0055": {
@@ -2455,7 +2662,108 @@
           "hora": "14:32",
           "conc": "7"
         }
-      }
+      },
+      "variants": [
+        {
+          "meta": {
+            "origine": "PERPIGNAN",
+            "destination": "BARCELONA SANTS",
+            "numeroEspagne": "",
+            "numeroFrance": "9713",
+            "categorieEspagne": "",
+            "categorieFrance": "",
+            "composition": "US",
+            "validity": {
+              "startDate": "",
+              "endDate": "",
+              "days": {
+                "monday": true,
+                "tuesday": true,
+                "wednesday": true,
+                "thursday": true,
+                "friday": true,
+                "saturday": true,
+                "sunday": true
+              }
+            }
+          },
+          "byRowKey": {
+            "ns-data-0055": {
+              "hora": "13:06"
+            },
+            "ns-data-0052": {
+              "hora": "13:16",
+              "conc": "10"
+            },
+            "ns-data-0051": {
+              "hora": "13:17",
+              "conc": "1"
+            },
+            "ns-data-0050": {
+              "hora": "13:19",
+              "conc": "2"
+            },
+            "ns-data-0049": {
+              "hora": "13:20",
+              "conc": "1"
+            },
+            "ns-data-0048": {
+              "hora": "13:25",
+              "conc": "5"
+            },
+            "ns-data-0047": {
+              "hora": "13:33",
+              "com": "3",
+              "conc": "8"
+            },
+            "ns-data-0041": {
+              "hora": "13:50",
+              "com": "3",
+              "conc": "17"
+            },
+            "ns-data-0039": {
+              "hora": "13:53",
+              "conc": "3"
+            },
+            "ns-data-0036": {
+              "hora": "13:56",
+              "conc": "3"
+            },
+            "ns-data-0034": {
+              "hora": "14:03",
+              "conc": "7"
+            },
+            "ns-data-0032": {
+              "hora": "14:04",
+              "conc": "1"
+            },
+            "ns-data-0030": {
+              "hora": "14:09",
+              "conc": "5"
+            },
+            "ns-data-0023": {
+              "hora": "14:15",
+              "conc": "6"
+            },
+            "ns-data-0020": {
+              "hora": "14:17",
+              "conc": "2"
+            },
+            "ns-data-0019": {
+              "hora": "14:18",
+              "conc": "1"
+            },
+            "ns-data-0012": {
+              "hora": "14:25",
+              "conc": "7"
+            },
+            "ns-data-0006": {
+              "hora": "14:32",
+              "conc": "7"
+            }
+          }
+        }
+      ]
     },
     "9714": {
       "meta": {
@@ -2465,7 +2773,7 @@
         "numeroFrance": "9715",
         "categorieEspagne": "",
         "categorieFrance": "",
-        "composition": ""
+        "composition": "US"
       },
       "byRowKey": {
         "ns-data-0055": {
@@ -2541,7 +2849,108 @@
           "hora": "21:32",
           "conc": "7"
         }
-      }
+      },
+      "variants": [
+        {
+          "meta": {
+            "origine": "PERPIGNAN",
+            "destination": "BARCELONA SANTS",
+            "numeroEspagne": "",
+            "numeroFrance": "9715",
+            "categorieEspagne": "",
+            "categorieFrance": "",
+            "composition": "US",
+            "validity": {
+              "startDate": "",
+              "endDate": "",
+              "days": {
+                "monday": true,
+                "tuesday": true,
+                "wednesday": true,
+                "thursday": true,
+                "friday": true,
+                "saturday": true,
+                "sunday": true
+              }
+            }
+          },
+          "byRowKey": {
+            "ns-data-0055": {
+              "hora": "20:07"
+            },
+            "ns-data-0052": {
+              "hora": "20:16",
+              "conc": "9"
+            },
+            "ns-data-0051": {
+              "hora": "20:17",
+              "conc": "1"
+            },
+            "ns-data-0050": {
+              "hora": "20:19",
+              "conc": "2"
+            },
+            "ns-data-0049": {
+              "hora": "20:20",
+              "conc": "1"
+            },
+            "ns-data-0048": {
+              "hora": "20:25",
+              "conc": "5"
+            },
+            "ns-data-0047": {
+              "hora": "20:33",
+              "com": "3",
+              "conc": "8"
+            },
+            "ns-data-0041": {
+              "hora": "20:50",
+              "com": "3",
+              "conc": "17"
+            },
+            "ns-data-0039": {
+              "hora": "20:53",
+              "conc": "3"
+            },
+            "ns-data-0036": {
+              "hora": "20:56",
+              "conc": "3"
+            },
+            "ns-data-0034": {
+              "hora": "21:03",
+              "conc": "7"
+            },
+            "ns-data-0032": {
+              "hora": "21:04",
+              "conc": "1"
+            },
+            "ns-data-0030": {
+              "hora": "21:09",
+              "conc": "5"
+            },
+            "ns-data-0023": {
+              "hora": "21:15",
+              "conc": "6"
+            },
+            "ns-data-0020": {
+              "hora": "21:17",
+              "conc": "2"
+            },
+            "ns-data-0019": {
+              "hora": "21:18",
+              "conc": "1"
+            },
+            "ns-data-0012": {
+              "hora": "21:25",
+              "conc": "7"
+            },
+            "ns-data-0006": {
+              "hora": "21:32",
+              "conc": "7"
+            }
+          }
+        }
+      ]
     },
     "38510": {
       "meta": {
@@ -2551,7 +2960,7 @@
         "numeroFrance": "",
         "categorieEspagne": "",
         "categorieFrance": "",
-        "composition": ""
+        "composition": "US"
       },
       "byRowKey": {
         "ns-data-0006": {
@@ -2565,7 +2974,46 @@
           "hora": "22:05",
           "conc": "5"
         }
-      }
+      },
+      "variants": [
+        {
+          "meta": {
+            "origine": "BARCELONA SANTS",
+            "destination": "CAN TUNIS AV",
+            "numeroEspagne": "",
+            "numeroFrance": "",
+            "categorieEspagne": "",
+            "categorieFrance": "",
+            "composition": "US",
+            "validity": {
+              "startDate": "",
+              "endDate": "",
+              "days": {
+                "monday": true,
+                "tuesday": true,
+                "wednesday": true,
+                "thursday": true,
+                "friday": true,
+                "saturday": true,
+                "sunday": true
+              }
+            }
+          },
+          "byRowKey": {
+            "ns-data-0006": {
+              "hora": "22:00"
+            },
+            "ns-data-0001": {
+              "hora": "22:06",
+              "conc": "1"
+            },
+            "ns-data-0002": {
+              "hora": "22:05",
+              "conc": "5"
+            }
+          }
+        }
+      ]
     },
     "39819": {
       "meta": {
@@ -2575,7 +3023,7 @@
         "numeroFrance": "",
         "categorieEspagne": "",
         "categorieFrance": "",
-        "composition": ""
+        "composition": "US"
       },
       "byRowKey": {
         "sn-data-0001": {
@@ -2589,7 +3037,46 @@
           "hora": "8:30",
           "conc": "6"
         }
-      }
+      },
+      "variants": [
+        {
+          "meta": {
+            "origine": "CAN TUNIS AV",
+            "destination": "BARCELONA SANTS",
+            "numeroEspagne": "",
+            "numeroFrance": "",
+            "categorieEspagne": "",
+            "categorieFrance": "",
+            "composition": "US",
+            "validity": {
+              "startDate": "",
+              "endDate": "",
+              "days": {
+                "monday": true,
+                "tuesday": true,
+                "wednesday": true,
+                "thursday": true,
+                "friday": true,
+                "saturday": true,
+                "sunday": true
+              }
+            }
+          },
+          "byRowKey": {
+            "sn-data-0001": {
+              "hora": "8:23"
+            },
+            "sn-data-0002": {
+              "hora": "8:24",
+              "conc": "1"
+            },
+            "sn-data-0006": {
+              "hora": "8:30",
+              "conc": "6"
+            }
+          }
+        }
+      ]
     }
   }
 }
