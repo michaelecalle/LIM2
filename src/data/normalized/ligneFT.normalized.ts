@@ -2116,9 +2116,9 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "destination": "PERPIGNAN",
         "numeroEspagne": "",
         "numeroFrance": "9706",
-        "categorieEspagne": "T200",
+        "categorieEspagne": "T200ES",
         "categorieFrance": "300",
-        "materiel": "TGV 2N2 3UH",
+        "materiel": "TGV 2N2",
         "composition": "US"
       },
       "byRowKey": {
@@ -2202,9 +2202,9 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "destination": "PERPIGNAN",
             "numeroEspagne": "",
             "numeroFrance": "9706",
-            "categorieEspagne": "T200",
+            "categorieEspagne": "T200ES",
             "categorieFrance": "300",
-            "materiel": "TGV 2N2 3UH",
+            "materiel": "TGV 2N2",
             "composition": "US",
             "validity": {
               "startDate": "",
