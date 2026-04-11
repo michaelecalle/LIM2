@@ -2116,7 +2116,7 @@
         "numeroFrance": "9706",
         "categorieEspagne": "T200",
         "categorieFrance": "300",
-        "materiel": "TGV 2N2",
+        "materiel": "TGV 2N2 3UH",
         "composition": "US"
       },
       "byRowKey": {
@@ -2202,7 +2202,7 @@
             "numeroFrance": "9706",
             "categorieEspagne": "T200",
             "categorieFrance": "300",
-            "materiel": "TGV 2N2",
+            "materiel": "TGV 2N2 3UH",
             "composition": "US",
             "validity": {
               "startDate": "",
