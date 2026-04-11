@@ -19,7 +19,12 @@ import { RIBBON_POINTS } from '../../lib/ligne050_ribbon_dense'
 import { getOcrOnlineEnabled, setOcrOnlineEnabled } from '../../lib/ocrSettings'
 
 import { APP_VERSION } from '../version'
-import { getTrainNumeroFrance } from '../../data/ligneFT.normalized.adapter'
+import {
+  getTrainCategorieEspagne,
+  getTrainCategorieFrance,
+  getTrainComposition,
+  getTrainNumeroFrance,
+} from '../../data/ligneFT.normalized.adapter'
 
 type LIMFields = {
   tren?: string
@@ -39,7 +44,11 @@ type DisplayedTrainNumberState = {
   isBlinking: boolean
   displayedNumber: string | undefined
 }
-
+type DisplayedCompositionState = {
+  normalizedComposition: string | undefined
+  displayedComposition: string | undefined
+  manualOverrideActive: boolean
+}
 function toTitleNumber(s?: string | null): string | undefined {
   if (!s) return undefined
   const m = String(s).match(/\d{1,}/)
@@ -1176,6 +1185,20 @@ ${coords}
   const [trainType, setTrainType] = useState<string | undefined>(() => {
     const w = window as any
     const last: any = w.__limLastParsed || {}
+    const rawTrain = last?.trenPadded ?? last?.tren
+    const trainNumber = toTitleNumber(rawTrain)
+
+    const normalizedTypeEs = trainNumber
+      ? getTrainCategorieEspagne(trainNumber)
+      : undefined
+    const normalizedTypeFr = trainNumber
+      ? getTrainCategorieFrance(trainNumber)
+      : undefined
+
+    const normalizedDisplayedType = normalizedTypeEs ?? normalizedTypeFr
+
+    if (normalizedDisplayedType) return normalizedDisplayedType
+
     const rawType = last?.type
     return rawType ? String(rawType) : undefined
   })
@@ -1186,7 +1209,49 @@ ${coords}
     const rawComp = last?.composicion ?? last?.unit
     return rawComp ? String(rawComp) : undefined
   })
+  const [displayedCompositionState, setDisplayedCompositionState] =
+    useState<DisplayedCompositionState>(() => {
+      const w = window as any
+      return (
+        (w.__limLastDisplayedCompositionState as DisplayedCompositionState | undefined) ?? {
+          normalizedComposition: undefined,
+          displayedComposition: undefined,
+          manualOverrideActive: false,
+        }
+      )
+    })
 
+  const displayedCompositionStateRef = useRef<DisplayedCompositionState>(
+    displayedCompositionState
+  )
+
+  useEffect(() => {
+    displayedCompositionStateRef.current = displayedCompositionState
+  }, [displayedCompositionState])
+
+  const applyDisplayedCompositionState = (
+    nextState: DisplayedCompositionState,
+    meta?: { source?: string; reason?: string }
+  ) => {
+    setDisplayedCompositionState(nextState)
+    displayedCompositionStateRef.current = nextState
+    setTrainComposition(nextState.displayedComposition)
+    ;(window as any).__limLastDisplayedCompositionState = nextState
+
+    window.dispatchEvent(
+      new CustomEvent('lim:displayed-composition-change', {
+        detail: nextState,
+      })
+    )
+
+    logTestEvent('ui:displayed-composition-change', {
+      source: meta?.source ?? 'titlebar',
+      reason: meta?.reason ?? 'unspecified',
+      normalizedComposition: nextState.normalizedComposition ?? null,
+      displayedComposition: nextState.displayedComposition ?? null,
+      manualOverrideActive: nextState.manualOverrideActive,
+    })
+  }
   const [displayedTrainNumberState, setDisplayedTrainNumberState] =
     useState<DisplayedTrainNumberState>({
       trainNumberEs: undefined,
@@ -1201,6 +1266,7 @@ ${coords}
     meta?: { source?: string; reason?: string }
   ) => {
     setDisplayedTrainNumberState(nextState)
+    ;(window as any).__limLastDisplayedTrainNumberState = nextState
 
     window.dispatchEvent(
       new CustomEvent('lim:displayed-train-number-change', {
@@ -1409,6 +1475,27 @@ ${coords}
       })
     }
 
+    const onCompositionManualToggleRequest = () => {
+      const current = displayedCompositionStateRef.current
+
+      const fallback = current.displayedComposition ?? current.normalizedComposition
+      const currentValue = String(fallback ?? '').trim().toUpperCase()
+
+      const nextComposition = currentValue === 'UM' ? 'US' : 'UM'
+
+      applyDisplayedCompositionState(
+        {
+          normalizedComposition: current.normalizedComposition,
+          displayedComposition: nextComposition,
+          manualOverrideActive: nextComposition !== current.normalizedComposition,
+        },
+        {
+          source: 'infos_composition',
+          reason: 'manual_toggle_request',
+        }
+      )
+    }
+
     window.addEventListener(
       'lim:displayed-train-number-commit-request',
       onCommitRequest as EventListener
@@ -1416,6 +1503,10 @@ ${coords}
     window.addEventListener(
       'lim:displayed-train-number-manual-toggle-request',
       onManualToggleRequest as EventListener
+    )
+    window.addEventListener(
+      'lim:displayed-composition-manual-toggle-request',
+      onCompositionManualToggleRequest as EventListener
     )
 
     return () => {
@@ -1426,6 +1517,10 @@ ${coords}
       window.removeEventListener(
         'lim:displayed-train-number-manual-toggle-request',
         onManualToggleRequest as EventListener
+      )
+      window.removeEventListener(
+        'lim:displayed-composition-manual-toggle-request',
+        onCompositionManualToggleRequest as EventListener
       )
     }
   }, [])
@@ -1478,7 +1573,53 @@ ${coords}
       reason: hasNumeroFrance ? 'initial_rule_fr_if_es_even_else_es' : 'initial_rule_es_only',
     })
   }, [trainDisplay])
+  useEffect(() => {
+    const currentTrainNumber = trainDisplay
+    if (!currentTrainNumber) return
 
+    const normalizedTypeEs = getTrainCategorieEspagne(currentTrainNumber)
+    const normalizedTypeFr = getTrainCategorieFrance(currentTrainNumber)
+
+    const normalizedDisplayedType =
+      displayedTrainNumberState.displayedSide === 'FR'
+        ? normalizedTypeFr ?? normalizedTypeEs
+        : normalizedTypeEs ?? normalizedTypeFr
+
+    if (normalizedDisplayedType) {
+      setTrainType(normalizedDisplayedType)
+      return
+    }
+
+    const w = window as any
+    const last: any = w.__limLastParsed || {}
+    const rawType = last?.type
+    setTrainType(rawType ? String(rawType) : undefined)
+  }, [trainDisplay, displayedTrainNumberState.displayedSide])
+    useEffect(() => {
+    const currentTrainNumber = trainDisplay
+    if (!currentTrainNumber) return
+
+    const normalizedComposition = getTrainComposition(currentTrainNumber)
+
+    const w = window as any
+    const last: any = w.__limLastParsed || {}
+    const rawComp = last?.composicion ?? last?.unit
+    const fallbackComposition = rawComp ? String(rawComp).trim().toUpperCase() : undefined
+
+    const baseComposition = normalizedComposition ?? fallbackComposition
+
+    applyDisplayedCompositionState(
+      {
+        normalizedComposition: baseComposition,
+        displayedComposition: baseComposition,
+        manualOverrideActive: false,
+      },
+      {
+        source: 'titlebar',
+        reason: 'train_display_reset_to_base_composition',
+      }
+    )
+  }, [trainDisplay])
   // =========================
   // Direction attendue (PK)
   // =========================
@@ -1945,11 +2086,49 @@ ${coords}
         }
       }
 
-      const rawType = (detail as any).type
-      setTrainType(rawType ? String(rawType) : undefined)
+      const parsedTrainNumber = toTitleNumber(detail.trenPadded ?? detail.tren)
 
-      const rawComp = (detail as any).composicion ?? (detail as any).unit
-      setTrainComposition(rawComp ? String(rawComp) : undefined)
+      const normalizedTypeEs = parsedTrainNumber
+        ? getTrainCategorieEspagne(parsedTrainNumber)
+        : undefined
+      const normalizedTypeFr = parsedTrainNumber
+        ? getTrainCategorieFrance(parsedTrainNumber)
+        : undefined
+
+      const normalizedDisplayedType =
+        displayedTrainNumberStateRef.current.displayedSide === 'FR'
+          ? normalizedTypeFr ?? normalizedTypeEs
+          : normalizedTypeEs ?? normalizedTypeFr
+
+      if (normalizedDisplayedType) {
+        setTrainType(normalizedDisplayedType)
+      } else {
+        const rawType = (detail as any).type
+        setTrainType(rawType ? String(rawType) : undefined)
+      }
+
+      const normalizedComposition = parsedTrainNumber
+        ? getTrainComposition(parsedTrainNumber)
+        : undefined
+
+      const parsedFallbackComposition = (() => {
+        const rawComp = (detail as any).composicion ?? (detail as any).unit
+        return rawComp ? String(rawComp).trim().toUpperCase() : undefined
+      })()
+
+      const baseComposition = normalizedComposition ?? parsedFallbackComposition
+
+      applyDisplayedCompositionState(
+        {
+          normalizedComposition: baseComposition,
+          displayedComposition: baseComposition,
+          manualOverrideActive: false,
+        },
+        {
+          source: 'titlebar',
+          reason: 'parsed_reset_to_base_composition',
+        }
+      )
 
       ;(async () => {
         try {

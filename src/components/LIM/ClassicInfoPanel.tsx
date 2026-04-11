@@ -98,11 +98,13 @@ export default function ClassicInfoPanel({
   onTrenClick,
   onTrenLongPress,
   onTrenDoubleClick,
+  onCompositionLongPress,
 }: {
   data: InfoData
   onTrenClick?: () => void
   onTrenLongPress?: () => void
   onTrenDoubleClick?: () => void
+  onCompositionLongPress?: () => void
 }) {
   const D = data || {}
   const trainDisplay = D.tren ? String(D.tren) : ""
@@ -211,7 +213,35 @@ export default function ClassicInfoPanel({
 
     onTrenClick?.()
   }, [onTrenClick])
+  const compositionLongPressTimerRef = React.useRef<number | null>(null)
 
+  const clearCompositionLongPressTimer = React.useCallback(() => {
+    if (compositionLongPressTimerRef.current != null) {
+      window.clearTimeout(compositionLongPressTimerRef.current)
+      compositionLongPressTimerRef.current = null
+    }
+  }, [])
+
+  React.useEffect(() => {
+    return () => {
+      clearCompositionLongPressTimer()
+    }
+  }, [clearCompositionLongPressTimer])
+
+  const startCompositionLongPress = React.useCallback(() => {
+    if (!onCompositionLongPress) return
+
+    clearCompositionLongPressTimer()
+
+    compositionLongPressTimerRef.current = window.setTimeout(() => {
+      compositionLongPressTimerRef.current = null
+      onCompositionLongPress()
+    }, TREN_LONG_PRESS_DELAY_MS)
+  }, [clearCompositionLongPressTimer, onCompositionLongPress])
+
+  const cancelCompositionLongPress = React.useCallback(() => {
+    clearCompositionLongPressTimer()
+  }, [clearCompositionLongPressTimer])
   return (
     <div className="select-none">
       <style>{`
@@ -306,7 +336,16 @@ export default function ClassicInfoPanel({
             {D.operadorLogo ? (<img src={D.operadorLogo} alt="OUIGO" className="w-10 h-10 object-contain"/>) : null}
           </div>
 
-          <div className="border-r-2 border-black px-2 py-1 text-center tile-yellow" style={{ background: yellow, flex: '0 0 auto' }}>
+          <div
+            className={`border-r-2 border-black px-2 py-1 text-center tile-yellow ${onCompositionLongPress ? 'cursor-pointer' : ''}`}
+            style={{ background: yellow, flex: '0 0 auto' }}
+            onPointerDown={startCompositionLongPress}
+            onPointerUp={cancelCompositionLongPress}
+            onPointerLeave={cancelCompositionLongPress}
+            onPointerCancel={cancelCompositionLongPress}
+            onContextMenu={(e) => e.preventDefault()}
+            title={onCompositionLongPress ? 'Appui long : basculer la composition UM / US' : undefined}
+          >
             <div className="text-[12px] font-semibold leading-none">COMPOSICIÓN</div>
             <div className="mt-0.5 text-[18px] font-extrabold tracking-tight">{(D.composicion || '').toUpperCase()}</div>
           </div>

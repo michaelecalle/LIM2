@@ -310,8 +310,16 @@ function getNormalizedTrain(
 ): NormalizedTrain | undefined {
   if (trainNumber == null) return undefined;
 
-  const key = String(trainNumber).trim() as NormalizedTrainKey;
-  return LIGNE_FT_NORMALIZED.trains[key];
+  const rawKey = String(trainNumber).trim();
+  if (rawKey === "") return undefined;
+
+  const directMatch = LIGNE_FT_NORMALIZED.trains[rawKey as NormalizedTrainKey];
+  if (directMatch) return directMatch;
+
+  const normalizedKey = rawKey.replace(/^0+(?=\d)/, "");
+  if (normalizedKey === "") return undefined;
+
+  return LIGNE_FT_NORMALIZED.trains[normalizedKey as NormalizedTrainKey];
 }
 
 export function getTrainNumeroFrance(
@@ -322,7 +330,129 @@ export function getTrainNumeroFrance(
 
   return asNonEmptyString((train as any)?.meta?.numeroFrance);
 }
+export function getTrainOrigine(
+  trainNumber: number | string | null | undefined
+): string | undefined {
+  const train = getNormalizedTrain(trainNumber);
+  if (!train) return undefined;
 
+  return asNonEmptyString((train as any)?.meta?.origine);
+}
+
+export function getTrainDestination(
+  trainNumber: number | string | null | undefined
+): string | undefined {
+  const train = getNormalizedTrain(trainNumber);
+  if (!train) return undefined;
+
+  return asNonEmptyString((train as any)?.meta?.destination);
+}
+
+export function getTrainRelation(
+  trainNumber: number | string | null | undefined
+): string | undefined {
+  const origine = getTrainOrigine(trainNumber);
+  const destination = getTrainDestination(trainNumber);
+
+  if (origine && destination) return `${origine} - ${destination}`;
+  if (origine) return origine;
+  if (destination) return destination;
+
+  return undefined;
+}
+
+export function getTrainLigne(
+  trainNumber: number | string | null | undefined
+): string | undefined {
+  const train = getNormalizedTrain(trainNumber);
+  if (!train) return undefined;
+
+  const variants = (train as any).variants;
+  if (Array.isArray(variants) && variants.length > 0) {
+    const currentDateIso = getCurrentLocalDateIso();
+    const currentDayKey = getCurrentDayKey();
+
+    const matchedVariant = variants.find((variant: any) => {
+      const validity = variant?.meta?.validity;
+      if (!validity) return false;
+
+      const startDate = asNonEmptyString(validity.startDate);
+      const endDate = asNonEmptyString(validity.endDate);
+
+      if (!isDateWithinRange(currentDateIso, startDate, endDate)) {
+        return false;
+      }
+
+      const dayValue = validity?.days?.[currentDayKey];
+      return dayValue === true;
+    });
+
+    const variantLigne = asNonEmptyString(matchedVariant?.meta?.ligne);
+    if (variantLigne) return variantLigne;
+  }
+
+  return asNonEmptyString((train as any)?.meta?.ligne);
+}
+
+export function getTrainMateriel(
+  trainNumber: number | string | null | undefined
+): string | undefined {
+  const train = getNormalizedTrain(trainNumber);
+  if (!train) return undefined;
+
+  return asNonEmptyString((train as any)?.meta?.materiel);
+}
+
+export function getTrainCategorieEspagne(
+  trainNumber: number | string | null | undefined
+): string | undefined {
+  const train = getNormalizedTrain(trainNumber);
+  if (!train) return undefined;
+
+  return asNonEmptyString((train as any)?.meta?.categorieEspagne);
+}
+
+export function getTrainCategorieFrance(
+  trainNumber: number | string | null | undefined
+): string | undefined {
+  const train = getNormalizedTrain(trainNumber);
+  if (!train) return undefined;
+
+  return asNonEmptyString((train as any)?.meta?.categorieFrance);
+}
+
+export function getTrainComposition(
+  trainNumber: number | string | null | undefined
+): string | undefined {
+  const train = getNormalizedTrain(trainNumber);
+  if (!train) return undefined;
+
+  const variants = (train as any).variants;
+  if (Array.isArray(variants) && variants.length > 0) {
+    const currentDateIso = getCurrentLocalDateIso();
+    const currentDayKey = getCurrentDayKey();
+
+    const matchedVariant = variants.find((variant: any) => {
+      const validity = variant?.meta?.validity;
+      if (!validity) return false;
+
+      const startDate = asNonEmptyString(validity.startDate);
+      const endDate = asNonEmptyString(validity.endDate);
+
+      if (!isDateWithinRange(currentDateIso, startDate, endDate)) {
+        return false;
+      }
+
+      const dayValue = validity?.days?.[currentDayKey];
+      return dayValue === true;
+    });
+
+    const variantComposition = asNonEmptyString(matchedVariant?.meta?.composition);
+    if (variantComposition) return variantComposition;
+  }
+
+  return asNonEmptyString((train as any)?.meta?.composition);
+}
 function getTrainOverrides(
   trainNumber: number | string | null | undefined
 ): Record<string, NormalizedTrainRowOverride> {

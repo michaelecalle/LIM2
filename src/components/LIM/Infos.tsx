@@ -1,6 +1,13 @@
 import React from "react"
 import ClassicInfoPanel from "./ClassicInfoPanel"
-
+import {
+  getTrainCategorieEspagne,
+  getTrainCategorieFrance,
+  getTrainComposition,
+  getTrainLigne,
+  getTrainMateriel,
+  getTrainRelation,
+} from "../../data/ligneFT.normalized.adapter"
 type LIMData = {
 
   train?: string
@@ -33,7 +40,11 @@ type DisplayedTrainNumberState = {
   isBlinking: boolean
   displayedNumber?: string
 }
-
+type DisplayedCompositionState = {
+  normalizedComposition?: string
+  displayedComposition?: string
+  manualOverrideActive: boolean
+}
 function buildPanelData(src: any): any {
   const d = src || {}
   // Accepte soit les clés déjà "espagnoles", soit les clés du LIMData
@@ -60,8 +71,15 @@ export default function Infos() {
   })
 
   const [displayedTrainNumberState, setDisplayedTrainNumberState] =
-    React.useState<DisplayedTrainNumberState | null>(null)
-
+    React.useState<DisplayedTrainNumberState | null>(() => {
+      const w = window as any
+      return (w.__limLastDisplayedTrainNumberState || null) as DisplayedTrainNumberState | null
+    })
+  const [displayedCompositionState, setDisplayedCompositionState] =
+    React.useState<DisplayedCompositionState | null>(() => {
+      const w = window as any
+      return (w.__limLastDisplayedCompositionState || null) as DisplayedCompositionState | null
+    })
   // écoute du parseur LIM -> met à jour les infos brutes
   React.useEffect(() => {
     const onParsed = (e: Event) => {
@@ -93,8 +111,62 @@ export default function Infos() {
       )
     }
   }, [])
+  React.useEffect(() => {
+    const onDisplayedCompositionChange = (e: Event) => {
+      const ce = e as CustomEvent
+      const detail = (ce.detail || null) as DisplayedCompositionState | null
+      setDisplayedCompositionState(detail)
+    }
 
+    window.addEventListener(
+      'lim:displayed-composition-change',
+      onDisplayedCompositionChange as EventListener
+    )
+
+    return () => {
+      window.removeEventListener(
+        'lim:displayed-composition-change',
+        onDisplayedCompositionChange as EventListener
+      )
+    }
+  }, [])
   const panelBaseData = buildPanelData(raw)
+
+  const currentTrainNumber = raw?.tren ?? raw?.train
+  const normalizedRelation = getTrainRelation(currentTrainNumber)
+  const normalizedLigne = getTrainLigne(currentTrainNumber)
+  const normalizedMateriel = getTrainMateriel(currentTrainNumber)
+  const normalizedComposition = getTrainComposition(currentTrainNumber)
+  const normalizedTypeEs = getTrainCategorieEspagne(currentTrainNumber)
+  const normalizedTypeFr = getTrainCategorieFrance(currentTrainNumber)
+
+  const normalizedDisplayedType =
+    displayedTrainNumberState?.displayedSide === 'FR'
+      ? normalizedTypeFr ?? normalizedTypeEs
+      : normalizedTypeEs ?? normalizedTypeFr
+
+  const displayedComposition =
+    displayedCompositionState?.displayedComposition ??
+    normalizedComposition ??
+    panelBaseData.composicion
+
+  const displayedCompositionKey = String(displayedComposition ?? "")
+    .trim()
+    .toUpperCase()
+
+  const derivedLengthMeters =
+    displayedCompositionKey === "US"
+      ? 200
+      : displayedCompositionKey === "UM"
+        ? 400
+        : undefined
+
+  const derivedMassTons =
+    displayedCompositionKey === "US"
+      ? 433
+      : displayedCompositionKey === "UM"
+        ? 866
+        : undefined
 
   const trenCommitted =
     displayedTrainNumberState?.displayedSide === 'FR'
@@ -118,6 +190,13 @@ export default function Infos() {
 
   const panelData = {
     ...panelBaseData,
+    type: normalizedDisplayedType ?? panelBaseData.type,
+    origenDestino: normalizedRelation ?? panelBaseData.origenDestino,
+    composicion: displayedComposition,
+    material: normalizedMateriel ?? panelBaseData.material,
+    linea: normalizedLigne ?? panelBaseData.linea,
+    longitud: derivedLengthMeters ?? panelBaseData.longitud,
+    masa: derivedMassTons ?? panelBaseData.masa,
     tren:
       displayedTrainNumberState?.displayedNumber ??
       panelBaseData.tren,
@@ -146,6 +225,15 @@ export default function Infos() {
       new CustomEvent('lim:displayed-train-number-manual-toggle-request', {
         detail: {
           source: 'infos_tren',
+        },
+      })
+    )
+  }, [])
+    const handleCompositionLongPress = React.useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent('lim:displayed-composition-manual-toggle-request', {
+        detail: {
+          source: 'infos_composition',
         },
       })
     )
@@ -192,6 +280,7 @@ export default function Infos() {
           displayedTrainNumberState?.pendingSide ? handleTrenClick : undefined
         }
         onTrenLongPress={handleTrenLongPress}
+        onCompositionLongPress={handleCompositionLongPress}
       />
     </section>
   )
