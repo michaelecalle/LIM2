@@ -2118,7 +2118,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "numeroFrance": "9706",
         "categorieEspagne": "T200",
         "categorieFrance": "300",
-        "materiel": "TGV 2N2",
+        "materiel": "TGV 2N2 3UH",
         "composition": "US"
       },
       "byRowKey": {
@@ -2204,7 +2204,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "numeroFrance": "9706",
             "categorieEspagne": "T200",
             "categorieFrance": "300",
-            "materiel": "TGV 2N2",
+            "materiel": "TGV 2N2 3UH",
             "composition": "US",
             "validity": {
               "startDate": "",
