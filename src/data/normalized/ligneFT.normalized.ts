@@ -2114,6 +2114,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       "meta": {
         "origine": "BARCELONA SANTS",
         "destination": "PERPIGNAN",
+        "ligne": "test",
         "numeroEspagne": "",
         "numeroFrance": "9706",
         "categorieEspagne": "T200",
@@ -2200,6 +2201,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "meta": {
             "origine": "BARCELONA SANTS",
             "destination": "PERPIGNAN",
+            "ligne": "test",
             "numeroEspagne": "",
             "numeroFrance": "9706",
             "categorieEspagne": "T200",
@@ -2301,6 +2303,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       "meta": {
         "origine": "BARCELONA SANTS",
         "destination": "PERPIGNAN",
+        "ligne": "050",
         "numeroEspagne": "",
         "numeroFrance": "9708",
         "categorieEspagne": "T200",
@@ -2388,6 +2391,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "meta": {
             "origine": "BARCELONA SANTS",
             "destination": "PERPIGNAN",
+            "ligne": "050",
             "numeroEspagne": "",
             "numeroFrance": "9708",
             "categorieEspagne": "T200",
@@ -2490,6 +2494,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       "meta": {
         "origine": "PERPIGNAN",
         "destination": "BARCELONA SANTS",
+        "ligne": "050",
         "numeroEspagne": "",
         "numeroFrance": "9713",
         "categorieEspagne": "T200",
@@ -2577,6 +2582,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "meta": {
             "origine": "PERPIGNAN",
             "destination": "BARCELONA SANTS",
+            "ligne": "050",
             "numeroEspagne": "",
             "numeroFrance": "9713",
             "categorieEspagne": "T200",
@@ -2679,6 +2685,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       "meta": {
         "origine": "PERPIGNAN",
         "destination": "BARCELONA SANTS",
+        "ligne": "050",
         "numeroEspagne": "",
         "numeroFrance": "9715",
         "categorieEspagne": "T200",
@@ -2766,6 +2773,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "meta": {
             "origine": "PERPIGNAN",
             "destination": "BARCELONA SANTS",
+            "ligne": "050",
             "numeroEspagne": "",
             "numeroFrance": "9715",
             "categorieEspagne": "T200",
@@ -2868,6 +2876,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       "meta": {
         "origine": "BARCELONA SANTS",
         "destination": "CAN TUNIS AV",
+        "ligne": "050 - 066",
         "numeroEspagne": "",
         "numeroFrance": "",
         "categorieEspagne": "T300",
@@ -2893,6 +2902,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "meta": {
             "origine": "BARCELONA SANTS",
             "destination": "CAN TUNIS AV",
+            "ligne": "050 - 066",
             "numeroEspagne": "",
             "numeroFrance": "",
             "categorieEspagne": "T300",
@@ -2933,6 +2943,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       "meta": {
         "origine": "CAN TUNIS AV",
         "destination": "BARCELONA SANTS",
+        "ligne": "050 - 066",
         "numeroEspagne": "",
         "numeroFrance": "",
         "categorieEspagne": "T300",
@@ -2958,6 +2969,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "meta": {
             "origine": "CAN TUNIS AV",
             "destination": "BARCELONA SANTS",
+            "ligne": "050 - 066",
             "numeroEspagne": "",
             "numeroFrance": "",
             "categorieEspagne": "T300",
