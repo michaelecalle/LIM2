@@ -2305,7 +2305,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "numeroFrance": "9708",
         "categorieEspagne": "T200",
         "categorieFrance": "300",
-        "materiel": "",
+        "materiel": "TGV 2N2",
         "composition": "US"
       },
       "byRowKey": {
@@ -2392,7 +2392,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "numeroFrance": "9708",
             "categorieEspagne": "T200",
             "categorieFrance": "300",
-            "materiel": "",
+            "materiel": "TGV 2N2",
             "composition": "US",
             "validity": {
               "startDate": "",
@@ -2494,7 +2494,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "numeroFrance": "9713",
         "categorieEspagne": "T200",
         "categorieFrance": "300",
-        "materiel": "",
+        "materiel": "TGV 2N2",
         "composition": "US"
       },
       "byRowKey": {
@@ -2581,7 +2581,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "numeroFrance": "9713",
             "categorieEspagne": "T200",
             "categorieFrance": "300",
-            "materiel": "",
+            "materiel": "TGV 2N2",
             "composition": "US",
             "validity": {
               "startDate": "",
@@ -2683,7 +2683,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "numeroFrance": "9715",
         "categorieEspagne": "T200",
         "categorieFrance": "300",
-        "materiel": "",
+        "materiel": "TGV 2N2",
         "composition": "US"
       },
       "byRowKey": {
@@ -2770,7 +2770,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "numeroFrance": "9715",
             "categorieEspagne": "T200",
             "categorieFrance": "300",
-            "materiel": "",
+            "materiel": "TGV 2N2",
             "composition": "US",
             "validity": {
               "startDate": "",
@@ -2872,7 +2872,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "numeroFrance": "",
         "categorieEspagne": "T300",
         "categorieFrance": "",
-        "materiel": "",
+        "materiel": "TGV 2N2",
         "composition": "US"
       },
       "byRowKey": {
@@ -2897,7 +2897,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "numeroFrance": "",
             "categorieEspagne": "T300",
             "categorieFrance": "",
-            "materiel": "",
+            "materiel": "TGV 2N2",
             "composition": "US",
             "validity": {
               "startDate": "",
@@ -2937,7 +2937,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "numeroFrance": "",
         "categorieEspagne": "T300",
         "categorieFrance": "",
-        "materiel": "",
+        "materiel": "TGV 2N2",
         "composition": "US"
       },
       "byRowKey": {
@@ -2962,7 +2962,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "numeroFrance": "",
             "categorieEspagne": "T300",
             "categorieFrance": "",
-            "materiel": "",
+            "materiel": "TGV 2N2",
             "composition": "US",
             "validity": {
               "startDate": "",
