@@ -70,8 +70,9 @@ export default function TitleBar() {
     return `${hh}:${mm}:${ss}`
   }
   const [clock, setClock] = useState(() => formatTime(new Date()))
-  const [autoScroll, setAutoScroll] = useState(false)
-  const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
+const [autoScroll, setAutoScroll] = useState(false)
+const [autoScrollStartedOnce, setAutoScrollStartedOnce] = useState(false)
+const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const [hourlyMode, setHourlyMode] = useState(false)
   const [referenceMode, setReferenceMode] = useState<'HORAIRE' | 'GPS'>('HORAIRE')
   const [standbyMode, setStandbyMode] = useState(false)
@@ -2343,10 +2344,14 @@ ${coords}
       const enabled = !!ce?.detail?.enabled
       const standby = !!ce?.detail?.standby
 
-      setHourlyMode(enabled || standby)
-      setStandbyMode(standby)
+setHourlyMode(enabled || standby)
+setStandbyMode(standby)
 
-      setAutoScroll(enabled)
+setAutoScroll(enabled)
+
+if (enabled || standby) {
+  setAutoScrollStartedOnce(true)
+}
     }
 
     window.addEventListener('lim:hourly-mode', handler as EventListener)
@@ -2409,8 +2414,8 @@ ${coords}
       if (state === 'GREEN') {
         setGpsState(2)
 
-        // ✅ Au retour réel en GPS, on réaligne aussi l’état visuel du bouton Play
-        setAutoScroll(true)
+// ✅ Au retour réel en GPS, on réaligne aussi l’état visuel du bouton Play
+setAutoScrollStartedOnce(true)
 
         if (typeof pk === 'number' && Number.isFinite(pk)) {
           setGpsPkDisplay(pk.toFixed(1))
@@ -2831,7 +2836,7 @@ const runTitleBarSingleClickAction = () => {
 
     runTitleBarSingleClickAction()
   }
-
+const autoScrollButtonActive = autoScroll || autoScrollStartedOnce
   const IconSun = () => (
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" className="opacity-80">
       <circle cx="12" cy="12" r="4" />
@@ -2922,8 +2927,8 @@ const IconFile = () => null
                     source: 'titlebar',
                     standbyMode,
                   })
-
-                  setAutoScroll(next)
+setAutoScroll(next)
+setAutoScrollStartedOnce(next)
                   window.dispatchEvent(
                     new CustomEvent('ft:auto-scroll-change', {
                       detail: { enabled: next, source: 'titlebar' },
@@ -2939,20 +2944,20 @@ const IconFile = () => null
                   ${
                     standbyMode
                       ? 'bg-orange-400 text-white animate-pulse'
-                      : autoScroll
-                        ? 'bg-emerald-500 text-white'
+: autoScrollButtonActive
+  ? 'bg-emerald-500 text-white'
                         : 'bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100'
                   }
                 `}
                 title={
                   standbyMode
                     ? 'Standby : cliquer ici pour reprendre'
-                    : autoScroll
-                      ? 'Désactiver le défilement automatique'
-                      : 'Activer le défilement automatique'
+: autoScrollButtonActive
+  ? 'Défilement automatique engagé'
+  : 'Activer le défilement automatique'
                 }
               >
-                {autoScroll ? (
+{autoScrollButtonActive ? (
                   <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
                     <rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" />
                     <rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" />
@@ -3267,9 +3272,11 @@ const IconFile = () => null
                 )
                 if (!ok) return
 
-                if (autoScroll) {
-                  setAutoScroll(false)
-                  window.dispatchEvent(
+setAutoScroll(false)
+setAutoScrollStartedOnce(false)
+
+if (autoScroll) {
+  window.dispatchEvent(
                     new CustomEvent('ft:auto-scroll-change', {
                       detail: { enabled: false, source: 'titlebar_stop_button' },
                     })
