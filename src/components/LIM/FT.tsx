@@ -539,17 +539,18 @@ export default function FT({ variant = "classic" }: FTProps) {
       })
     );
 
-    if (referenceMode === "GPS") {
-      window.dispatchEvent(
-        new CustomEvent("lim:hourly-mode", {
-          detail: { enabled: false, standby: false },
-        })
-      );
+if (referenceMode === "GPS") {
+  window.dispatchEvent(
+    new CustomEvent("lim:hourly-mode", {
+      detail: { enabled: autoScrollEnabledRef.current, standby: false },
+    })
+  );
 
-      logTestEvent("ft:standby:visual-clear", {
-        reason: "reference_mode_gps",
-      });
-    }
+  logTestEvent("ft:standby:visual-clear", {
+    reason: "reference_mode_gps",
+    autoScrollEnabled: autoScrollEnabledRef.current,
+  });
+}
   }, [referenceMode]);
 
   // écoute du mode test (ON/OFF)
@@ -2010,18 +2011,17 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
             }
 
             // On coupe l’auto-scroll et on passe en Standby (même logique que clic)
-            window.dispatchEvent(
-              new CustomEvent("ft:auto-scroll-change", {
-                detail: { enabled: false },
-              })
-            );
+window.dispatchEvent(
+  new CustomEvent("ft:auto-scroll-change", {
+    detail: { enabled: false },
+  })
+);
 
-            window.dispatchEvent(
-              new CustomEvent("lim:hourly-mode", {
-                detail: { enabled: false, standby: true },
-              })
-            );
-
+window.dispatchEvent(
+  new CustomEvent("lim:hourly-mode", {
+    detail: { enabled: false, standby: true },
+  })
+);
             // On s’arrête là pour cette minute : plus de recalage auto
             return;
           }
@@ -3532,18 +3532,18 @@ logTestEvent("gps:mode-check", {
           // Optionnel mais cohérent : mettre aussi la ligne active sur cette gare
           setActiveRowIndex(rowIndex);
 
-          // On coupe l’auto-scroll et on passe en Standby (🕑 orange)
-          window.dispatchEvent(
-            new CustomEvent("ft:auto-scroll-change", {
-              detail: { enabled: false },
-            })
-          );
+// On passe en Standby (🕑 orange) SANS couper l’auto-scroll
+window.dispatchEvent(
+  new CustomEvent("ft:auto-scroll-change", {
+    detail: { enabled: true },
+  })
+);
 
-          window.dispatchEvent(
-            new CustomEvent("lim:hourly-mode", {
-              detail: { enabled: false, standby: true },
-            })
-          );
+window.dispatchEvent(
+  new CustomEvent("lim:hourly-mode", {
+    detail: { enabled: true, standby: true },
+  })
+);
         } else {
           // Pas de gare commerciale proche => on ne fait rien (comportement normal)
           logTestEvent("gps:freeze-red:station-standby-skip", {
