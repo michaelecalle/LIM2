@@ -1179,6 +1179,15 @@ if (referenceMode === "GPS") {
       const pkFinite =
         typeof pkRaw === "number" && Number.isFinite(pkRaw) ? pkRaw : null;
 
+      const accuracyM =
+        typeof (last as any).accuracy === "number" &&
+        Number.isFinite((last as any).accuracy)
+          ? (last as any).accuracy
+          : null;
+
+      const hasAcceptableAccuracy =
+        accuracyM == null || accuracyM <= GPS_MAX_ACCURACY_M;
+
       const pkFreezeElapsedMs =
         hasGpsFix &&
         onLine &&
@@ -1193,10 +1202,18 @@ if (referenceMode === "GPS") {
       // si le garde-fou "saut de PK" est actif, on reste en RED
       const pkIncoherentNow = pkJumpGuardActiveRef.current === true;
 
+      const hasUsablePk = pkFinite != null;
+
       const reasonCodes: string[] = [];
       if (!hasGpsFix) reasonCodes.push("no_fix");
       if (hasGpsFix && !onLine) reasonCodes.push("off_line");
       if (hasGpsFix && onLine && isStale) reasonCodes.push("stale_fix");
+      if (hasGpsFix && onLine && !isStale && !hasUsablePk) {
+        reasonCodes.push("no_usable_pk");
+      }
+      if (hasGpsFix && onLine && !isStale && !hasAcceptableAccuracy) {
+        reasonCodes.push("poor_accuracy");
+      }
       if (pkIncoherentNow) reasonCodes.push("pk_jump_guard");
       if (pkFrozenRed) reasonCodes.push("pk_frozen_red");
       else if (pkFrozenOrange) reasonCodes.push("pk_frozen_orange");
@@ -1206,13 +1223,19 @@ if (referenceMode === "GPS") {
       // 1) Calcul état de base
       // -------------------------
       let nextState: GpsState = "RED";
+
       if (!hasGpsFix) {
-        nextState = "RED";
-      } else if (pkIncoherentNow) {
         nextState = "RED";
       } else if (pkFrozenRed) {
         nextState = "RED";
-      } else if (!onLine || isStale || pkFrozenOrange) {
+      } else if (
+        pkIncoherentNow ||
+        !onLine ||
+        isStale ||
+        pkFrozenOrange ||
+        !hasUsablePk ||
+        !hasAcceptableAccuracy
+      ) {
         nextState = "ORANGE";
       } else {
         nextState = "GREEN";
@@ -1377,6 +1400,7 @@ if (referenceMode === "GPS") {
 
   // Réglages (ajustables)
   const GPS_FRESH_SEC = 8; // si l'échantillon est plus vieux -> pas "green"
+  const GPS_MAX_ACCURACY_M = 300; // précision > 300 m => ORANGE
   const GPS_FREEZE_WINDOW_MS = 10_000; // PK inchangé trop longtemps -> ORANGE
   const GPS_FREEZE_PK_DELTA_KM = 0.02; // 0.02 km = 20 m
 
@@ -1472,13 +1496,13 @@ const orangeToRedStartedAtRef = React.useRef<number | null>(null);
           // ✅ On verrouille aussi explicitement la ligne de standby
           standbyLockedRowRef.current = idx;
 
-          // On NE démarre PAS l'auto-scroll : autoScrollEnabled reste false
-          setAutoScrollEnabled(false);
+          // Standby initial : l'autoscroll reste engagé, mais en pause sur la première ligne
+setAutoScrollEnabled(true);
 
           // On signale à la TitleBar qu'on est en mode horaire Standby (🕑 orange)
           window.dispatchEvent(
             new CustomEvent("lim:hourly-mode", {
-              detail: { enabled: false, standby: true },
+detail: { enabled: true, standby: true },
             })
           );
 
@@ -2010,16 +2034,11 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
               }
             }
 
-            // On coupe l’auto-scroll et on passe en Standby (même logique que clic)
-window.dispatchEvent(
-  new CustomEvent("ft:auto-scroll-change", {
-    detail: { enabled: false },
-  })
-);
-
+            // On passe en Standby SANS couper l’autoscroll :
+            // l’autoscroll reste engagé, mais il est mis en pause sur la ligne d’arrivée.
 window.dispatchEvent(
   new CustomEvent("lim:hourly-mode", {
-    detail: { enabled: false, standby: true },
+    detail: { enabled: true, standby: true },
   })
 );
             // On s’arrête là pour cette minute : plus de recalage auto
@@ -3167,9 +3186,13 @@ const isRelock = acceptedMode === "relock";
           : null;
 
       const accuracyM =
-        typeof (detail as any).accuracy === "number"
+        typeof (detail as any).accuracy === "number" &&
+        Number.isFinite((detail as any).accuracy)
           ? (detail as any).accuracy
           : null;
+
+      const hasAcceptableAccuracy =
+        accuracyM == null || accuracyM <= GPS_MAX_ACCURACY_M;
 
       // --- Détection "PK figé" ---
       if (typeof pk === "number" && Number.isFinite(pk)) {
@@ -3199,10 +3222,19 @@ const isRelock = acceptedMode === "relock";
       const pkFrozenOrange = pkFreezeElapsedMs >= GPS_FREEZE_WINDOW_MS;
       const pkFrozenRed = pkFreezeElapsedMs >= GPS_FREEZE_TO_RED_MS;
 
+      const hasUsablePk =
+        typeof pk === "number" && Number.isFinite(pk);
+
       const reasonCodes: string[] = [];
       if (!hasGpsFix) reasonCodes.push("no_fix");
       if (hasGpsFix && !onLine) reasonCodes.push("off_line");
       if (hasGpsFix && onLine && isStale) reasonCodes.push("stale_fix");
+      if (hasGpsFix && onLine && !isStale && !hasUsablePk) {
+        reasonCodes.push("no_usable_pk");
+      }
+      if (hasGpsFix && onLine && !isStale && !hasAcceptableAccuracy) {
+        reasonCodes.push("poor_accuracy");
+      }
       if (pkJumpGuardActiveRef.current) reasonCodes.push("pk_jump_guard");
       if (pkFrozenRed) reasonCodes.push("pk_frozen_red");
       else if (pkFrozenOrange) reasonCodes.push("pk_frozen_orange");
@@ -3226,10 +3258,15 @@ const isRelock = acceptedMode === "relock";
       } else if (pkFrozenRed) {
         // GPS figé trop longtemps => RED
         nextState = "RED";
-      } else if (pkIncoherentNow) {
-        // ✅ PK incohérent => ORANGE (pas RED)
-        nextState = "ORANGE";
-      } else if (!onLine || isStale || pkFrozenOrange) {
+      } else if (
+        pkIncoherentNow ||
+        !onLine ||
+        isStale ||
+        pkFrozenOrange ||
+        !hasUsablePk ||
+        !hasAcceptableAccuracy
+      ) {
+        // GPS présent mais non pleinement exploitable => ORANGE
         nextState = "ORANGE";
       } else {
         nextState = "GREEN";
@@ -3350,14 +3387,13 @@ const isRelock = acceptedMode === "relock";
       gpsHealthyRef.current = isHealthy;
 
       // --- Mode de référence (HORAIRE / GPS) ---
-      // Nouvelle règle : on reste en GPS tant que l'état n'est pas RED.
-      // On bascule en HORAIRE uniquement si GPS = RED (pas de fix OU figeage rouge).
-      const isRed = gpsStateRef.current === "RED";
-
-      // ⚠️ IMPORTANT : dans ce handler, on s’appuie sur l’état React `referenceMode`
-      // (fiable car ce useEffect dépend de `referenceMode`) et on garde le ref synchronisé
-      // immédiatement pour éviter les “ratés” entre deux events GPS.
-      referenceModeRef.current = referenceMode;
+      // Règle centrale :
+      // - GREEN  => GPS autorisé
+      // - ORANGE => HORAIRE obligatoire
+      // - RED    => HORAIRE obligatoire
+      const stateForMode = gpsStateRef.current;
+      const nextMode: ReferenceMode = stateForMode === "GREEN" ? "GPS" : "HORAIRE";
+      const currentMode = referenceModeRef.current;
 
       // On n'utilise plus l'hystérésis ORANGE : si un timer traîne, on le coupe.
       if (orangeTimeoutRef.current !== null) {
@@ -3373,24 +3409,27 @@ const isRelock = acceptedMode === "relock";
 
         logTestEvent("gps:orange-hysteresis-abort", {
           reason: "rule_changed_no_hysteresis",
-          state: gpsStateRef.current,
+          state: stateForMode,
           elapsedMs,
           orangeTimeoutMs: ORANGE_TIMEOUT_MS,
-          mode: referenceModeRef.current,
+          mode: currentMode,
         });
       }
-logTestEvent("gps:mode-check", {
-  gpsState: gpsStateRef.current,
-  referenceModeState: referenceMode,
-  referenceModeRef: referenceModeRef.current,
-});
 
-      if (isRed) {
-        // RED => bascule immédiate en HORAIRE
-        if (referenceMode !== "HORAIRE") {
-          console.log("[FT][gps] GPS RED -> mode HORAIRE");
+      logTestEvent("gps:mode-check", {
+        gpsState: stateForMode,
+        referenceModeState: referenceMode,
+        referenceModeRef: currentMode,
+        nextMode,
+      });
 
-          const redReason = pkIncoherentNow
+      if (currentMode !== nextMode) {
+        const modeReason =
+          stateForMode === "GREEN"
+            ? "gps_green"
+            : stateForMode === "ORANGE"
+            ? "gps_orange_forces_horaire"
+            : pkIncoherentNow
             ? "gps_red_pk_incoherent"
             : pkFrozenRed
             ? "gps_red_pk_frozen"
@@ -3402,51 +3441,31 @@ logTestEvent("gps:mode-check", {
             ? "gps_red_stale_fix"
             : "gps_red_other";
 
-          logTestEvent("gps:mode-change", {
-            prevMode: referenceModeRef.current,
-            nextMode: "HORAIRE",
-            reason: redReason,
-            state: gpsStateRef.current,
-            reasonCodes,
-            hasGpsFix,
-            onLine,
-            isStale,
-            ageSec,
-            pkRaw: pkRaw ?? null,
-            pkUsed: typeof pk === "number" && Number.isFinite(pk) ? pk : null,
-            pkJumpGuardActive: pkJumpGuardActiveRef.current,
-            gpsFreshSec: GPS_FRESH_SEC,
-            gpsFreezeWindowMs: GPS_FREEZE_WINDOW_MS,
-            gpsFreezeToRedMs: GPS_FREEZE_TO_RED_MS,
-            gpsFreezePkDeltaKm: GPS_FREEZE_PK_DELTA_KM,
-            orangeTimeoutMs: ORANGE_TIMEOUT_MS,
-          });
+        console.log("[FT][gps] GPS", stateForMode, "-> mode", nextMode);
 
-          // 🔒 synchro immédiate du ref pour les events suivants
-          referenceModeRef.current = "HORAIRE";
-          setReferenceMode("HORAIRE");
-        }
-      } else {
-        // GREEN ou ORANGE => mode GPS
-        if (referenceMode !== "GPS") {
-          console.log("[FT][gps] GPS non-RED -> mode GPS");
+        logTestEvent("gps:mode-change", {
+          prevMode: currentMode,
+          nextMode,
+          reason: modeReason,
+          state: stateForMode,
+          reasonCodes,
+          hasGpsFix,
+          onLine,
+          isStale,
+          ageSec,
+          pkRaw: pkRaw ?? null,
+          pkUsed: typeof pk === "number" && Number.isFinite(pk) ? pk : null,
+          pkJumpGuardActive: pkJumpGuardActiveRef.current,
+          gpsFreshSec: GPS_FRESH_SEC,
+          gpsFreezeWindowMs: GPS_FREEZE_WINDOW_MS,
+          gpsFreezeToRedMs: GPS_FREEZE_TO_RED_MS,
+          gpsFreezePkDeltaKm: GPS_FREEZE_PK_DELTA_KM,
+          orangeTimeoutMs: ORANGE_TIMEOUT_MS,
+        });
 
-          logTestEvent("gps:mode-change", {
-            prevMode: referenceModeRef.current,
-            nextMode: "GPS",
-            reason: "gps_not_red",
-            state: gpsStateRef.current,
-            gpsFreshSec: GPS_FRESH_SEC,
-            gpsFreezeWindowMs: GPS_FREEZE_WINDOW_MS,
-            gpsFreezeToRedMs: GPS_FREEZE_TO_RED_MS,
-            gpsFreezePkDeltaKm: GPS_FREEZE_PK_DELTA_KM,
-            orangeTimeoutMs: ORANGE_TIMEOUT_MS,
-          });
-
-          // 🔒 synchro immédiate du ref pour les events suivants
-          referenceModeRef.current = "GPS";
-          setReferenceMode("GPS");
-        }
+        // Synchro immédiate du ref pour les events suivants
+        referenceModeRef.current = nextMode;
+        setReferenceMode(nextMode);
       }
 
 
@@ -5117,16 +5136,11 @@ if (hasFranceFtLocal) {
     });
 
     window.dispatchEvent(
-      new CustomEvent("ft:auto-scroll-change", {
-        detail: { enabled: false },
-      })
-    );
+  new CustomEvent("lim:hourly-mode", {
+    detail: { enabled: true, standby: true },
+  })
+);
 
-    window.dispatchEvent(
-      new CustomEvent("lim:hourly-mode", {
-        detail: { enabled: false, standby: true },
-      })
-    );
   };
 
   for (let i = 0; i < rawEntries.length; i++) {

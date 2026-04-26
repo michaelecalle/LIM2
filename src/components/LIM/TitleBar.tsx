@@ -3063,16 +3063,25 @@ setAutoScrollStartedOnce(next)
                 type="button"
                 className={`h-7 w-7 rounded-full flex items-center justify-center text-[12px] bg-white dark:bg-zinc-900 transition cursor-default
                   ${
-                    referenceMode === 'GPS'
+                    !autoScrollButtonActive
                       ? 'border-[3px] border-zinc-400 text-zinc-500 dark:border-zinc-500 dark:text-zinc-300'
                       : standbyMode
                         ? 'border-[3px] border-orange-400 text-orange-500 dark:text-orange-300'
-                        : autoScroll
+                        : referenceMode === 'HORAIRE'
                           ? 'border-[3px] border-emerald-400 text-emerald-500 dark:text-emerald-300'
-                          : 'border-[3px] border-red-500 text-red-500 dark:text-red-400'
+                          : 'border-[3px] border-zinc-400 text-zinc-500 dark:border-zinc-500 dark:text-zinc-300'
                   }
                 `}
-                aria-pressed={referenceMode === 'HORAIRE' && hourlyMode}
+                title={
+                  !autoScrollButtonActive
+                    ? 'Mode horaire inactif : autoscroll désactivé'
+                    : standbyMode
+                      ? 'Mode horaire en standby'
+                      : referenceMode === 'HORAIRE'
+                        ? 'Mode horaire actif'
+                        : 'Mode horaire disponible mais non actif'
+                }
+                aria-pressed={autoScrollButtonActive && referenceMode === 'HORAIRE' && hourlyMode}
               >
                 <span>🕑</span>
               </button>
