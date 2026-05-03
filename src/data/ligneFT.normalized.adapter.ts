@@ -195,6 +195,116 @@ function buildCsvZonesFromDisplayedRows(
   return zones;
 }
 
+type VariantDayKey =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+  | "sunday";
+
+declare global {
+  interface Window {
+    __LIM_TEST_DATE_ISO__?: string;
+  }
+}
+
+function formatDateToIso(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseIsoDateForTest(value: string): Date | undefined {
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return undefined;
+
+  const parsed = new Date(`${trimmed}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+
+  return parsed;
+}
+
+function getCurrentVariantReferenceDate(): Date {
+  if (typeof window !== "undefined") {
+    const override = window.__LIM_TEST_DATE_ISO__;
+    if (typeof override === "string") {
+      const parsedOverride = parseIsoDateForTest(override);
+      if (parsedOverride) return parsedOverride;
+    }
+  }
+
+  return new Date();
+}
+
+function getCurrentLocalDateIso(): string {
+  return formatDateToIso(getCurrentVariantReferenceDate());
+}
+
+function getCurrentDayKey(): VariantDayKey {
+  const dayIndex = getCurrentVariantReferenceDate().getDay();
+
+  switch (dayIndex) {
+    case 0:
+      return "sunday";
+    case 1:
+      return "monday";
+    case 2:
+      return "tuesday";
+    case 3:
+      return "wednesday";
+    case 4:
+      return "thursday";
+    case 5:
+      return "friday";
+    case 6:
+      return "saturday";
+    default:
+      return "monday";
+  }
+}
+
+function isDateWithinRange(
+  dateIso: string,
+  startDate: string | undefined,
+  endDate: string | undefined
+): boolean {
+  if (startDate && dateIso < startDate) return false;
+  if (endDate && dateIso > endDate) return false;
+  return true;
+}
+
+function getActiveVariantByRowKey(
+  train: NormalizedTrain
+): Record<string, NormalizedTrainRowOverride> | undefined {
+  const variants = (train as any).variants;
+  if (!Array.isArray(variants) || variants.length === 0) return undefined;
+
+  const currentDateIso = getCurrentLocalDateIso();
+  const currentDayKey = getCurrentDayKey();
+
+  const matchedVariant = variants.find((variant: any) => {
+    const validity = variant?.meta?.validity;
+    if (!validity) return false;
+
+    const startDate = asNonEmptyString(validity.startDate);
+    const endDate = asNonEmptyString(validity.endDate);
+
+    if (!isDateWithinRange(currentDateIso, startDate, endDate)) {
+      return false;
+    }
+
+    const dayValue = validity?.days?.[currentDayKey];
+    return dayValue === true;
+  });
+
+  if (!matchedVariant?.byRowKey) return undefined;
+
+  return matchedVariant.byRowKey as Record<string, NormalizedTrainRowOverride>;
+}
+
 function getTrainOverrides(
   trainNumber: number | string | null | undefined
 ): Record<string, NormalizedTrainRowOverride> {
@@ -203,7 +313,12 @@ function getTrainOverrides(
   const key = String(trainNumber).trim() as NormalizedTrainKey;
   const train = LIGNE_FT_NORMALIZED.trains[key];
 
-  if (!train || !train.byRowKey) return {};
+  if (!train) return {};
+
+  const activeVariantByRowKey = getActiveVariantByRowKey(train);
+  if (activeVariantByRowKey) return activeVariantByRowKey;
+
+  if (!train.byRowKey) return {};
 
   return train.byRowKey;
 }
