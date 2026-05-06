@@ -2034,10 +2034,11 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
               }
             }
 
-            // On passe en Standby SANS couper l’autoscroll :
-            // l’autoscroll reste engagé, mais il est mis en pause sur la ligne d’arrivée.
+// On passe en vrai Standby automatique :
+// l’autoscroll reste engagé mais entre dans
+// la même logique interne qu’un standby manuel.
 window.dispatchEvent(
-  new CustomEvent("lim:hourly-mode", {
+  new CustomEvent("ft:auto-scroll-change", {
     detail: { enabled: true, standby: true },
   })
 );
