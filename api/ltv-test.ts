@@ -1,9 +1,19 @@
 export default async function handler(req: Request): Promise<Response> {
   const url =
-    "https://services7.arcgis.com/XTupIrLX53AjaJqO/arcgis/rest/services/LTV_2/FeatureServer/2/query?f=json&resultOffset=0&resultRecordCount=1&where=FICHERO_LTV_VIGOR+LIKE+%27%25_DSLTV%25%27&orderByFields=&outFields=*&returnGeometry=false&spatialRel=esriSpatialRelIntersects";
+    "https://services7.arcgis.com/XTupIrLX53AjaJqO/arcgis/rest/services/LTV_2/FeatureServer/2/query?f=json&resultRecordCount=1&where=1%3D1&outFields=OBJECTID&returnGeometry=false";
 
   try {
-    const response = await fetch(url);
+    const controller = new AbortController();
+
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 5000);
+
+    const response = await fetch(url, {
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
 
     if (!response.ok) {
       return Response.json(
@@ -19,7 +29,6 @@ export default async function handler(req: Request): Promise<Response> {
 
     return Response.json({
       ok: true,
-      source: "ADIF ArcGIS LTV_2 FeatureServer/2",
       fetchedAt: new Date().toISOString(),
       data,
     });
