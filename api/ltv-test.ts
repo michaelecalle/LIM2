@@ -4,7 +4,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log("LTV test start");
 
   const url =
-    "https://services7.arcgis.com/XTupIrLX53AjaJqO/arcgis/rest/services/LTV_2/FeatureServer/2/query?f=json&resultRecordCount=1&where=1%3D1&outFields=OBJECTID&returnGeometry=false";
+    "https://services7.arcgis.com/XTupIrLX53AjaJqO/arcgis/rest/services/LTV_2/FeatureServer/2/query?f=json&resultRecordCount=1&where=1%3D1&outFields=*&returnGeometry=false";
 
   try {
     console.log("Before fetch");
@@ -19,6 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({
       ok: true,
+      mode: "one-record-all-fields",
       fetchedAt: new Date().toISOString(),
       data,
     });
