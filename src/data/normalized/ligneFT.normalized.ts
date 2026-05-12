@@ -2110,11 +2110,162 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     ]
   },
   "trains": {
+    "9705": {
+      "meta": {
+        "origine": "BARCELONA SANTS",
+        "destination": "LIMITE ADIF - LFPSA",
+        "ligne": "050",
+        "numeroEspagne": "",
+        "numeroFrance": "9704",
+        "categorieEspagne": "T200",
+        "categorieFrance": "300",
+        "materiel": "TGV 2N2",
+        "composition": "US"
+      },
+      "byRowKey": {
+        "sn-data-0006": {
+          "hora": "15:17"
+        },
+        "sn-data-0012": {
+          "hora": "15:23",
+          "conc": "6"
+        },
+        "sn-data-0019": {
+          "hora": "15:32",
+          "conc": "9"
+        },
+        "sn-data-0020": {
+          "hora": "15:32",
+          "conc": "0"
+        },
+        "sn-data-0023": {
+          "hora": "15:34",
+          "conc": "2"
+        },
+        "sn-data-0030": {
+          "hora": "15:39",
+          "conc": "5"
+        },
+        "sn-data-0032": {
+          "hora": "15:45",
+          "conc": "6"
+        },
+        "sn-data-0034": {
+          "hora": "15:46",
+          "conc": "1"
+        },
+        "sn-data-0036": {
+          "hora": "15:53",
+          "conc": "7"
+        },
+        "sn-data-0039": {
+          "hora": "15:55",
+          "conc": "2"
+        },
+        "sn-data-0041": {
+          "hora": "16:01",
+          "com": "3",
+          "conc": "3"
+        },
+        "sn-data-0047": {
+          "com": "3",
+          "hora": "16:19",
+          "conc": "15"
+        },
+        "sn-data-0048": {
+          "hora": "16:24",
+          "conc": "5"
+        }
+      },
+      "variants": [
+        {
+          "meta": {
+            "origine": "BARCELONA SANTS",
+            "destination": "LIMITE ADIF - LFPSA",
+            "ligne": "050",
+            "numeroEspagne": "",
+            "numeroFrance": "9704",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
+            "materiel": "TGV 2N2",
+            "composition": "US",
+            "validity": {
+              "startDate": "",
+              "endDate": "",
+              "days": {
+                "monday": true,
+                "tuesday": true,
+                "wednesday": true,
+                "thursday": true,
+                "friday": true,
+                "saturday": true,
+                "sunday": true
+              }
+            }
+          },
+          "byRowKey": {
+            "sn-data-0006": {
+              "hora": "15:17"
+            },
+            "sn-data-0012": {
+              "hora": "15:23",
+              "conc": "6"
+            },
+            "sn-data-0019": {
+              "hora": "15:32",
+              "conc": "9"
+            },
+            "sn-data-0020": {
+              "hora": "15:32",
+              "conc": "0"
+            },
+            "sn-data-0023": {
+              "hora": "15:34",
+              "conc": "2"
+            },
+            "sn-data-0030": {
+              "hora": "15:39",
+              "conc": "5"
+            },
+            "sn-data-0032": {
+              "hora": "15:45",
+              "conc": "6"
+            },
+            "sn-data-0034": {
+              "hora": "15:46",
+              "conc": "1"
+            },
+            "sn-data-0036": {
+              "hora": "15:53",
+              "conc": "7"
+            },
+            "sn-data-0039": {
+              "hora": "15:55",
+              "conc": "2"
+            },
+            "sn-data-0041": {
+              "hora": "16:01",
+              "com": "3",
+              "conc": "3"
+            },
+            "sn-data-0047": {
+              "com": "3",
+              "hora": "16:19",
+              "conc": "15"
+            },
+            "sn-data-0048": {
+              "hora": "16:24",
+              "conc": "5"
+            }
+          }
+        }
+      ]
+    },
     "9707": {
       "meta": {
         "origine": "BARCELONA SANTS",
         "destination": "PERPIGNAN",
-        "ligne": "test",
+        "ligne": "050",
         "numeroEspagne": "",
         "numeroFrance": "9706",
         "categorieEspagne": "T200",
@@ -2201,7 +2352,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "meta": {
             "origine": "BARCELONA SANTS",
             "destination": "PERPIGNAN",
-            "ligne": "test",
+            "ligne": "050",
             "numeroEspagne": "",
             "numeroFrance": "9706",
             "categorieEspagne": "T200",
@@ -2485,6 +2636,137 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "sn-data-0055": {
               "hora": "10:52",
               "conc": "11"
+            }
+          }
+        }
+      ]
+    },
+    "9711": {
+      "meta": {
+        "origine": "LIMITE ADIF - LFPSA",
+        "destination": "BARCELONA SANTS",
+        "ligne": "050",
+        "numeroEspagne": "",
+        "numeroFrance": "9710",
+        "categorieEspagne": "T200",
+        "categorieFrance": "300",
+        "materiel": "TGV 2N2",
+        "composition": "US"
+      },
+      "byRowKey": {
+        "ns-data-0048": {
+          "hora": "12:24"
+        },
+        "ns-data-0047": {
+          "hora": "12:30",
+          "com": "3",
+          "conc": "3"
+        },
+        "ns-data-0041": {
+          "hora": "12:47",
+          "com": "3",
+          "conc": "14"
+        },
+        "ns-data-0039": {
+          "hora": "12:50"
+        },
+        "ns-data-0036": {
+          "hora": "12:53"
+        },
+        "ns-data-0034": {
+          "hora": "13:00"
+        },
+        "ns-data-0032": {
+          "hora": "13:01"
+        },
+        "ns-data-0030": {
+          "hora": "13:06"
+        },
+        "ns-data-0023": {
+          "hora": "13:12"
+        },
+        "ns-data-0020": {
+          "hora": "13:14"
+        },
+        "ns-data-0019": {
+          "hora": "13:15"
+        },
+        "ns-data-0012": {
+          "hora": "13:23"
+        },
+        "ns-data-0006": {
+          "hora": "13:36"
+        }
+      },
+      "variants": [
+        {
+          "meta": {
+            "origine": "LIMITE ADIF - LFPSA",
+            "destination": "BARCELONA SANTS",
+            "ligne": "050",
+            "numeroEspagne": "",
+            "numeroFrance": "9710",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
+            "materiel": "TGV 2N2",
+            "composition": "US",
+            "validity": {
+              "startDate": "",
+              "endDate": "",
+              "days": {
+                "monday": true,
+                "tuesday": true,
+                "wednesday": true,
+                "thursday": true,
+                "friday": true,
+                "saturday": true,
+                "sunday": true
+              }
+            }
+          },
+          "byRowKey": {
+            "ns-data-0048": {
+              "hora": "12:24"
+            },
+            "ns-data-0047": {
+              "hora": "12:30",
+              "com": "3",
+              "conc": "3"
+            },
+            "ns-data-0041": {
+              "hora": "12:47",
+              "com": "3",
+              "conc": "14"
+            },
+            "ns-data-0039": {
+              "hora": "12:50"
+            },
+            "ns-data-0036": {
+              "hora": "12:53"
+            },
+            "ns-data-0034": {
+              "hora": "13:00"
+            },
+            "ns-data-0032": {
+              "hora": "13:01"
+            },
+            "ns-data-0030": {
+              "hora": "13:06"
+            },
+            "ns-data-0023": {
+              "hora": "13:12"
+            },
+            "ns-data-0020": {
+              "hora": "13:14"
+            },
+            "ns-data-0019": {
+              "hora": "13:15"
+            },
+            "ns-data-0012": {
+              "hora": "13:23"
+            },
+            "ns-data-0006": {
+              "hora": "13:36"
             }
           }
         }
