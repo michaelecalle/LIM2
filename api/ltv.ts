@@ -6,10 +6,7 @@ import {
   setMemoryCache,
 } from "../src/data/ltvCache";
 
-import type {
-  LtvCache,
-  LtvEntry,
-} from "../src/data/ltvCache";
+import type { LtvCache, LtvEntry } from "../src/data/ltvCache.ts";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
