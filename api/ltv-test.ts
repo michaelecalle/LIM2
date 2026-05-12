@@ -17,12 +17,32 @@ const url =
 
     console.log("JSON parsed");
 
-    return res.status(200).json({
-      ok: true,
-      mode: "one-record-all-fields",
-      fetchedAt: new Date().toISOString(),
-      data,
-    });
+const ltv = data.features.map((feature: any) => ({
+  objectId: feature.attributes.OBJECTID,
+  ligne: feature.attributes.CODLINEA,
+  ligneDescription: feature.attributes.DESCLINEA,
+
+  pkDebut: feature.attributes.PKINI,
+  pkFin: feature.attributes.PKFIN,
+
+  vitesse: feature.attributes.RESTRICCIONVELOCIDAD,
+
+  voies: feature.attributes.VIAS,
+
+  motif: feature.attributes.MOTIVO,
+
+  debutZone: feature.attributes.DESCPSINI,
+  finZone: feature.attributes.DESCPSFIN,
+}));
+
+return res.status(200).json({
+  ok: true,
+  fetchedAt: new Date().toISOString(),
+
+  total: ltv.length,
+
+  ltv,
+});
   } catch (error) {
     console.error("LTV test error", error);
 
