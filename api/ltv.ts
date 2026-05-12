@@ -1,22 +1,49 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import {
-  isCacheValid,
-  memoryCache,
-  setMemoryCache,
-} from "../src/data/ltvCache";
+type LtvEntry = {
+  objectId: number;
+  ligne: string;
+  ligneDescription: string;
+  pkDebut: number;
+  pkFin: number;
+  vitesse: number;
+  voies: string;
+  motif: string;
+  debutZone: string;
+  finZone: string;
+};
 
-import type { LtvCache, LtvEntry } from "../src/data/ltvCache.ts";
+type LtvCache = {
+  fetchedAt: string;
+  total: number;
+  ltv: LtvEntry[];
+};
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
+
+let memoryCache: LtvCache = {
+  fetchedAt: "",
+  total: 0,
+  ltv: [],
+};
 
 const ADIF_LTV_URL =
   "https://services7.arcgis.com/XTupIrLX53AjaJqO/arcgis/rest/services/LTV_2/FeatureServer/0/query?f=json&resultRecordCount=200&where=CODLINEA%20IN%20(%27050%27,%27066%27)&outFields=OBJECTID,CODLINEA,DESCLINEA,PKINI,PKFIN,RESTRICCIONVELOCIDAD,VIAS,MOTIVO,DESCPSINI,DESCPSFIN&returnGeometry=false";
 
+function isCacheValid(): boolean {
+  if (!memoryCache.fetchedAt) {
+    return false;
+  }
+
+  const fetchedTime = new Date(memoryCache.fetchedAt).getTime();
+
+  return Date.now() - fetchedTime < ONE_HOUR_MS;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log("LTV request start");
 
-  if (isCacheValid(ONE_HOUR_MS)) {
+  if (isCacheValid()) {
     console.log("LTV cache hit");
 
     return res.status(200).json({
@@ -39,35 +66,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const ltv: LtvEntry[] = data.features.map((feature: any) => ({
       objectId: feature.attributes.OBJECTID,
-
       ligne: feature.attributes.CODLINEA,
       ligneDescription: feature.attributes.DESCLINEA,
-
       pkDebut: feature.attributes.PKINI,
       pkFin: feature.attributes.PKFIN,
-
       vitesse: feature.attributes.RESTRICCIONVELOCIDAD,
-
       voies: feature.attributes.VIAS,
-
       motif: feature.attributes.MOTIVO,
-
       debutZone: feature.attributes.DESCPSINI,
       finZone: feature.attributes.DESCPSFIN,
     }));
 
-    const payload: LtvCache = {
+    memoryCache = {
       fetchedAt: new Date().toISOString(),
       total: ltv.length,
       ltv,
     };
 
-    setMemoryCache(payload);
-
     return res.status(200).json({
       ok: true,
       source: "arcgis",
-      ...payload,
+      ...memoryCache,
     });
   } catch (error) {
     console.error("LTV fetch error", error);
