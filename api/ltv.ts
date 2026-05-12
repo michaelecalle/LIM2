@@ -1,10 +1,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+
 import {
   isCacheValid,
   memoryCache,
   setMemoryCache,
-  type LtvCache,
-  type LtvEntry,
+} from "../src/data/ltvCache";
+
+import type {
+  LtvCache,
+  LtvEntry,
 } from "../src/data/ltvCache";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
