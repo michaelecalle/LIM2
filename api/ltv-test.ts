@@ -3,8 +3,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log("LTV test start");
 
-  const url =
-    "https://services7.arcgis.com/XTupIrLX53AjaJqO/arcgis/rest/services/LTV_2/FeatureServer/0/query?f=json&resultRecordCount=1&where=1%3D1&outFields=*&returnGeometry=false";
+ const url =
+  "https://services7.arcgis.com/XTupIrLX53AjaJqO/arcgis/rest/services/LTV_2/FeatureServer/0/query?f=json&resultRecordCount=20&where=CODLINEA%3D%27050%27&outFields=OBJECTID,CODLINEA,DESCLINEA,PKINI,PKFIN,RESTRICCIONVELOCIDAD,VIAS,MOTIVO,DESCPSINI,DESCPSFIN&returnGeometry=false";
 
   try {
     console.log("Before fetch");
