@@ -23,6 +23,17 @@ type GpsPosition = {
 
 type ReferenceMode = "HORAIRE" | "GPS";
 
+type FtLtvRowForFtDisplay = {
+  code?: string;
+  section?: string;
+  via?: string;
+  kmIni?: string;
+  kmFin?: string;
+  speed?: string;
+  motivo?: string;
+  observaciones?: string;
+};
+
 type FTProps = {
   variant?: "classic" | "modern";
 };
@@ -271,6 +282,49 @@ export default function FT({ variant = "classic" }: FTProps) {
   const [routeStart, setRouteStart] = useState<string>("");
 
   const [routeEnd, setRouteEnd] = useState<string>("");
+
+  // LTV reçues depuis le tableau LTV, utilisées uniquement pour afficher
+  // des remarques orange dans la colonne Dependencia de la FT.
+  const [ftLtvRows, setFtLtvRows] = useState<FtLtvRowForFtDisplay[]>([]);
+
+  useEffect(() => {
+    const onLtvParsed = (e: Event) => {
+      const ce = e as CustomEvent<any>;
+      const detail = ce?.detail ?? {};
+
+      const incomingRows = Array.isArray(detail.rows)
+        ? (detail.rows as FtLtvRowForFtDisplay[])
+        : [];
+
+      setFtLtvRows(incomingRows);
+
+      console.log("[FT][LTV] ltv:parsed reçu", {
+        mode: detail.mode ?? null,
+        source: detail.source ?? null,
+        rowsCount: incomingRows.length,
+      });
+
+      logTestEvent("ft:ltv:rows-received", {
+        mode: detail.mode ?? null,
+        source: detail.source ?? null,
+        rowsCount: incomingRows.length,
+      });
+    };
+
+    const clear = () => {
+      setFtLtvRows([]);
+    };
+
+    window.addEventListener("ltv:parsed", onLtvParsed as EventListener);
+    window.addEventListener("lim:clear-pdf", clear as EventListener);
+    window.addEventListener("ft:clear-pdf", clear as EventListener);
+
+    return () => {
+      window.removeEventListener("ltv:parsed", onLtvParsed as EventListener);
+      window.removeEventListener("lim:clear-pdf", clear as EventListener);
+      window.removeEventListener("ft:clear-pdf", clear as EventListener);
+    };
+  }, []);
 
   // 🕐 Heures détectées (reçues via ft:heures)
   const [heuresDetectees, setHeuresDetectees] = useState<string[]>([]);
@@ -2448,6 +2502,112 @@ useEffect(() => {
     return visibleEntries;
   }, [isOdd, trainNumber, routeStart, routeEnd]);
 
+  const ltvNotesByRowIndex = useMemo(() => {
+    const result = new Map<number, string[]>();
+
+    if (isOdd === null || ftLtvRows.length === 0 || rawEntries.length === 0) {
+      return result;
+    }
+
+    const parsePk = (value: unknown): number | null => {
+      if (value === null || value === undefined) return null;
+
+      const text = String(value).trim().replace(",", ".");
+      if (!text) return null;
+
+      const n = Number(text);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const cleanLtvText = (value: unknown): string => {
+      return String(value ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
+    const isPkIncreasing = isOdd === true;
+
+    const findTargetRowIndex = (ltvEntryPk: number): number | null => {
+      let candidateIndex: number | null = null;
+      let firstAdifIndex: number | null = null;
+
+      for (let i = 0; i < rawEntries.length; i++) {
+        const entry = rawEntries[i] as any;
+        if (!entry || entry.isNoteOnly) continue;
+
+        const net = String(entry.network ?? "").trim();
+
+        // Les LTV actuelles sont sur la partie ADIF.
+        // Si le réseau est connu et non ADIF, on évite de poser la remarque dessus.
+        if (net && net !== "ADIF") continue;
+
+        const rowPk = parsePk(entry.pk_adif ?? entry.pk);
+        if (rowPk === null) continue;
+
+        if (firstAdifIndex === null) {
+          firstAdifIndex = i;
+        }
+
+        if (isPkIncreasing) {
+          if (rowPk <= ltvEntryPk) {
+            candidateIndex = i;
+          }
+        } else {
+          if (rowPk >= ltvEntryPk) {
+            candidateIndex = i;
+          }
+        }
+      }
+
+      return candidateIndex ?? firstAdifIndex;
+    };
+
+    for (const row of ftLtvRows) {
+      const pkIni = parsePk(row.kmIni);
+      const pkFin = parsePk(row.kmFin);
+
+      if (pkIni === null || pkFin === null) continue;
+
+      const ltvEntryPk = isPkIncreasing
+        ? Math.min(pkIni, pkFin)
+        : Math.max(pkIni, pkFin);
+
+      const targetRowIndex = findTargetRowIndex(ltvEntryPk);
+      if (targetRowIndex === null) continue;
+
+      const speed = String(row.speed ?? "").trim();
+      const kmIniText = String(row.kmIni ?? "").trim();
+      const kmFinText = String(row.kmFin ?? "").trim();
+      const observationText = cleanLtvText(row.observaciones);
+
+      const prefix = speed ? `LTV${speed}` : "LTV";
+      const noteBase = `${prefix} PK ${kmIniText} → ${kmFinText}`;
+const note = observationText
+  ? `${noteBase} — ${observationText}`
+  : noteBase;
+
+      if (!result.has(targetRowIndex)) {
+        result.set(targetRowIndex, []);
+      }
+
+      result.get(targetRowIndex)!.push(note);
+    }
+
+    console.log(
+      "[FT][LTV NOTES JSON]",
+      JSON.stringify(
+        Array.from(result.entries()).map(([rowIndex, notes]) => ({
+          rowIndex,
+          pk: rawEntries[rowIndex]?.pk ?? null,
+          dependencia: rawEntries[rowIndex]?.dependencia ?? null,
+          notes,
+        }))
+      )
+    );
+
+    return result;
+  }, [ftLtvRows, rawEntries, isOdd]);
+
   useEffect(() => {
     if (trainNumber === null) return;
 
@@ -3901,6 +4061,10 @@ window.dispatchEvent(
     );
   }
 
+  function renderLtvNoteLine(line: string) {
+    return <div className="ft-ltvnote-line">{line}</div>;
+  }
+
   function renderDependenciaCell(entry: FTEntry) {
     const hasNotesArray =
       Array.isArray(entry.notes) && entry.notes.length > 0;
@@ -5202,6 +5366,8 @@ if (hasFranceFtLocal) {
       continue;
     }
 
+    const ltvNoteLines = ltvNotesByRowIndex.get(i) ?? [];
+
     const nextEntry = rawEntries[i + 1];
     const hasNoteAfter = nextEntry && nextEntry.isNoteOnly === true;
 
@@ -5716,7 +5882,9 @@ const nivel =
       renderedRowIndex++;
     }
 
-    // 2) LIGNE PRINCIPALE (toujours)
+
+
+    // 3) LIGNE PRINCIPALE (toujours)
     rows.push(
       <tr
         className={
@@ -5939,6 +6107,42 @@ right: -1,
         <td className="ft-td ft-td-nivel">{nivel}</td>
       </tr>
     );
+
+    // LIGNE INTERMÉDIAIRE POUR LES LTV ORANGE SOUS LA LIGNE PRINCIPALE
+    if (ltvNoteLines.length > 0) {
+      const vmaxClassForLtv = csvZoneOpen ? " ft-v-csv-full" : "";
+
+      rows.push(
+        <tr className="ft-row-inter ft-row-ltv-note" key={`ltv-note-${i}`}>
+          {(() => {
+            renderedRowIndex++;
+            return <td className="ft-td"></td>;
+          })()}
+
+          <td className={"ft-td ft-v-cell" + vmaxClassForLtv}>
+            <div className="ft-v-inner text-center"></div>
+          </td>
+
+          <td className="ft-td" />
+
+          <td className="ft-td">
+            <div className="ft-dependencia-cell">
+              {ltvNoteLines.map((line, idx) => (
+                <div key={`ltv-${idx}`}>{renderLtvNoteLine(line)}</div>
+              ))}
+            </div>
+          </td>
+
+          <td className="ft-td" />
+          <td className="ft-td ft-hora-cell" />
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td ft-rc-cell" />
+          <td className="ft-td ft-td-nivel" />
+        </tr>
+      );
+    }
 
     // ✅ IMPORTANT : on compte cette vraie ligne principale
     mainRowCounter++;
@@ -6459,6 +6663,26 @@ right: -1,
         .ft-rednote-strong {
           font-weight: 700;
           font-style: normal;
+        }
+
+        .ft-ltvnote-line {
+          font-size: 0.62rem;
+          line-height: 1.08;
+          font-style: italic;
+          font-weight: 700;
+          color: #f97316;
+        }
+        .dark .ft-ltvnote-line {
+          color: #fb923c;
+        }
+
+        .ft-row-ltv-note .ft-td {
+          padding-top: 1px;
+          padding-bottom: 1px;
+        }
+
+        .ft-row-ltv-note .ft-dependencia-cell {
+          line-height: 1.08;
         }
 
         .ft-row-spacer .ft-td {
