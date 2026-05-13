@@ -19,11 +19,15 @@ import { RIBBON_POINTS } from '../../lib/ligne050_ribbon_dense'
 import { getOcrOnlineEnabled, setOcrOnlineEnabled } from '../../lib/ocrSettings'
 
 import { APP_VERSION } from '../version'
+import { LIGNE_FT_NORMALIZED } from '../../data/normalized/ligneFT.normalized'
 import {
   getTrainCategorieEspagne,
   getTrainCategorieFrance,
   getTrainComposition,
+  getTrainLigne,
+  getTrainMateriel,
   getTrainNumeroFrance,
+  getTrainRelation,
 } from '../../data/ligneFT.normalized.adapter'
 
 type LIMFields = {
@@ -49,13 +53,82 @@ type DisplayedCompositionState = {
   displayedComposition: string | undefined
   manualOverrideActive: boolean
 }
+
 function toTitleNumber(s?: string | null): string | undefined {
   if (!s) return undefined
+
   const m = String(s).match(/\d{1,}/)
   if (!m) return undefined
+
   const n = parseInt(m[0], 10)
   if (!Number.isFinite(n)) return undefined
+
   return String(n)
+}
+type ManualTrainOption = {
+  trainNumber: string
+  numeroFrance?: string
+  relation?: string
+  ligne?: string
+  categorieEspagne?: string
+  categorieFrance?: string
+  composition?: string
+  materiel?: string
+}
+
+function formatTodayForManualImport(): string {
+  const d = new Date()
+  const day = String(d.getDate()).padStart(2, '0')
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const year = d.getFullYear()
+  return `${day}/${month}/${year}`
+}
+
+function getCompositionMetrics(composition?: string): {
+  lengthMeters?: number
+  massTons?: number
+} {
+  const value = String(composition ?? '').trim().toUpperCase()
+
+  if (value === 'US') {
+    return { lengthMeters: 200, massTons: 433 }
+  }
+
+  if (value === 'UM') {
+    return { lengthMeters: 400, massTons: 866 }
+  }
+
+  return {}
+}
+
+function buildManualParsedFields(train: ManualTrainOption): LIMFields & Record<string, any> {
+  const today = formatTodayForManualImport()
+  const metrics = getCompositionMetrics(train.composition)
+
+  return {
+    train: train.trainNumber,
+    tren: train.trainNumber,
+    trenPadded: train.trainNumber,
+    type: train.categorieEspagne,
+    relation: train.relation,
+    origenDestino: train.relation,
+    rawDate: today,
+    fecha: today,
+    fechaRaw: today,
+    unit: train.composition,
+    composicion: train.composition,
+    material: train.materiel,
+    linea: train.ligne,
+    line: train.ligne,
+    lengthMeters: metrics.lengthMeters,
+    longitud: metrics.lengthMeters,
+    massTons: metrics.massTons,
+    masa: metrics.massTons,
+    operador: 'OUIGO',
+    operadorLogo: '/ouigo.svg',
+    ouigoLogoUrl: '/ouigo.svg',
+    source: 'manual_import',
+  }
 }
 
 /**
@@ -77,6 +150,39 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const [referenceMode, setReferenceMode] = useState<'HORAIRE' | 'GPS'>('HORAIRE')
   const [standbyMode, setStandbyMode] = useState(false)
   const [pdfMode, setPdfMode] = useState<'blue' | 'green' | 'red'>('blue')
+  const [manualImportOpen, setManualImportOpen] = useState(false)
+  const [manualImportSelectedTrain, setManualImportSelectedTrain] = useState('')
+
+  const manualImportTrainOptions = useMemo<ManualTrainOption[]>(() => {
+    const trains = (LIGNE_FT_NORMALIZED as any)?.trains ?? {}
+
+    return Object.keys(trains)
+      .map((trainNumber) => ({
+        trainNumber,
+        numeroFrance: getTrainNumeroFrance(trainNumber),
+        relation: getTrainRelation(trainNumber),
+        ligne: getTrainLigne(trainNumber),
+        categorieEspagne: getTrainCategorieEspagne(trainNumber),
+        categorieFrance: getTrainCategorieFrance(trainNumber),
+        composition: getTrainComposition(trainNumber),
+        materiel: getTrainMateriel(trainNumber),
+      }))
+      .sort((a, b) => {
+        const na = Number(a.trainNumber)
+        const nb = Number(b.trainNumber)
+
+        if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb
+        return a.trainNumber.localeCompare(b.trainNumber)
+      })
+  }, [])
+
+  const selectedManualImportTrain = useMemo(
+    () =>
+      manualImportTrainOptions.find(
+        (train) => train.trainNumber === manualImportSelectedTrain
+      ),
+    [manualImportTrainOptions, manualImportSelectedTrain]
+  )
 
   // ----- FT VIEW MODE (ES / FR / AUTO) -----
   // Option A : pas de persistance (ce n’est pas une préférence, c’est un état de travail)
@@ -1963,7 +2069,90 @@ ${coords}
   const currentPdfIdRef = useRef<string | null>(null)
   const currentPdfReplayKeyRef = useRef<string | null>(null)
 
-  const handleImportClick = () => inputRef.current?.click()
+  const handleImportClick = () => {
+    inputRef.current?.click()
+  }
+
+  const handleManualImportClick = () => {
+    if (simulationEnabled) {
+      logTestEvent('ui:blocked', { control: 'manualImportButton', source: 'titlebar' })
+      return
+    }
+
+    logTestEvent('ui:manual-import:click', {
+      source: 'titlebar',
+      pdfMode,
+      train: trainDisplay ?? null,
+    })
+
+    setManualImportOpen(true)
+  }
+
+  const validateManualImport = () => {
+    if (!selectedManualImportTrain) return
+
+    const trainNumber = selectedManualImportTrain.trainNumber
+    const parsedFields = buildManualParsedFields(selectedManualImportTrain)
+
+    stopPdfLoadingGuard()
+    setPdfLoading(false)
+
+    currentPdfFileRef.current = null
+    currentPdfIdRef.current = null
+    currentPdfReplayKeyRef.current = null
+
+    setFtViewMode('ES')
+    setAutoEngaged(false)
+    setPdfMode('green')
+    setManualImportOpen(false)
+
+    ;(window as any).__limLastParsed = parsedFields
+
+    logTestEvent('ui:manual-import:train-selected', {
+      source: 'titlebar',
+      trainNumber,
+      numeroFrance: selectedManualImportTrain.numeroFrance ?? null,
+      relation: selectedManualImportTrain.relation ?? null,
+      ligne: selectedManualImportTrain.ligne ?? null,
+    })
+
+    window.dispatchEvent(
+      new CustomEvent('lim:manual-train-selected', {
+        detail: {
+          source: 'titlebar',
+          trainNumber,
+          train: selectedManualImportTrain,
+        },
+      })
+    )
+
+    window.dispatchEvent(
+      new CustomEvent('lim:parsed', {
+        detail: parsedFields,
+      })
+    )
+
+    const n = parseInt(trainNumber, 10)
+    if (Number.isFinite(n)) {
+      window.dispatchEvent(
+        new CustomEvent('lim:train-change', {
+          detail: {
+            trainNumber: n,
+            source: 'manual_import',
+          },
+        })
+      )
+
+      window.dispatchEvent(
+        new CustomEvent('lim:train', {
+          detail: {
+            train: trainNumber,
+            source: 'manual_import',
+          },
+        })
+      )
+    }
+  }
 
   const computePdfId = async (file: File): Promise<string> => {
     const buf = await file.arrayBuffer()
@@ -2853,28 +3042,124 @@ const autoScrollButtonActive = autoScroll || autoScrollStartedOnce
 const IconFile = () => null
   return (
     <header id="lim-titlebar-root" className="surface-header rounded-2xl px-3 py-2 shadow-sm">
-      {pdfLoading && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[1px]">
-          <div className="rounded-2xl bg-white dark:bg-zinc-900 px-5 py-4 shadow-lg border border-zinc-200 dark:border-zinc-700 flex items-center gap-3">
-            <svg className="h-6 w-6 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
-              <circle
-                cx="12"
-                cy="12"
-                r="9"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3"
-                opacity="0.2"
-              />
-              <path
-                d="M21 12a9 9 0 0 0-9-9"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
-            </svg>
-            <div className="text-sm font-semibold">Traitement du PDF…</div>
+      {manualImportOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[1px]"
+          onClick={() => setManualImportOpen(false)}
+        >
+          <div
+            className="w-[min(520px,92vw)] rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-lg p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-lg font-semibold">Import manuel</div>
+                <div className="text-xs opacity-70">
+                  Sélection du train depuis le normalisé
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setManualImportOpen(false)}
+                className="h-8 px-3 text-xs rounded-md bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100 font-semibold"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-3" />
+
+            <div className="space-y-3">
+              <label className="block">
+                <div className="text-xs font-semibold opacity-70 mb-1">
+                  Train normalisé
+                </div>
+
+                <select
+                  value={manualImportSelectedTrain}
+                  onChange={(e) => setManualImportSelectedTrain(e.target.value)}
+                  className="w-full h-10 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm"
+                >
+                  <option value="">Sélectionner un train…</option>
+
+                  {manualImportTrainOptions.map((train) => (
+                    <option key={train.trainNumber} value={train.trainNumber}>
+                      {train.trainNumber}
+                      {train.numeroFrance ? ` / ${train.numeroFrance}` : ''}
+                      {train.relation ? ` — ${train.relation}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {selectedManualImportTrain && (
+                <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/70 dark:border-zinc-700/70 p-3 text-xs space-y-1">
+                  <div>
+                    <span className="font-semibold">Train ES : </span>
+                    {selectedManualImportTrain.trainNumber}
+                  </div>
+
+                  <div>
+                    <span className="font-semibold">Train FR : </span>
+                    {selectedManualImportTrain.numeroFrance ?? '—'}
+                  </div>
+
+                  <div>
+                    <span className="font-semibold">Relation : </span>
+                    {selectedManualImportTrain.relation ?? '—'}
+                  </div>
+
+                  <div>
+                    <span className="font-semibold">Ligne : </span>
+                    {selectedManualImportTrain.ligne ?? '—'}
+                  </div>
+
+                  <div>
+                    <span className="font-semibold">Catégorie ES : </span>
+                    {selectedManualImportTrain.categorieEspagne ?? '—'}
+                  </div>
+
+                  <div>
+                    <span className="font-semibold">Catégorie FR : </span>
+                    {selectedManualImportTrain.categorieFrance ?? '—'}
+                  </div>
+
+                  <div>
+                    <span className="font-semibold">Composition : </span>
+                    {selectedManualImportTrain.composition ?? '—'}
+                  </div>
+
+                  <div>
+                    <span className="font-semibold">Matériel : </span>
+                    {selectedManualImportTrain.materiel ?? '—'}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setManualImportOpen(false)}
+                  className="h-8 px-3 text-xs rounded-md bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100 font-semibold"
+                >
+                  Annuler
+                </button>
+
+                <button
+                  type="button"
+                  disabled={!selectedManualImportTrain}
+                  onClick={validateManualImport}
+                  className={
+                    selectedManualImportTrain
+                      ? 'h-8 px-3 text-xs rounded-md bg-violet-600 text-white font-semibold'
+                      : 'h-8 px-3 text-xs rounded-md bg-zinc-200 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500 font-semibold cursor-not-allowed'
+                  }
+                >
+                  Valider ce train
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -3201,6 +3486,17 @@ setAutoScrollStartedOnce(next)
           </div>
 
           {/* Importer PDF / modes */}
+          {pdfMode === 'blue' && (
+            <button
+              type="button"
+              onClick={handleManualImportClick}
+              className="h-8 px-3 text-xs rounded-md bg-violet-600 text-white font-semibold flex items-center gap-1"
+              title="Import manuel : sélectionner un train depuis le normalisé"
+            >
+              Import manuel
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => {

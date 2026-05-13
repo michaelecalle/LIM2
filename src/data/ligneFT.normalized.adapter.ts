@@ -453,6 +453,46 @@ export function getTrainComposition(
 
   return asNonEmptyString((train as any)?.meta?.composition);
 }
+
+export type NormalizedTrainOption = {
+  trainNumber: string;
+  numeroFrance?: string;
+  origine?: string;
+  destination?: string;
+  relation?: string;
+  ligne?: string;
+  categorieEspagne?: string;
+  categorieFrance?: string;
+  composition?: string;
+  materiel?: string;
+};
+
+export function getNormalizedTrainOptions(): NormalizedTrainOption[] {
+  return Object.keys(LIGNE_FT_NORMALIZED.trains)
+    .sort((a, b) => {
+      const na = Number(a);
+      const nb = Number(b);
+
+      if (Number.isFinite(na) && Number.isFinite(nb)) {
+        return na - nb;
+      }
+
+      return a.localeCompare(b);
+    })
+    .map((trainNumber) => ({
+      trainNumber,
+      numeroFrance: getTrainNumeroFrance(trainNumber),
+      origine: getTrainOrigine(trainNumber),
+      destination: getTrainDestination(trainNumber),
+      relation: getTrainRelation(trainNumber),
+      ligne: getTrainLigne(trainNumber),
+      categorieEspagne: getTrainCategorieEspagne(trainNumber),
+      categorieFrance: getTrainCategorieFrance(trainNumber),
+      composition: getTrainComposition(trainNumber),
+      materiel: getTrainMateriel(trainNumber),
+    }));
+}
+
 function getTrainOverrides(
   trainNumber: number | string | null | undefined
 ): Record<string, NormalizedTrainRowOverride> {
