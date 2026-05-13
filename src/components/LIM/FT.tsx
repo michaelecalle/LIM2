@@ -2448,7 +2448,56 @@ useEffect(() => {
     return visibleEntries;
   }, [isOdd, trainNumber, routeStart, routeEnd]);
 
-    useEffect(() => {
+  useEffect(() => {
+    if (trainNumber === null) return;
+
+    const parsePkForLtvRange = (value: unknown): number | null => {
+      if (value === null || value === undefined) return null;
+
+      const text = String(value).trim().replace(",", ".");
+      if (!text) return null;
+
+      const n = Number(text);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const pkValues = rawEntries
+      .filter((entry) => !entry.isNoteOnly)
+      .map((entry) => parsePkForLtvRange((entry as any).pk))
+      .filter((pk): pk is number => pk !== null);
+
+    if (pkValues.length === 0) return;
+
+    const firstPk = pkValues[0];
+    const lastPk = pkValues[pkValues.length - 1];
+    const minPk = Math.min(firstPk, lastPk);
+    const maxPk = Math.max(firstPk, lastPk);
+
+    const detail = {
+      trainNumber,
+      routeStart,
+      routeEnd,
+      firstPk,
+      lastPk,
+      minPk,
+      maxPk,
+      source: "ft",
+    };
+
+    (window as any).__limLastFtRoutePkRange = detail;
+
+    window.dispatchEvent(
+      new CustomEvent("ft:route-pk-range", {
+        detail,
+      })
+    );
+
+    console.log("[FT] ft:route-pk-range", detail);
+
+    logTestEvent("ft:route-pk-range", detail);
+  }, [rawEntries, trainNumber, routeStart, routeEnd]);
+
+  useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
 

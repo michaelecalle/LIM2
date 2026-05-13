@@ -186,6 +186,17 @@ type ManualLtvDisplayRow = {
   observaciones: string
 }
 
+type ManualFtRoutePkRange = {
+  trainNumber: number
+  routeStart?: string
+  routeEnd?: string
+  firstPk: number
+  lastPk: number
+  minPk: number
+  maxPk: number
+  source?: string
+}
+
 function getManualLtvApiUrl(): string {
   if (typeof window === 'undefined') return '/api/ltv'
 
@@ -259,28 +270,151 @@ function mapManualLtvEntryToDisplayRow(entry: ManualLtvApiEntry): ManualLtvDispl
   }
 }
 
-async function fetchManualLtvRows(): Promise<ManualLtvDisplayRow[]> {
+function getManualLtvPkSpan(
+  entry: ManualLtvApiEntry
+): { minPk: number; maxPk: number } | null {
+  const pkDebut =
+    typeof entry.pkDebut === "number" && Number.isFinite(entry.pkDebut)
+      ? entry.pkDebut
+      : null;
+
+  const pkFin =
+    typeof entry.pkFin === "number" && Number.isFinite(entry.pkFin)
+      ? entry.pkFin
+      : null;
+
+  if (pkDebut === null || pkFin === null) return null;
+
+  return {
+    minPk: Math.min(pkDebut, pkFin),
+    maxPk: Math.max(pkDebut, pkFin),
+  };
+}
+
+function manualLtvOverlapsRoute(
+  entry: ManualLtvApiEntry,
+  routePkRange: ManualFtRoutePkRange
+): boolean {
+  const ltvSpan = getManualLtvPkSpan(entry);
+  if (!ltvSpan) return false;
+
+  return (
+    ltvSpan.maxPk >= routePkRange.minPk &&
+    ltvSpan.minPk <= routePkRange.maxPk
+  );
+}
+
+function waitForFtRoutePkRange(
+  trainNumber: string,
+  timeoutMs = 1500
+): Promise<ManualFtRoutePkRange | null> {
+  const expectedTrainNumber = Number(trainNumber);
+
+  const existing = (window as any).__limLastFtRoutePkRange as
+    | ManualFtRoutePkRange
+    | undefined;
+
+  if (
+    existing &&
+    Number(existing.trainNumber) === expectedTrainNumber &&
+    typeof existing.minPk === "number" &&
+    Number.isFinite(existing.minPk) &&
+    typeof existing.maxPk === "number" &&
+    Number.isFinite(existing.maxPk)
+  ) {
+    return Promise.resolve(existing);
+  }
+
+  return new Promise((resolve) => {
+    let done = false;
+
+    const finish = (value: ManualFtRoutePkRange | null) => {
+      if (done) return;
+      done = true;
+
+      window.clearTimeout(timer);
+      window.removeEventListener("ft:route-pk-range", onRange as EventListener);
+
+      resolve(value);
+    };
+
+    const onRange = (event: Event) => {
+      const ce = event as CustomEvent<ManualFtRoutePkRange>;
+      const detail = ce.detail;
+
+      if (!detail) return;
+      if (Number(detail.trainNumber) !== expectedTrainNumber) return;
+
+      if (
+        typeof detail.minPk !== "number" ||
+        !Number.isFinite(detail.minPk) ||
+        typeof detail.maxPk !== "number" ||
+        !Number.isFinite(detail.maxPk)
+      ) {
+        return;
+      }
+
+      finish(detail);
+    };
+
+    const timer = window.setTimeout(() => {
+      const latest = (window as any).__limLastFtRoutePkRange as
+        | ManualFtRoutePkRange
+        | undefined;
+
+      if (
+        latest &&
+        Number(latest.trainNumber) === expectedTrainNumber &&
+        typeof latest.minPk === "number" &&
+        Number.isFinite(latest.minPk) &&
+        typeof latest.maxPk === "number" &&
+        Number.isFinite(latest.maxPk)
+      ) {
+        finish(latest);
+        return;
+      }
+
+      finish(null);
+    }, timeoutMs);
+
+    window.addEventListener("ft:route-pk-range", onRange as EventListener);
+  });
+}
+
+async function fetchManualLtvRows(
+  routePkRange: ManualFtRoutePkRange | null
+): Promise<ManualLtvDisplayRow[]> {
   const response = await fetch(getManualLtvApiUrl(), {
-    method: 'GET',
+    method: "GET",
     headers: {
-      Accept: 'application/json',
+      Accept: "application/json",
     },
-    cache: 'no-store',
-  })
+    cache: "no-store",
+  });
 
   if (!response.ok) {
-    throw new Error(`API LTV HTTP ${response.status}`)
+    throw new Error(`API LTV HTTP ${response.status}`);
   }
 
-  const payload = (await response.json()) as ManualLtvApiResponse
+  const payload = (await response.json()) as ManualLtvApiResponse;
 
   if (!payload.ok) {
-    throw new Error(payload.error ?? 'Réponse API LTV invalide')
+    throw new Error(payload.error ?? "Réponse API LTV invalide");
   }
 
-  const entries = Array.isArray(payload.ltv) ? payload.ltv : []
+  const entries = Array.isArray(payload.ltv) ? payload.ltv : [];
 
-  return entries.map(mapManualLtvEntryToDisplayRow)
+  const filteredEntries = routePkRange
+    ? entries.filter((entry) => manualLtvOverlapsRoute(entry, routePkRange))
+    : entries;
+
+  console.log("[TitleBar] LTV filtre PK route", {
+    routePkRange,
+    totalRows: entries.length,
+    filteredRows: filteredEntries.length,
+  });
+
+  return filteredEntries.map(mapManualLtvEntryToDisplayRow);
 }
 
 /**
@@ -2305,14 +2439,15 @@ ${coords}
       )
     }
 
-    void fetchManualLtvRows()
+    void waitForFtRoutePkRange(trainNumber)
+      .then((routePkRange) => fetchManualLtvRows(routePkRange))
       .then((manualLtvRows) => {
         console.log('[TitleBar] LTV import manuel chargées', {
           trainNumber,
           rowsCount: manualLtvRows.length,
           firstRow: manualLtvRows[0] ?? null,
         })
-
+        
         window.dispatchEvent(
           new CustomEvent('ltv:parsed', {
             detail: {
