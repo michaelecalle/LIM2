@@ -942,7 +942,7 @@ const LTV: React.FC = () => {
                 <td
                   className="ltv-td"
                   style={{
-                    fontSize: "8.5px",
+                    fontSize: "9.5px",
                     lineHeight: 1.05,
                     letterSpacing: "-0.35px",
                     whiteSpace: "nowrap",
@@ -955,7 +955,7 @@ const LTV: React.FC = () => {
                 <td
                   className="ltv-td"
                   style={{
-                    fontSize: "8.5px",
+                    fontSize: "9.5px",
                     lineHeight: 1.05,
                     letterSpacing: "-0.35px",
                     whiteSpace: "nowrap",
