@@ -939,10 +939,30 @@ const LTV: React.FC = () => {
                 <td className="ltv-td">{r.via}</td>
 
                 {/* Km. Ini */}
-                <td className="ltv-td">{r.kmIni}</td>
+                <td
+                  className="ltv-td"
+                  style={{
+                    fontSize: "8.5px",
+                    lineHeight: 1.05,
+                    letterSpacing: "-0.35px",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {r.kmIni}
+                </td>
 
                 {/* Km. Fin */}
-                <td className="ltv-td">{r.kmFin}</td>
+                <td
+                  className="ltv-td"
+                  style={{
+                    fontSize: "8.5px",
+                    lineHeight: 1.05,
+                    letterSpacing: "-0.35px",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {r.kmFin}
+                </td>
 
                 {/* Veloc. */}
                 <td className="ltv-td">{r.speed}</td>
