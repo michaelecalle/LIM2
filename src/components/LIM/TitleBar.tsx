@@ -201,11 +201,26 @@ function getManualLtvApiUrl(): string {
 function formatManualLtvPk(value: number | null | undefined): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return ''
 
-  return value.toFixed(3).replace(/\.?0+$/, '')
+  const text = value.toFixed(3).replace(/\.?0+$/, '')
+  return text.replace('.', ',')
+}
+
+function formatManualLtvDate(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return ''
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const day = String(date.getDate()).padStart(2, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const year = date.getFullYear()
+
+  return `${day}/${month}/${year}`
 }
 
 function isManualLtvYes(value: string | null | undefined): boolean {
-  return String(value ?? '').trim().toLowerCase() === 'si'
+  const text = String(value ?? '').trim().toLowerCase()
+  return text === 'si' || text === 'sí' || text === 'oui' || text === 'true' || text === '1'
 }
 
 function mapManualLtvEntryToDisplayRow(entry: ManualLtvApiEntry): ManualLtvDisplayRow {
@@ -215,11 +230,11 @@ function mapManualLtvEntryToDisplayRow(entry: ManualLtvApiEntry): ManualLtvDispl
     [entry.debutZone, entry.finZone]
       .map((value) => String(value ?? '').trim())
       .filter(Boolean)
-      .join(' - ')
+      .join(' - ') || String(entry.ligneDescription ?? '').trim()
 
   const observacionesParts = [
-    entry.typeTrainObs,
     entry.observations,
+    entry.typeTrainObs,
   ]
     .map((value) => String(value ?? '').trim())
     .filter(Boolean)
@@ -232,9 +247,9 @@ function mapManualLtvEntryToDisplayRow(entry: ManualLtvApiEntry): ManualLtvDispl
     kmFin: formatManualLtvPk(entry.pkFin),
     speed: String(entry.vitesse ?? ''),
     motivo: String(entry.motif ?? ''),
-    fecha1: '',
+    fecha1: formatManualLtvDate(entry.dateDebutVigueur),
     hora1: entry.heureDebutVigueur ?? '',
-    fecha2: '',
+    fecha2: formatManualLtvDate(entry.dateFinPrevue),
     hora2: entry.heureFinPrevue ?? '',
     viaCheck: isManualLtvYes(entry.nonSignaleeVoie),
     sistema: isManualLtvYes(entry.nonSignaleeSysteme),
@@ -250,6 +265,7 @@ async function fetchManualLtvRows(): Promise<ManualLtvDisplayRow[]> {
     headers: {
       Accept: 'application/json',
     },
+    cache: 'no-store',
   })
 
   if (!response.ok) {
@@ -2288,6 +2304,53 @@ ${coords}
         })
       )
     }
+
+    void fetchManualLtvRows()
+      .then((manualLtvRows) => {
+        console.log('[TitleBar] LTV import manuel chargées', {
+          trainNumber,
+          rowsCount: manualLtvRows.length,
+          firstRow: manualLtvRows[0] ?? null,
+        })
+
+        window.dispatchEvent(
+          new CustomEvent('ltv:parsed', {
+            detail: {
+              mode: manualLtvRows.length > 0 ? 'DISPLAY_DIRECT' : 'NO_LTV',
+              rows: manualLtvRows,
+              source: 'manual_import',
+              trainNumber,
+            },
+          })
+        )
+
+        logTestEvent('ltv:manual-import:loaded', {
+          source: 'titlebar',
+          trainNumber,
+          rowsCount: manualLtvRows.length,
+        })
+      })
+      .catch((error) => {
+        console.warn('[TitleBar] Import manuel LTV impossible', error)
+
+        logTestEvent('ltv:manual-import:failed', {
+          source: 'titlebar',
+          trainNumber,
+          error: error instanceof Error ? error.message : String(error),
+        })
+
+        window.dispatchEvent(
+          new CustomEvent('ltv:parsed', {
+            detail: {
+              mode: 'NO_LTV',
+              rows: [],
+              source: 'manual_import',
+              trainNumber,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          })
+        )
+      })
   }
 
   const computePdfId = async (file: File): Promise<string> => {
