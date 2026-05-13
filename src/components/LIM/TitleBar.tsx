@@ -186,6 +186,16 @@ type ManualLtvDisplayRow = {
   observaciones: string
 }
 
+type ManualLtvRowsResult = {
+  rows: ManualLtvDisplayRow[]
+  meta: {
+    fetchedAt?: string
+    source?: string
+    total?: number
+    displayedCount: number
+  }
+}
+
 type ManualFtRoutePkRange = {
   trainNumber: number
   routeStart?: string
@@ -383,7 +393,7 @@ function waitForFtRoutePkRange(
 
 async function fetchManualLtvRows(
   routePkRange: ManualFtRoutePkRange | null
-): Promise<ManualLtvDisplayRow[]> {
+): Promise<ManualLtvRowsResult> {
   const response = await fetch(getManualLtvApiUrl(), {
     method: "GET",
     headers: {
@@ -414,7 +424,20 @@ async function fetchManualLtvRows(
     filteredRows: filteredEntries.length,
   });
 
-  return filteredEntries.map(mapManualLtvEntryToDisplayRow);
+  const rows = filteredEntries.map(mapManualLtvEntryToDisplayRow)
+
+  return {
+    rows,
+    meta: {
+      fetchedAt: typeof payload.fetchedAt === 'string' ? payload.fetchedAt : undefined,
+      source: typeof payload.source === 'string' ? payload.source : undefined,
+      total:
+        typeof payload.total === 'number' && Number.isFinite(payload.total)
+          ? payload.total
+          : entries.length,
+      displayedCount: rows.length,
+    },
+  };
 }
 
 /**
@@ -2441,13 +2464,14 @@ ${coords}
 
     void waitForFtRoutePkRange(trainNumber)
       .then((routePkRange) => fetchManualLtvRows(routePkRange))
-      .then((manualLtvRows) => {
+      .then(({ rows: manualLtvRows, meta: manualLtvMeta }) => {
         console.log('[TitleBar] LTV import manuel chargées', {
           trainNumber,
           rowsCount: manualLtvRows.length,
           firstRow: manualLtvRows[0] ?? null,
+          meta: manualLtvMeta,
         })
-        
+
         window.dispatchEvent(
           new CustomEvent('ltv:parsed', {
             detail: {
@@ -2455,6 +2479,9 @@ ${coords}
               rows: manualLtvRows,
               source: 'manual_import',
               trainNumber,
+              meta: manualLtvMeta,
+              fetchedAt: manualLtvMeta.fetchedAt,
+              displayedCount: manualLtvMeta.displayedCount,
             },
           })
         )
@@ -2463,6 +2490,9 @@ ${coords}
           source: 'titlebar',
           trainNumber,
           rowsCount: manualLtvRows.length,
+          fetchedAt: manualLtvMeta.fetchedAt ?? null,
+          displayedCount: manualLtvMeta.displayedCount,
+          total: manualLtvMeta.total ?? null,
         })
       })
       .catch((error) => {

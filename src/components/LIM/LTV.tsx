@@ -58,6 +58,59 @@ type LTVEventDetail = {
     bottomPct: number
     chosen: boolean
   }[]
+  meta?: {
+    fetchedAt?: string
+    displayedCount?: number
+    total?: number
+    source?: string
+  }
+  fetchedAt?: string
+  displayedCount?: number
+}
+
+type LtvDisplayMeta = {
+  fetchedAt?: string
+  displayedCount?: number
+}
+
+function formatLtvFetchedAt(value?: string): string | null {
+  if (!value) return null
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+
+  const months = [
+    "janvier",
+    "février",
+    "mars",
+    "avril",
+    "mai",
+    "juin",
+    "juillet",
+    "août",
+    "septembre",
+    "octobre",
+    "novembre",
+    "décembre",
+  ]
+
+  const day = String(date.getDate()).padStart(2, "0")
+  const month = months[date.getMonth()]
+  const year = date.getFullYear()
+  const hour = String(date.getHours()).padStart(2, "0")
+  const minute = String(date.getMinutes()).padStart(2, "0")
+
+  return `${day} ${month} ${year} à ${hour}:${minute}`
+}
+
+function isLtvFetchedAtOlderThanTwoHours(value?: string): boolean {
+  if (!value) return false
+
+  const time = new Date(value).getTime()
+  if (!Number.isFinite(time)) return false
+
+  const ageMs = Date.now() - time
+  return ageMs > 2 * 60 * 60 * 1000
 }
 
 const LTV: React.FC = () => {
@@ -109,6 +162,9 @@ const LTV: React.FC = () => {
 
   // lignes LTV structurées pour DISPLAY_DIRECT
   const [rows, setRows] = useState<LtvRow[]>([])
+
+  // Métadonnées d’actualisation LTV envoyées par l’import manuel
+  const [ltvDisplayMeta, setLtvDisplayMeta] = useState<LtvDisplayMeta>({})
 
   // Bande horizontale de la page complète (issue de debugBands)
   // utilisée comme base pour le recadrage manuel déclenché depuis DISPLAY_DIRECT.
@@ -165,11 +221,34 @@ const LTV: React.FC = () => {
       const imgAlt = (ce.detail as any)?.altPreviewImageDataUrl
       const incomingRows = ce.detail?.rows ?? []
 
+      const detailAny = (ce.detail ?? {}) as any
+      const incomingMeta = (detailAny.meta ?? {}) as any
+
+      const displayedCountRaw =
+        incomingMeta.displayedCount ?? detailAny.displayedCount
+
+      const fetchedAtRaw =
+        incomingMeta.fetchedAt ?? detailAny.fetchedAt
+
+      const displayedCount =
+        typeof displayedCountRaw === "number" && Number.isFinite(displayedCountRaw)
+          ? displayedCountRaw
+          : undefined
+
+      const fetchedAt =
+        typeof fetchedAtRaw === "string" && fetchedAtRaw.trim().length > 0
+          ? fetchedAtRaw
+          : undefined
+
       console.log("[LTV] ltv:parsed reçu =", {
         mode,
         imgMainLen: imgMain?.length,
         imgAltLen: imgAlt?.length,
         rows: incomingRows,
+        meta: {
+          displayedCount,
+          fetchedAt,
+        },
       })
 
       // Images natives (bande LTV auto, etc.)
@@ -210,6 +289,10 @@ const LTV: React.FC = () => {
 
       if (mode) setLtvMode(mode)
       setRows(incomingRows)
+      setLtvDisplayMeta({
+        displayedCount,
+        fetchedAt,
+      })
 
       // --- DISPLAY_DIRECT : images candidates directement exploitables ---
       if (mode === "DISPLAY_DIRECT" && imgMain) {
@@ -1545,6 +1628,20 @@ const LTV: React.FC = () => {
     )
   }
 
+  const ltvFormattedFetchedAt = formatLtvFetchedAt(ltvDisplayMeta.fetchedAt)
+  const ltvCaptionIsStale = isLtvFetchedAtOlderThanTwoHours(
+    ltvDisplayMeta.fetchedAt
+  )
+
+  const ltvCaptionText =
+    typeof ltvDisplayMeta.displayedCount === "number" && ltvFormattedFetchedAt
+      ? `LTV : ${ltvDisplayMeta.displayedCount} - Actualisées le ${ltvFormattedFetchedAt}`
+      : typeof ltvDisplayMeta.displayedCount === "number"
+        ? `LTV : ${ltvDisplayMeta.displayedCount}`
+        : ltvFormattedFetchedAt
+          ? `LTV - Actualisées le ${ltvFormattedFetchedAt}`
+          : "LTV"
+
   // ------------------------------------------------------------------
   // Rendu global
   // ------------------------------------------------------------------
@@ -1643,6 +1740,24 @@ const LTV: React.FC = () => {
           letter-spacing: 0.3px;
           padding: 4px 0;
           line-height: 1.05;
+        }
+
+        .ltv-table caption.ltv-caption-stale {
+          color: #dc2626;
+          animation: ltv-caption-stale-blink 1s step-start infinite;
+        }
+
+        .dark .ltv-table caption.ltv-caption-stale {
+          color: #f87171;
+        }
+
+        @keyframes ltv-caption-stale-blink {
+          0%, 50% {
+            opacity: 1;
+          }
+          50.01%, 100% {
+            opacity: 0.25;
+          }
         }
 
         .ltv-th, .ltv-td {
@@ -1920,7 +2035,9 @@ const LTV: React.FC = () => {
       )}
 
       <table className="ltv-table">
-        <caption>LTV</caption>
+        <caption className={ltvCaptionIsStale ? "ltv-caption-stale" : undefined}>
+          {ltvCaptionText}
+        </caption>
 
         {/* Largeurs de colonnes calées */}
         <colgroup>
