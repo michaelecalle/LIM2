@@ -131,6 +131,142 @@ function buildManualParsedFields(train: ManualTrainOption): LIMFields & Record<s
   }
 }
 
+type ManualLtvApiEntry = {
+  objectId: number
+  ltvId: number | null
+  ligne: string
+  ligneDescription: string
+  pkDebut: number
+  pkFin: number
+  vitesse: number
+  voies: string
+  motif: string
+  debutZone: string
+  finZone: string
+  csv: string | null
+  calendrier: string | null
+  dateDebutVigueur: number | null
+  heureDebutVigueur: string | null
+  dateFinPrevue: number | null
+  heureFinPrevue: string | null
+  horaire: string | null
+  nonSignaleeSysteme: string | null
+  nonSignaleeVoie: string | null
+  observations: string | null
+  vehiculeTete: string | null
+  typeTrain: string | null
+  typeTrainObs: string | null
+}
+
+type ManualLtvApiResponse = {
+  ok: boolean
+  source?: string
+  fetchedAt?: string
+  total?: number
+  ltv?: ManualLtvApiEntry[]
+  error?: string
+}
+
+type ManualLtvDisplayRow = {
+  code: string
+  section: string
+  via: string
+  kmIni: string
+  kmFin: string
+  speed: string
+  motivo: string
+  fecha1: string
+  hora1: string
+  fecha2: string
+  hora2: string
+  viaCheck: boolean
+  sistema: boolean
+  soloCabeza: boolean
+  csv: boolean
+  observaciones: string
+}
+
+function getManualLtvApiUrl(): string {
+  if (typeof window === 'undefined') return '/api/ltv'
+
+  const host = window.location.hostname
+
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return 'https://lim2.vercel.app/api/ltv'
+  }
+
+  return '/api/ltv'
+}
+
+function formatManualLtvPk(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return ''
+
+  return value.toFixed(3).replace(/\.?0+$/, '')
+}
+
+function isManualLtvYes(value: string | null | undefined): boolean {
+  return String(value ?? '').trim().toLowerCase() === 'si'
+}
+
+function mapManualLtvEntryToDisplayRow(entry: ManualLtvApiEntry): ManualLtvDisplayRow {
+  const code = String(entry.ltvId ?? entry.objectId ?? '').trim()
+
+  const section =
+    [entry.debutZone, entry.finZone]
+      .map((value) => String(value ?? '').trim())
+      .filter(Boolean)
+      .join(' - ')
+
+  const observacionesParts = [
+    entry.typeTrainObs,
+    entry.observations,
+  ]
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+
+  return {
+    code,
+    section,
+    via: String(entry.voies ?? ''),
+    kmIni: formatManualLtvPk(entry.pkDebut),
+    kmFin: formatManualLtvPk(entry.pkFin),
+    speed: String(entry.vitesse ?? ''),
+    motivo: String(entry.motif ?? ''),
+    fecha1: '',
+    hora1: entry.heureDebutVigueur ?? '',
+    fecha2: '',
+    hora2: entry.heureFinPrevue ?? '',
+    viaCheck: isManualLtvYes(entry.nonSignaleeVoie),
+    sistema: isManualLtvYes(entry.nonSignaleeSysteme),
+    soloCabeza: isManualLtvYes(entry.vehiculeTete),
+    csv: isManualLtvYes(entry.csv),
+    observaciones: observacionesParts.join('\n'),
+  }
+}
+
+async function fetchManualLtvRows(): Promise<ManualLtvDisplayRow[]> {
+  const response = await fetch(getManualLtvApiUrl(), {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`API LTV HTTP ${response.status}`)
+  }
+
+  const payload = (await response.json()) as ManualLtvApiResponse
+
+  if (!payload.ok) {
+    throw new Error(payload.error ?? 'Réponse API LTV invalide')
+  }
+
+  const entries = Array.isArray(payload.ltv) ? payload.ltv : []
+
+  return entries.map(mapManualLtvEntryToDisplayRow)
+}
+
 /**
  * TitleBar — LIMGPT α2.1 (+ keep-awake video trigger)
  */

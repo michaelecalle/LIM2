@@ -36,6 +36,12 @@ type LtvCache = {
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
+function applyCorsHeaders(res: VercelResponse) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
+}
+
 const ADIF_LTV_LAYER_URL =
   "https://services7.arcgis.com/XTupIrLX53AjaJqO/arcgis/rest/services/LTV_2/FeatureServer/0";
 
@@ -157,6 +163,12 @@ async function buildLtvFieldsDebugPayload() {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  applyCorsHeaders(res);
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
   console.log("LTV request start");
 
   const debug = getQueryParam(req, "debug");
