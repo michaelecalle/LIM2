@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 type LtvEntry = {
   objectId: number;
+  ltvId: number | null;
   ligne: string;
   ligneDescription: string;
   pkDebut: number;
@@ -11,6 +12,20 @@ type LtvEntry = {
   motif: string;
   debutZone: string;
   finZone: string;
+
+  csv: string | null;
+  calendrier: string | null;
+  dateDebutVigueur: number | null;
+  heureDebutVigueur: string | null;
+  dateFinPrevue: number | null;
+  heureFinPrevue: string | null;
+  horaire: string | null;
+  nonSignaleeSysteme: string | null;
+  nonSignaleeVoie: string | null;
+  observations: string | null;
+  vehiculeTete: string | null;
+  typeTrain: string | null;
+  typeTrainObs: string | null;
 };
 
 type LtvCache = {
@@ -32,8 +47,44 @@ let memoryCache: LtvCache = {
   ltv: [],
 };
 
-const ADIF_LTV_URL =
-  `${ADIF_LTV_QUERY_URL}?f=json&resultRecordCount=200&where=CODLINEA%20IN%20(%27050%27,%27066%27)&outFields=OBJECTID,CODLINEA,DESCLINEA,PKINI,PKFIN,RESTRICCIONVELOCIDAD,VIAS,MOTIVO,DESCPSINI,DESCPSFIN&returnGeometry=false`;
+const LTV_OUT_FIELDS = [
+  "OBJECTID",
+  "LTVID",
+  "CODLINEA",
+  "DESCLINEA",
+  "PKINI",
+  "PKFIN",
+  "RESTRICCIONVELOCIDAD",
+  "VIAS",
+  "MOTIVO",
+  "DESCPSINI",
+  "DESCPSFIN",
+  "CSV",
+  "CALENDARIO",
+  "FECHAVIGORLTV",
+  "HORAVIGORLTV",
+  "FECHAFINPREV",
+  "HORAFINPREV",
+  "HORARIO",
+  "NOSENIALIZADASISTEMA",
+  "NOSENIALIZADAVIA",
+  "OBSERVACIONES",
+  "VEHICULOCABEZA",
+  "TIPOTREN",
+  "TIPOTRENOBS",
+].join(",");
+
+const ADIF_LTV_URL = (() => {
+  const queryUrl = new URL(ADIF_LTV_QUERY_URL);
+
+  queryUrl.searchParams.set("f", "json");
+  queryUrl.searchParams.set("resultRecordCount", "200");
+  queryUrl.searchParams.set("where", "CODLINEA IN ('050','066')");
+  queryUrl.searchParams.set("outFields", LTV_OUT_FIELDS);
+  queryUrl.searchParams.set("returnGeometry", "false");
+
+  return queryUrl.toString();
+})();
 
 function isCacheValid(): boolean {
   if (!memoryCache.fetchedAt) {
@@ -149,18 +200,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const data = await response.json();
 
-    const ltv: LtvEntry[] = data.features.map((feature: any) => ({
-      objectId: feature.attributes.OBJECTID,
-      ligne: feature.attributes.CODLINEA,
-      ligneDescription: feature.attributes.DESCLINEA,
-      pkDebut: feature.attributes.PKINI,
-      pkFin: feature.attributes.PKFIN,
-      vitesse: feature.attributes.RESTRICCIONVELOCIDAD,
-      voies: feature.attributes.VIAS,
-      motif: feature.attributes.MOTIVO,
-      debutZone: feature.attributes.DESCPSINI,
-      finZone: feature.attributes.DESCPSFIN,
-    }));
+    const ltv: LtvEntry[] = data.features.map((feature: any) => {
+      const attrs = feature.attributes ?? {};
+
+      return {
+        objectId: attrs.OBJECTID,
+        ltvId: attrs.LTVID ?? null,
+        ligne: attrs.CODLINEA,
+        ligneDescription: attrs.DESCLINEA,
+        pkDebut: attrs.PKINI,
+        pkFin: attrs.PKFIN,
+        vitesse: attrs.RESTRICCIONVELOCIDAD,
+        voies: attrs.VIAS,
+        motif: attrs.MOTIVO,
+        debutZone: attrs.DESCPSINI,
+        finZone: attrs.DESCPSFIN,
+
+        csv: attrs.CSV ?? null,
+        calendrier: attrs.CALENDARIO ?? null,
+        dateDebutVigueur: attrs.FECHAVIGORLTV ?? null,
+        heureDebutVigueur: attrs.HORAVIGORLTV ?? null,
+        dateFinPrevue: attrs.FECHAFINPREV ?? null,
+        heureFinPrevue: attrs.HORAFINPREV ?? null,
+        horaire: attrs.HORARIO ?? null,
+        nonSignaleeSysteme: attrs.NOSENIALIZADASISTEMA ?? null,
+        nonSignaleeVoie: attrs.NOSENIALIZADAVIA ?? null,
+        observations: attrs.OBSERVACIONES ?? null,
+        vehiculeTete: attrs.VEHICULOCABEZA ?? null,
+        typeTrain: attrs.TIPOTREN ?? null,
+        typeTrainObs: attrs.TIPOTRENOBS ?? null,
+      };
+    });
 
     memoryCache = {
       fetchedAt: new Date().toISOString(),
