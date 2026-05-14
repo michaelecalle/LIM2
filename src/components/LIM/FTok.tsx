@@ -67,11 +67,10 @@ export default function FT({ variant = "classic" }: FTProps) {
       if (s === "RED" || s === "ORANGE" || s === "GREEN") {
         setGpsStateUi(s);
 
-        // ✅ GPS passif : l'indicateur peut passer GREEN avant Play,
-        // mais la FT ne doit utiliser la référence GPS que lorsque l'autoscroll est engagé.
-        const gpsModeAllowed = autoScrollEnabledRef.current;
-        const nextMode: ReferenceMode =
-          s === "GREEN" && gpsModeAllowed ? "GPS" : "HORAIRE";
+        // ✅ Règle demandée :
+        // - GREEN => GPS
+        // - ORANGE/RED => HORAIRE
+        const nextMode: ReferenceMode = s === "GREEN" ? "GPS" : "HORAIRE";
 
         if (referenceModeRef.current !== nextMode) {
           referenceModeRef.current = nextMode;
@@ -1418,10 +1417,10 @@ if (referenceMode === "GPS") {
       const stateNow = gpsStateRef.current;
       const currentMode = referenceModeRef.current;
 
-      // ✅ GPS passif : GREEN ne bascule la FT en GPS que si l'autoscroll est engagé.
-      const gpsModeAllowed = autoScrollEnabledRef.current;
-      const nextMode: ReferenceMode =
-        stateNow === "GREEN" && gpsModeAllowed ? "GPS" : "HORAIRE";
+      // ✅ Règle demandée :
+      // - GREEN => GPS
+      // - ORANGE/RED => HORAIRE
+      const nextMode: ReferenceMode = stateNow === "GREEN" ? "GPS" : "HORAIRE";
 
       if (currentMode !== nextMode) {
         referenceModeRef.current = nextMode;
@@ -2219,9 +2218,9 @@ window.dispatchEvent(
   // (on autorise désormais le scroll à monter OU descendre),
   // quel que soit le mode de référence (HORAIRE ou GPS).
 useEffect(() => {
-    // ✅ GPS passif : sans autoscroll engagé, l'indicateur GPS peut évoluer,
-    // mais la FT ne doit pas se recentrer toute seule.
-    if (!autoScrollEnabled) return;
+    // ✅ En GPS, on autorise aussi le recentrage auto même si autoScrollEnabled est faux
+    // (sinon la ligne active suit le PK, mais le viewport ne suit pas).
+    if (!autoScrollEnabled && referenceMode !== "GPS") return;
     if (activeRowIndex == null) return;
 
     const container = scrollContainerRef.current;
@@ -3599,14 +3598,11 @@ const isRelock = acceptedMode === "relock";
 
       // --- Mode de référence (HORAIRE / GPS) ---
       // Règle centrale :
-      // - GREEN  => GPS autorisé uniquement si l'autoscroll est engagé
+      // - GREEN  => GPS autorisé
       // - ORANGE => HORAIRE obligatoire
       // - RED    => HORAIRE obligatoire
-      // Le GPS passif sert à l'indicateur TitleBar, pas au déplacement de la FT avant Play.
       const stateForMode = gpsStateRef.current;
-      const gpsModeAllowed = autoScrollEnabledRef.current;
-      const nextMode: ReferenceMode =
-        stateForMode === "GREEN" && gpsModeAllowed ? "GPS" : "HORAIRE";
+      const nextMode: ReferenceMode = stateForMode === "GREEN" ? "GPS" : "HORAIRE";
       const currentMode = referenceModeRef.current;
 
       // On n'utilise plus l'hystérésis ORANGE : si un timer traîne, on le coupe.
@@ -3632,8 +3628,6 @@ const isRelock = acceptedMode === "relock";
 
       logTestEvent("gps:mode-check", {
         gpsState: stateForMode,
-        gpsModeAllowed,
-        autoScrollEnabled: autoScrollEnabledRef.current,
         referenceModeState: referenceMode,
         referenceModeRef: currentMode,
         nextMode,
@@ -3641,9 +3635,7 @@ const isRelock = acceptedMode === "relock";
 
       if (currentMode !== nextMode) {
         const modeReason =
-          stateForMode === "GREEN" && !gpsModeAllowed
-            ? "gps_green_autoscroll_inactive"
-            : stateForMode === "GREEN"
+          stateForMode === "GREEN"
             ? "gps_green"
             : stateForMode === "ORANGE"
             ? "gps_orange_forces_horaire"
@@ -3666,8 +3658,6 @@ const isRelock = acceptedMode === "relock";
           nextMode,
           reason: modeReason,
           state: stateForMode,
-          gpsModeAllowed,
-          autoScrollEnabled: autoScrollEnabledRef.current,
           reasonCodes,
           hasGpsFix,
           onLine,

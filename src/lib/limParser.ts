@@ -178,7 +178,7 @@ export function extractFields(text: string): Fields {
   return out
 }
 
-async function readPdfFirstPage(file: File): Promise<string> {
+export async function readPdfFirstPageText(file: File): Promise<string> {
   const buf = await file.arrayBuffer()
   const loading = await (pdfjsLib as any).getDocument({ data: buf })
   const doc: PDFDocumentProxy = await loading.promise
@@ -214,7 +214,7 @@ function mergePreferA(a: any, b: any) {
 }
 
 export async function handleFile(file: File): Promise<Fields> {
-  const textA = await readPdfFirstPage(file)
+  const textA = await readPdfFirstPageText(file)
   const fieldsA = extractFields(textA || "")
 
   const needsOCR =

@@ -65,6 +65,7 @@ async function ocrFallbackMultiInternal(
     | string
     | undefined
   if (!apiKey) {
+    console.warn("[OCR ONLINE DIAG] missing VITE_GOOGLE_VISION_API_KEY")
     return { pagesText: [], layout: [] }
   }
 
@@ -97,20 +98,41 @@ async function ocrFallbackMultiInternal(
         }
       )
       if (!resp.ok) {
+        let bodyPreview = ""
+
+        try {
+          bodyPreview = (await resp.text()).slice(0, 500)
+        } catch {
+          bodyPreview = ""
+        }
+
+        console.warn("[OCR ONLINE DIAG] http-error", {
+          page: i,
+          status: resp.status,
+          statusText: resp.statusText,
+          bodyPreview,
+        })
+
         pagesText.push("")
         layout.push({ page: i, items: [] })
         continue
       }
 
       const json = await resp.json()
-      const annotation = json?.responses?.[0]?.fullTextAnnotation
+      const response0 = json?.responses?.[0]
+      const annotation = response0?.fullTextAnnotation
       const text: string | undefined = annotation?.text
+      const normalizedText = text ? norm(text) : ""
 
-      if (text) {
-        pagesText.push(norm(text))
-      } else {
-        pagesText.push("")
-      }
+      console.log("[OCR ONLINE DIAG] response", {
+        page: i,
+        hasError: !!response0?.error,
+        error: response0?.error ?? null,
+        textLength: normalizedText.length,
+        textPreview: normalizedText.slice(0, 500),
+      })
+
+      pagesText.push(normalizedText)
 
       // ---- Récupération du layout (mots + bounding boxes) ----
       const pageAnn = annotation?.pages?.[0]
@@ -178,7 +200,8 @@ async function ocrFallbackMultiInternal(
     }
 
     return { pagesText, layout }
-  } catch {
+  } catch (err) {
+    console.warn("[OCR ONLINE DIAG] internal-error", err)
     return { pagesText: [], layout: [] }
   }
 }

@@ -542,8 +542,6 @@ export default function TitleBar() {
   const [clock, setClock] = useState(() => formatTime(new Date()))
 const [autoScroll, setAutoScroll] = useState(false)
 const [autoScrollStartedOnce, setAutoScrollStartedOnce] = useState(false)
-const autoScrollRef = useRef(false)
-const autoScrollStartedOnceRef = useRef(false)
 const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const [hourlyMode, setHourlyMode] = useState(false)
   const [referenceMode, setReferenceMode] = useState<'HORAIRE' | 'GPS'>('HORAIRE')
@@ -934,14 +932,6 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       new CustomEvent('sim:enable', { detail: { enabled: simulationEnabled } })
     )
   }, [simulationEnabled])
-
-  useEffect(() => {
-    autoScrollRef.current = autoScroll
-  }, [autoScroll])
-
-  useEffect(() => {
-    autoScrollStartedOnceRef.current = autoScrollStartedOnce
-  }, [autoScrollStartedOnce])
 
   const [ocrOnlineEnabled, setOcrOnlineEnabledState] = useState(() =>
     getOcrOnlineEnabled()
@@ -2645,10 +2635,6 @@ ${coords}
     setAutoEngaged(false)
     setPdfMode('green')
 
-    if (!simulationEnabled) {
-      startGpsWatch()
-    }
-
     if (options.closeManualImport) {
       setManualImportOpen(false)
       setManualImportContext('manual')
@@ -3067,10 +3053,6 @@ ${coords}
       currentPdfFileRef.current = file
       currentPdfIdRef.current = pdfId
       currentPdfReplayKeyRef.current = replayKey
-
-      if (!simulationEnabled) {
-        startGpsWatch()
-      }
 
       if (pickedStartupMode === 'mixed') {
         // En mode mixte, on conserve le PDF pour le mode SECOURS,
@@ -3505,12 +3487,8 @@ if (enabled || standby) {
       if (state === 'GREEN') {
         setGpsState(2)
 
-// ✅ Au retour réel en GPS, on réaligne l’état visuel du bouton Play
-// uniquement si l'autoscroll a déjà été engagé.
-// Le GPS passif au chargement du parcours ne doit pas activer visuellement Play.
-if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
-  setAutoScrollStartedOnce(true)
-}
+// ✅ Au retour réel en GPS, on réaligne aussi l’état visuel du bouton Play
+setAutoScrollStartedOnce(true)
 
         if (typeof pk === 'number' && Number.isFinite(pk)) {
           setGpsPkDisplay(pk.toFixed(1))
@@ -3798,9 +3776,6 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
     }
 
     stopGpsWatch()
-    setGpsState(0)
-    setGpsPkDisplay(null)
-    setGpsPkPeekVisible(false)
 
     setScheduleDelta(null)
     setScheduleDeltaIsLarge(false)
@@ -4350,8 +4325,9 @@ setAutoScrollStartedOnce(next)
                     })
                   )
 
-                  if (!simulationEnabled && next) {
-                    startGpsWatch()
+                  if (!simulationEnabled) {
+                    if (next) startGpsWatch()
+                    else stopGpsWatch()
                   }
                 }}
                 className={`h-7 px-3 rounded-full flex items-center justify-center text-[11px] transition
@@ -4700,9 +4676,6 @@ if (autoScroll) {
                 }
 
                 stopGpsWatch()
-                setGpsState(0)
-                setGpsPkDisplay(null)
-                setGpsPkPeekVisible(false)
 
                 setScheduleDelta(null)
                 setScheduleDeltaIsLarge(false)
