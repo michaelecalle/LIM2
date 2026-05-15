@@ -2317,11 +2317,74 @@ ${coords}
     []
   )
 
+  useEffect(() => {
+    if (!manualOpen) {
+      setManualPdfObjectUrl(null)
+      return
+    }
+
+    let cancelled = false
+    let objectUrl: string | null = null
+
+    ;(async () => {
+      try {
+        const response = await fetch(MANUAL_PDF_PUBLIC_URL, {
+          cache: 'no-store',
+          headers: {
+            Accept: 'application/pdf',
+          },
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+
+        const contentType =
+          response.headers.get('content-type')?.toLowerCase() ?? ''
+
+        if (contentType.includes('text/html')) {
+          throw new Error(`Le fichier PDF demandé renvoie du HTML (${contentType})`)
+        }
+
+        const blob = await response.blob()
+        const pdfBlob =
+          blob.type === 'application/pdf'
+            ? blob
+            : new Blob([blob], { type: 'application/pdf' })
+
+        objectUrl = URL.createObjectURL(pdfBlob)
+
+        if (!cancelled) {
+          setManualPdfObjectUrl(objectUrl)
+        }
+      } catch (err) {
+        console.warn(
+          '[TitleBar] Chargement blob du manuel impossible, utilisation de l’URL directe',
+          err
+        )
+
+        if (!cancelled) {
+          setManualPdfObjectUrl(null)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl)
+      }
+    }
+  }, [manualOpen, MANUAL_PDF_PUBLIC_URL])
+
   const buildManualPdfSrc = (page: number): string => {
     const safePage =
       Number.isFinite(page) && page > 0 ? Math.trunc(page) : 1
 
-    return `/manuel-utilisateur-lim.pdf#page=${safePage}&toolbar=1&navpanes=0`
+    const baseUrl = manualPdfObjectUrl ?? MANUAL_PDF_PUBLIC_URL
+
+    return `${baseUrl}#page=${safePage}&toolbar=1&navpanes=0`
   }
 
   const openManualPageFromToc = (item: ManualTocItem) => {
@@ -5138,7 +5201,14 @@ if (autoScroll) {
           </details>
 
           {manualOpen && (
-            <div className="fixed left-0 right-0 bottom-0 top-16 z-[9998] bg-zinc-100/95 dark:bg-zinc-950/95 border-t border-zinc-200 dark:border-zinc-700">
+            <div
+              className="fixed left-0 right-0 z-[9998] bg-zinc-100/95 dark:bg-zinc-950/95 border-t border-zinc-200 dark:border-zinc-700 overflow-hidden"
+              style={{
+                top: '4rem',
+                height: 'calc(100vh - 4rem)',
+                maxHeight: 'calc(100dvh - 4rem)',
+              }}
+            >
               <div className="h-full flex flex-col gap-2 p-3">
                 <div className="shrink-0 flex items-center justify-between gap-3 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm px-3 py-2">
                   <div className="min-w-0">
@@ -5246,7 +5316,7 @@ if (autoScroll) {
 
                   <div className="min-h-0 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-white shadow-sm">
                     <iframe
-                      key={`${manualPage}-${manualActiveTocId}`}
+                      key={`${manualPdfObjectUrl ?? 'direct'}-${manualPage}-${manualActiveTocId}`}
                       title="Manuel utilisateur LIM"
                       src={buildManualPdfSrc(manualPage)}
                       className="h-full w-full border-0 bg-white"
