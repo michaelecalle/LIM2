@@ -2245,7 +2245,10 @@ ${coords}
   const [manualOpen, setManualOpen] = useState(false)
   const [manualPage, setManualPage] = useState(1)
   const [manualActiveTocId, setManualActiveTocId] = useState('cover')
+  const [manualPdfObjectUrl, setManualPdfObjectUrl] = useState<string | null>(null)
   const settingsDetailsRef = useRef<HTMLDetailsElement | null>(null)
+
+  const MANUAL_PDF_PUBLIC_URL = '/manuel-utilisateur-lim.pdf?limManual=1'
 
   type ManualTocItem = {
     id: string
