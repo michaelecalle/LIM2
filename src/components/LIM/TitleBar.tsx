@@ -21,8 +21,13 @@ import { ocrFallback as ocrFallbackRouter } from '../../lib/ocrRouter'
 import { ocrFallback as ocrFallbackLocal } from '../../lib/ocrLocalFallback'
 import { extractFields, readPdfFirstPageText } from '../../lib/limParser'
 
+import * as pdfjsLib from 'pdfjs-dist'
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+
 import { APP_VERSION } from '../version'
 import { LIGNE_FT_NORMALIZED } from '../../data/normalized/ligneFT.normalized'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
 import {
   getTrainCategorieEspagne,
   getTrainCategorieFrance,
