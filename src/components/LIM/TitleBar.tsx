@@ -2242,7 +2242,96 @@ ${coords}
 
   // ----- INFOS (à afficher depuis la roue dentée) -----
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [manualOpen, setManualOpen] = useState(false)
+  const [manualPage, setManualPage] = useState(1)
+  const [manualActiveTocId, setManualActiveTocId] = useState('cover')
   const settingsDetailsRef = useRef<HTMLDetailsElement | null>(null)
+
+  type ManualTocItem = {
+    id: string
+    level: 0 | 1 | 2
+    title: string
+    page: number
+  }
+
+  const MANUAL_TOC_ITEMS = useMemo<ManualTocItem[]>(
+    () => [
+      { id: 'cover', level: 0, title: 'Couverture', page: 1 },
+      { id: 'toc', level: 0, title: 'Table des matières', page: 2 },
+
+      { id: 'presentation-generale', level: 1, title: '1. Présentation générale de l’application', page: 4 },
+
+      { id: 'prerequis-ipad', level: 1, title: '2. Prérequis et préparation de l’iPad', page: 5 },
+      { id: 'veille-ecran', level: 2, title: '2.1. Éviter la mise en veille de l’écran', page: 5 },
+      { id: 'dossier-fichiers', level: 2, title: '2.2. Créer un dossier dédié dans l’application Fichiers', page: 5 },
+
+      { id: 'installation-ipad', level: 1, title: '3. Installation de l’application sur l’iPad', page: 6 },
+      { id: 'ouvrir-safari', level: 2, title: '3.1. Ouvrir le lien avec Safari', page: 6 },
+      { id: 'ajouter-ecran-accueil', level: 2, title: '3.2. Ajouter LIM à l’écran d’accueil', page: 6 },
+      { id: 'utilisation-ensuite', level: 2, title: '3.3. Utilisation ensuite', page: 6 },
+
+      { id: 'prise-main-rapide', level: 1, title: '4. Prise en main rapide', page: 7 },
+
+      { id: 'description-interface', level: 1, title: '5. Description détaillée de l’interface', page: 8 },
+      { id: 'horloge', level: 2, title: '5.1. Horloge', page: 8 },
+      { id: 'jour-nuit', level: 2, title: '5.2. Mode jour / nuit', page: 8 },
+      { id: 'luminosite', level: 2, title: '5.3. Réglage de la luminosité', page: 8 },
+      { id: 'bouton-demarrer', level: 2, title: '5.4. Bouton « Démarrer »', page: 8 },
+      { id: 'parametres', level: 2, title: '5.5. Paramètres (roue dentée)', page: 9 },
+      { id: 'organisation-ecran', level: 2, title: '5.6. Organisation de l’écran après démarrage d’un parcours', page: 10 },
+
+      { id: 'utilisation-normale', level: 1, title: '6. Utilisation normale en situation', page: 12 },
+      { id: 'preparation-document-train', level: 2, title: '6.1. Préparation du document du train', page: 12 },
+      { id: 'demarrage-parcours', level: 2, title: '6.2. Démarrage d’un parcours', page: 12 },
+      { id: 'mode-mixte', level: 2, title: '6.2.1. Mode mixte', page: 13 },
+      { id: 'mode-manuel', level: 2, title: '6.2.2. Mode manuel', page: 13 },
+      { id: 'mode-pdf-historique', level: 2, title: '6.2.3. Mode PDF historique', page: 13 },
+      { id: 'modification-mode-demarrage', level: 2, title: '6.2.4. Modification du mode de démarrage', page: 14 },
+      { id: 'affichage-apres-demarrage', level: 2, title: '6.3. Affichage après démarrage du parcours', page: 14 },
+      { id: 'zone-infos', level: 2, title: '6.3.1. Zone Infos', page: 14 },
+      { id: 'zone-ltv', level: 2, title: '6.3.2. Zone LTV', page: 16 },
+      { id: 'zone-ft', level: 2, title: '6.3.3. Zone fiche train (FT)', page: 17 },
+      { id: 'utilisation-conduite', level: 2, title: '6.4. Utilisation en situation (mode conduite)', page: 18 },
+      { id: 'indicateurs-etat', level: 2, title: '6.4.1. Indicateurs d’état', page: 18 },
+      { id: 'indicateur-gps', level: 2, title: '6.4.1.1. Indicateur GPS', page: 18 },
+      { id: 'indicateur-mode-horaire', level: 2, title: '6.4.1.2. Indicateur du mode horaire', page: 18 },
+      { id: 'activation-mode-conduite', level: 2, title: '6.4.2. Activation et effets du mode conduite', page: 19 },
+      { id: 'fonctionnement-mode-gps', level: 2, title: '6.4.3. Fonctionnement en mode GPS', page: 20 },
+      { id: 'fonctionnement-mode-horaire', level: 2, title: '6.4.4. Fonctionnement en mode horaire', page: 20 },
+      { id: 'recalage-mode-horaire', level: 2, title: '6.4.5. Recalage en mode horaire', page: 21 },
+
+      { id: 'cas-particuliers', level: 1, title: '7. Cas particuliers', page: 22 },
+      { id: 'arrets-en-gare', level: 2, title: '7.1. Arrêts en gare', page: 22 },
+      { id: 'mode-secours', level: 2, title: '7.2. Mode secours', page: 23 },
+
+      { id: 'mode-test', level: 1, title: '8. Mode test', page: 24 },
+      { id: 'infos-supplementaires-test', level: 2, title: '8.1. Informations supplémentaires affichées', page: 24 },
+      { id: 'enregistrement-diagnostic', level: 2, title: '8.2. Enregistrement des informations de diagnostic', page: 25 },
+      { id: 'export-logs', level: 2, title: '8.3. Export des logs', page: 25 },
+
+      { id: 'evolutions-prevues', level: 1, title: '9. Évolutions prévues', page: 26 },
+    ],
+    []
+  )
+
+  const buildManualPdfSrc = (page: number): string => {
+    const safePage =
+      Number.isFinite(page) && page > 0 ? Math.trunc(page) : 1
+
+    return `/manuel-utilisateur-lim.pdf#page=${safePage}&toolbar=1&navpanes=0`
+  }
+
+  const openManualPageFromToc = (item: ManualTocItem) => {
+    setManualPage(item.page)
+    setManualActiveTocId(item.id)
+
+    logTestEvent('ui:manual:toc-click', {
+      source: 'manual_viewer',
+      id: item.id,
+      title: item.title,
+      page: item.page,
+    })
+  }
 
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
@@ -2268,10 +2357,8 @@ ${coords}
 
   const CHANGELOG_TEXT = `🆕 Changelog
 
-- Fiabilisation de la localisation GPS avec nettoyage du ruban, correction des ancres et ajout de divers garde-fous.
-- Ajout de la section Perpignan–Figueres dans la fiche train.
-- Ajout de la gestion de la double numérotation des trains.
-- Préparation de la transition de la source des données : certaines données ne reposent plus uniquement sur le PDF et sont désormais fournies par LIM Editor.
+- Ajout de la possibilité de récupérer les LTV directement depuis ADIF au lieu du PDF.
+- Mise en place de différents modes de démarrage.
 - Corrections de bugs divers.
 `
 
@@ -4997,6 +5084,39 @@ if (autoScroll) {
                 type="button"
                 onClick={() => {
                   if (simulationEnabled) {
+                    logTestEvent('ui:blocked', {
+                      control: 'manual',
+                      source: 'settings',
+                    })
+                    return
+                  }
+
+                  logTestEvent('ui:manual:open', { source: 'settings' })
+
+                  if (settingsDetailsRef.current?.hasAttribute('open')) {
+                    settingsDetailsRef.current.removeAttribute('open')
+                  }
+
+                  setManualPage(1)
+                  setManualActiveTocId('cover')
+                  setManualOpen(true)
+                }}
+                className="w-full flex items-start justify-between gap-3 py-1 cursor-pointer select-none rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition px-0"
+              >
+                <div className="text-left">
+                  <div className="font-semibold">Manuel utilisateur</div>
+                  <div className="text-[11px] opacity-70">
+                    Consulter l’aide au format PDF
+                  </div>
+                </div>
+              </button>
+
+              <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (simulationEnabled) {
                     logTestEvent('ui:blocked', { control: 'about', source: 'settings' })
                     return
                   }
@@ -5013,6 +5133,126 @@ if (autoScroll) {
               </button>
             </div>
           </details>
+
+          {manualOpen && (
+            <div className="fixed left-0 right-0 bottom-0 top-16 z-[9998] bg-zinc-100/95 dark:bg-zinc-950/95 border-t border-zinc-200 dark:border-zinc-700">
+              <div className="h-full flex flex-col gap-2 p-3">
+                <div className="shrink-0 flex items-center justify-between gap-3 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold">
+                      Manuel utilisateur
+                    </div>
+                    <div className="text-[11px] opacity-70 truncate">
+                      Consultation intégrée du manuel LIM
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        logTestEvent('ui:manual:open-external', {
+                          source: 'manual_viewer',
+                          page: manualPage,
+                        })
+
+                        const manualUrl = buildManualPdfSrc(manualPage)
+                        const opened = window.open(
+                          manualUrl,
+                          '_blank',
+                          'noopener,noreferrer'
+                        )
+
+                        if (!opened) {
+                          window.location.href = manualUrl
+                        }
+                      }}
+                      className="h-8 px-3 text-xs rounded-md bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100 font-semibold"
+                    >
+                      Ouvrir à part
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        logTestEvent('ui:manual:close', {
+                          source: 'manual_viewer',
+                        })
+
+                        setManualOpen(false)
+                      }}
+                      className="h-8 px-3 text-xs rounded-md bg-blue-600 text-white font-semibold"
+                    >
+                      Fermer
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  className="min-h-0 flex-1 grid gap-2"
+                  style={{ gridTemplateColumns: '280px minmax(0, 1fr)' }}
+                >
+                  <aside className="min-h-0 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm flex flex-col">
+                    <div className="shrink-0 px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+                      <div className="text-xs font-semibold">Sommaire</div>
+                      <div className="text-[11px] opacity-60">
+                        Navigation dans le manuel
+                      </div>
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-auto p-2 space-y-1">
+                      {MANUAL_TOC_ITEMS.map((item) => {
+                        const active = manualActiveTocId === item.id
+
+                        const levelClass =
+                          item.level === 0
+                            ? 'font-semibold'
+                            : item.level === 1
+                              ? 'font-semibold'
+                              : 'pl-5 text-[11px] opacity-85'
+
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => openManualPageFromToc(item)}
+                            className={
+                              active
+                                ? `w-full rounded-lg px-2 py-1.5 text-left bg-blue-600 text-white flex items-center gap-2 ${levelClass}`
+                                : `w-full rounded-lg px-2 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-2 ${levelClass}`
+                            }
+                            title={`Page ${item.page} — ${item.title}`}
+                          >
+                            <span className="min-w-0 flex-1 truncate">
+                              {item.title}
+                            </span>
+                            <span
+                              className={
+                                active
+                                  ? 'shrink-0 text-[10px] opacity-90 tabular-nums'
+                                  : 'shrink-0 text-[10px] opacity-50 tabular-nums'
+                              }
+                            >
+                              {item.page}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </aside>
+
+                  <div className="min-h-0 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-white shadow-sm">
+                    <iframe
+                      key={`${manualPage}-${manualActiveTocId}`}
+                      title="Manuel utilisateur LIM"
+                      src={buildManualPdfSrc(manualPage)}
+                      className="h-full w-full border-0 bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {aboutOpen && (
             <div
