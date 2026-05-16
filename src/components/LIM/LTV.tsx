@@ -60,6 +60,7 @@ type LTVEventDetail = {
   }[]
   meta?: {
     fetchedAt?: string
+    sourceUpdatedAt?: string
     displayedCount?: number
     total?: number
     source?: string
@@ -70,6 +71,7 @@ type LTVEventDetail = {
 
 type LtvDisplayMeta = {
   fetchedAt?: string
+  sourceUpdatedAt?: string
   displayedCount?: number
 }
 
@@ -101,6 +103,40 @@ function formatLtvFetchedAt(value?: string): string | null {
   const minute = String(date.getMinutes()).padStart(2, "0")
 
   return `${day} ${month} ${year} à ${hour}:${minute}`
+}
+
+function formatLtvDateOnly(value?: string): string | null {
+  if (!value) return null
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+
+  return date.toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  })
+}
+
+function isLtvDateDifferentFromToday(value?: string): boolean {
+  if (!value) return false
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return false
+  }
+
+  const now = new Date()
+
+  return (
+    date.getFullYear() !== now.getFullYear() ||
+    date.getMonth() !== now.getMonth() ||
+    date.getDate() !== now.getDate()
+  )
 }
 
 function isLtvFetchedAtOlderThanTwoHours(value?: string): boolean {
@@ -166,6 +202,12 @@ const LTV: React.FC = () => {
   // Métadonnées d’actualisation LTV envoyées par l’import manuel
   const [ltvDisplayMeta, setLtvDisplayMeta] = useState<LtvDisplayMeta>({})
 
+    // Acquittement manuel de l'alerte date source ADIF périmée.
+  // Si la date ADIF n'est pas celle du jour, la légende clignote.
+  // Après appui conducteur, elle reste rouge fixe.
+  const [ltvSourceDateAlertAcknowledged, setLtvSourceDateAlertAcknowledged] =
+    useState(false)
+
   // Bande horizontale de la page complète (issue de debugBands)
   // utilisée comme base pour le recadrage manuel déclenché depuis DISPLAY_DIRECT.
   const [pageBandImage, setPageBandImage] = useState<string | null>(null)
@@ -230,6 +272,9 @@ const LTV: React.FC = () => {
       const fetchedAtRaw =
         incomingMeta.fetchedAt ?? detailAny.fetchedAt
 
+      const sourceUpdatedAtRaw =
+        incomingMeta.sourceUpdatedAt ?? detailAny.sourceUpdatedAt
+
       const displayedCount =
         typeof displayedCountRaw === "number" && Number.isFinite(displayedCountRaw)
           ? displayedCountRaw
@@ -240,6 +285,11 @@ const LTV: React.FC = () => {
           ? fetchedAtRaw
           : undefined
 
+      const sourceUpdatedAt =
+        typeof sourceUpdatedAtRaw === "string" && sourceUpdatedAtRaw.trim().length > 0
+          ? sourceUpdatedAtRaw
+          : undefined
+
       console.log("[LTV] ltv:parsed reçu =", {
         mode,
         imgMainLen: imgMain?.length,
@@ -248,6 +298,7 @@ const LTV: React.FC = () => {
         meta: {
           displayedCount,
           fetchedAt,
+          sourceUpdatedAt,
         },
       })
 
@@ -292,6 +343,7 @@ const LTV: React.FC = () => {
       setLtvDisplayMeta({
         displayedCount,
         fetchedAt,
+        sourceUpdatedAt,
       })
 
       // --- DISPLAY_DIRECT : images candidates directement exploitables ---
@@ -435,6 +487,9 @@ const LTV: React.FC = () => {
     }
   }, [ltvMode])
   // ✅ Signale que la hauteur LTV a probablement changé et que le layout peut être re-mesuré
+    useEffect(() => {
+    setLtvSourceDateAlertAcknowledged(false)
+  }, [ltvDisplayMeta.sourceUpdatedAt])
   useEffect(() => {
     requestAnimationFrame(() => {
       window.setTimeout(() => {
@@ -1647,20 +1702,40 @@ const LTV: React.FC = () => {
       </tbody>
     )
   }
-
   const ltvFormattedFetchedAt = formatLtvFetchedAt(ltvDisplayMeta.fetchedAt)
-  const ltvCaptionIsStale = isLtvFetchedAtOlderThanTwoHours(
+  const ltvFormattedSourceUpdatedAt = formatLtvDateOnly(
+    ltvDisplayMeta.sourceUpdatedAt
+  )
+
+  const ltvSourceDateIsDifferentFromToday = isLtvDateDifferentFromToday(
+    ltvDisplayMeta.sourceUpdatedAt
+  )
+
+  const ltvFetchedAtIsStale = isLtvFetchedAtOlderThanTwoHours(
     ltvDisplayMeta.fetchedAt
   )
 
-  const ltvCaptionText =
-    typeof ltvDisplayMeta.displayedCount === "number" && ltvFormattedFetchedAt
-      ? `LTV : ${ltvDisplayMeta.displayedCount} - Actualisées le ${ltvFormattedFetchedAt}`
-      : typeof ltvDisplayMeta.displayedCount === "number"
-        ? `LTV : ${ltvDisplayMeta.displayedCount}`
-        : ltvFormattedFetchedAt
-          ? `LTV - Actualisées le ${ltvFormattedFetchedAt}`
-          : "LTV"
+  const ltvCaptionIsRed =
+    ltvFetchedAtIsStale || ltvSourceDateIsDifferentFromToday
+
+  const ltvCaptionShouldBlink =
+    ltvSourceDateIsDifferentFromToday && !ltvSourceDateAlertAcknowledged
+
+  const ltvCaptionParts = ["LTV"]
+
+  if (typeof ltvDisplayMeta.displayedCount === "number") {
+    ltvCaptionParts.push(String(ltvDisplayMeta.displayedCount))
+  }
+
+  if (ltvFormattedSourceUpdatedAt) {
+    ltvCaptionParts.push(`Données source ADIF du ${ltvFormattedSourceUpdatedAt}`)
+  }
+
+  if (ltvFormattedFetchedAt) {
+    ltvCaptionParts.push(`Téléchargées le ${ltvFormattedFetchedAt}`)
+  }
+
+  const ltvCaptionText = ltvCaptionParts.join(" - ")
 
   // ------------------------------------------------------------------
   // Rendu global
@@ -1769,6 +1844,11 @@ const LTV: React.FC = () => {
 
         .dark .ltv-table caption.ltv-caption-stale {
           color: #f87171;
+        }
+
+                .ltv-table caption.ltv-caption-acknowledged {
+          animation: none;
+          opacity: 1;
         }
 
         @keyframes ltv-caption-stale-blink {
@@ -2055,7 +2135,20 @@ const LTV: React.FC = () => {
       )}
 
       <table className="ltv-table">
-        <caption className={ltvCaptionIsStale ? "ltv-caption-stale" : undefined}>
+        <caption
+          className={
+            ltvCaptionIsRed
+              ? ltvCaptionShouldBlink
+                ? "ltv-caption-stale"
+                : "ltv-caption-stale ltv-caption-acknowledged"
+              : undefined
+          }
+          onClick={() => {
+            if (ltvSourceDateIsDifferentFromToday) {
+              setLtvSourceDateAlertAcknowledged(true)
+            }
+          }}
+        >
           {ltvCaptionText}
         </caption>
 

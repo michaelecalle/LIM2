@@ -281,12 +281,13 @@ type ManualLtvDisplayRow = {
 
 type ManualLtvRowsResult = {
   rows: ManualLtvDisplayRow[]
-  meta: {
-    fetchedAt?: string
-    source?: string
-    total?: number
-    displayedCount: number
-  }
+meta: {
+  fetchedAt?: string
+  sourceUpdatedAt?: string
+  source?: string
+  total?: number
+  displayedCount: number
+}
 }
 
 type ManualFtRoutePkRange = {
@@ -522,8 +523,10 @@ async function fetchManualLtvRows(
   return {
     rows,
     meta: {
-      fetchedAt: typeof payload.fetchedAt === 'string' ? payload.fetchedAt : undefined,
-      source: typeof payload.source === 'string' ? payload.source : undefined,
+fetchedAt: typeof payload.fetchedAt === 'string' ? payload.fetchedAt : undefined,
+sourceUpdatedAt:
+  typeof payload.sourceUpdatedAt === 'string' ? payload.sourceUpdatedAt : undefined,
+source: typeof payload.source === 'string' ? payload.source : undefined,
       total:
         typeof payload.total === 'number' && Number.isFinite(payload.total)
           ? payload.total
@@ -3200,9 +3203,10 @@ ${coords}
               rows: manualLtvRows,
               source: options.source,
               trainNumber,
-              meta: manualLtvMeta,
-              fetchedAt: manualLtvMeta.fetchedAt,
-              displayedCount: manualLtvMeta.displayedCount,
+meta: manualLtvMeta,
+fetchedAt: manualLtvMeta.fetchedAt,
+sourceUpdatedAt: manualLtvMeta.sourceUpdatedAt,
+displayedCount: manualLtvMeta.displayedCount,
             },
           })
         )

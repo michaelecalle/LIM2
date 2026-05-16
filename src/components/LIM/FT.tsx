@@ -6120,7 +6120,10 @@ right: -1,
 
     // LIGNE INTERMÉDIAIRE POUR LES LTV ORANGE SOUS LA LIGNE PRINCIPALE
     if (ltvNoteLines.length > 0) {
-      const vmaxClassForLtv = csvZoneOpen ? " ft-v-csv-full" : "";
+      const vmaxClassForLtv =
+        csvZoneOpen || highlightKind === "bottom" || highlightKind === "full"
+          ? " ft-v-csv-full"
+          : "";
 
       rows.push(
         <tr className="ft-row-inter ft-row-ltv-note" key={`ltv-note-${i}`}>
