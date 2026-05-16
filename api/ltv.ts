@@ -31,6 +31,7 @@ type LtvEntry = {
 type LtvCache = {
   fetchedAt: string;
   sourceUpdatedAt: string | null;
+  sourceUpdatedFile: string | null;
   total: number;
   ltv: LtvEntry[];
 };
@@ -46,11 +47,16 @@ function applyCorsHeaders(res: VercelResponse) {
 const ADIF_LTV_LAYER_URL =
   "https://services7.arcgis.com/XTupIrLX53AjaJqO/arcgis/rest/services/LTV_2/FeatureServer/0";
 
+const ADIF_LTV_VERSION_LAYER_URL =
+  "https://services7.arcgis.com/XTupIrLX53AjaJqO/arcgis/rest/services/LTV_2/FeatureServer/2";
+
 const ADIF_LTV_QUERY_URL = `${ADIF_LTV_LAYER_URL}/query`;
+const ADIF_LTV_VERSION_QUERY_URL = `${ADIF_LTV_VERSION_LAYER_URL}/query`;
 
 let memoryCache: LtvCache = {
   fetchedAt: "",
   sourceUpdatedAt: null,
+  sourceUpdatedFile: null,
   total: 0,
   ltv: [],
 };
@@ -94,6 +100,24 @@ const ADIF_LTV_URL = (() => {
   return queryUrl.toString();
 })();
 
+const ADIF_LTV_VERSION_URL = (() => {
+  const queryUrl = new URL(ADIF_LTV_VERSION_QUERY_URL);
+
+  queryUrl.searchParams.set("f", "json");
+  queryUrl.searchParams.set(
+    "where",
+    "FICHERO_LTV_VIGOR LIKE '%_DSLTV%'"
+  );
+  queryUrl.searchParams.set(
+    "outFields",
+    "FECHA_LTV_VIGOR,FICHERO_LTV_VIGOR"
+  );
+  queryUrl.searchParams.set("returnGeometry", "false");
+  queryUrl.searchParams.set("resultRecordCount", "1");
+
+  return queryUrl.toString();
+})();
+
 function isCacheValid(): boolean {
   if (!memoryCache.fetchedAt) {
     return false;
@@ -112,6 +136,36 @@ function getQueryParam(req: VercelRequest, key: string): string | undefined {
   }
 
   return typeof value === "string" ? value : undefined;
+}
+
+async function fetchLtvSourceVersion(): Promise<{
+  sourceUpdatedAt: string | null;
+  sourceUpdatedFile: string | null;
+}> {
+  const response = await fetch(ADIF_LTV_VERSION_URL);
+
+  if (!response.ok) {
+    throw new Error(`ArcGIS version HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  const attrs = data.features?.[0]?.attributes ?? {};
+
+  const rawDate = attrs.FECHA_LTV_VIGOR;
+  const sourceUpdatedFile =
+    typeof attrs.FICHERO_LTV_VIGOR === "string"
+      ? attrs.FICHERO_LTV_VIGOR
+      : null;
+
+  const sourceUpdatedAt =
+    typeof rawDate === "number" && Number.isFinite(rawDate)
+      ? new Date(rawDate).toISOString()
+      : null;
+
+  return {
+    sourceUpdatedAt,
+    sourceUpdatedFile,
+  };
 }
 
 async function buildLtvFieldsDebugPayload() {
@@ -206,16 +260,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     console.log("LTV cache miss - fetching ArcGIS");
 
-    const response = await fetch(ADIF_LTV_URL);
+    const [response, sourceVersion] = await Promise.all([
+      fetch(ADIF_LTV_URL),
+      fetchLtvSourceVersion(),
+    ]);
 
     if (!response.ok) {
       throw new Error(`ArcGIS HTTP ${response.status}`);
     }
 
     const data = await response.json();
-
-    const sourceUpdatedAt =
-  response.headers.get("last-modified");
 
     const ltv: LtvEntry[] = data.features.map((feature: any) => {
       const attrs = feature.attributes ?? {};
@@ -249,12 +303,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
     });
 
-memoryCache = {
-  fetchedAt: new Date().toISOString(),
-  sourceUpdatedAt,
-  total: ltv.length,
-  ltv,
-};
+    memoryCache = {
+      fetchedAt: new Date().toISOString(),
+      sourceUpdatedAt: sourceVersion.sourceUpdatedAt,
+      sourceUpdatedFile: sourceVersion.sourceUpdatedFile,
+      total: ltv.length,
+      ltv,
+    };
 
     return res.status(200).json({
       ok: true,
