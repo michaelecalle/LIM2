@@ -16,8 +16,8 @@ const __dirname = path.dirname(__filename)
 
 // ✅ Certificats HTTPS (mkcert) — à placer dans ./certs
 const CERT_DIR = path.resolve(__dirname, 'certs')
-const HTTPS_CERT = path.join(CERT_DIR, '192.168.1.58.pem')
-const HTTPS_KEY = path.join(CERT_DIR, '192.168.1.58-key.pem')
+const HTTPS_CERT = path.join(CERT_DIR, '192.168.1.43.pem')
+const HTTPS_KEY = path.join(CERT_DIR, '192.168.1.43-key.pem')
 
 export default defineConfig({
   plugins: [

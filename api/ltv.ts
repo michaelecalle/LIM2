@@ -30,6 +30,7 @@ type LtvEntry = {
 
 type LtvCache = {
   fetchedAt: string;
+  sourceUpdatedAt: string | null;
   total: number;
   ltv: LtvEntry[];
 };
@@ -49,6 +50,7 @@ const ADIF_LTV_QUERY_URL = `${ADIF_LTV_LAYER_URL}/query`;
 
 let memoryCache: LtvCache = {
   fetchedAt: "",
+  sourceUpdatedAt: null,
   total: 0,
   ltv: [],
 };
@@ -212,6 +214,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const data = await response.json();
 
+    const sourceUpdatedAt =
+  response.headers.get("last-modified");
+
     const ltv: LtvEntry[] = data.features.map((feature: any) => {
       const attrs = feature.attributes ?? {};
 
@@ -244,11 +249,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
     });
 
-    memoryCache = {
-      fetchedAt: new Date().toISOString(),
-      total: ltv.length,
-      ltv,
-    };
+memoryCache = {
+  fetchedAt: new Date().toISOString(),
+  sourceUpdatedAt,
+  total: ltv.length,
+  ltv,
+};
 
     return res.status(200).json({
       ok: true,
