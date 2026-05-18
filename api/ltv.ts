@@ -137,6 +137,26 @@ function getQueryParam(req: VercelRequest, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function parseArcgisNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalizedValue = value.trim().replace(",", ".");
+
+    if (normalizedValue === "") {
+      return null;
+    }
+
+    const parsed = Number(normalizedValue);
+
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 async function fetchLtvSourceVersion(): Promise<{
   sourceUpdatedAt: string | null;
   sourceUpdatedFile: string | null;
