@@ -75,7 +75,6 @@ const LTV_OUT_FIELDS = [
   "DESCPSFIN",
   "CSV",
   "CALENDARIO",
-  "FECHAVIGORLTV",
   "HORAVIGORLTV",
   "FECHAFINPREV",
   "HORAFINPREV",
@@ -168,6 +167,58 @@ async function fetchLtvSourceVersion(): Promise<{
   };
 }
 
+async function buildLtvVersionDebugPayload() {
+  const layerResponse = await fetch(`${ADIF_LTV_VERSION_LAYER_URL}?f=json`);
+
+  if (!layerResponse.ok) {
+    throw new Error(
+      `ArcGIS version layer metadata HTTP ${layerResponse.status}`
+    );
+  }
+
+  const layerData = await layerResponse.json();
+
+  const fields = Array.isArray(layerData.fields)
+    ? layerData.fields.map((field: any) => ({
+        name: field.name,
+        alias: field.alias,
+        type: field.type,
+      }))
+    : [];
+
+  const queryUrl = new URL(ADIF_LTV_VERSION_QUERY_URL);
+  queryUrl.searchParams.set("f", "json");
+  queryUrl.searchParams.set("resultRecordCount", "5");
+  queryUrl.searchParams.set("where", "1=1");
+  queryUrl.searchParams.set("outFields", "*");
+  queryUrl.searchParams.set("returnGeometry", "false");
+
+  const sampleResponse = await fetch(queryUrl.toString());
+
+  if (!sampleResponse.ok) {
+    throw new Error(`ArcGIS version sample query HTTP ${sampleResponse.status}`);
+  }
+
+  const sampleData = await sampleResponse.json();
+
+  const sampleAttributes = Array.isArray(sampleData.features)
+    ? sampleData.features
+        .slice(0, 5)
+        .map((feature: any) => feature.attributes ?? {})
+    : [];
+
+  return {
+    ok: true,
+    source: "arcgis-debug-version",
+    fetchedAt: new Date().toISOString(),
+    layerUrl: ADIF_LTV_VERSION_LAYER_URL,
+    totalFields: fields.length,
+    fields,
+    sampleCount: sampleAttributes.length,
+    sampleAttributes,
+  };
+}
+
 async function buildLtvFieldsDebugPayload() {
   const layerResponse = await fetch(`${ADIF_LTV_LAYER_URL}?f=json`);
 
@@ -242,6 +293,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({
         ok: false,
         source: "arcgis-debug-fields",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (debug === "version") {
+    try {
+      console.log("LTV debug version request");
+
+      const payload = await buildLtvVersionDebugPayload();
+
+      return res.status(200).json(payload);
+    } catch (error) {
+      console.error("LTV debug version error", error);
+
+      return res.status(500).json({
+        ok: false,
+        source: "arcgis-debug-version",
         error: error instanceof Error ? error.message : String(error),
       });
     }
