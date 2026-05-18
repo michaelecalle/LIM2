@@ -240,6 +240,33 @@ async function buildLtvVersionDebugPayload() {
 }
 
 async function buildLtvFieldsDebugPayload() {
+  const expectedBusinessFields = [
+    "OBJECTID",
+    "LTVID",
+    "CODLINEA",
+    "DESCLINEA",
+    "PKINI",
+    "PKFIN",
+    "RESTRICCIONVELOCIDAD",
+    "VIAS",
+    "MOTIVO",
+    "DESCPSINI",
+    "DESCPSFIN",
+    "CSV",
+    "CALENDARIO",
+    "FECHAVIGORLTV",
+    "HORAVIGORLTV",
+    "FECHAFINPREV",
+    "HORAFINPREV",
+    "HORARIO",
+    "NOSENIALIZADASISTEMA",
+    "NOSENIALIZADAVIA",
+    "OBSERVACIONES",
+    "VEHICULOCABEZA",
+    "TIPOTREN",
+    "TIPOTRENOBS",
+  ];
+
   const layerResponse = await fetch(`${ADIF_LTV_LAYER_URL}?f=json`);
 
   if (!layerResponse.ok) {
@@ -256,9 +283,13 @@ async function buildLtvFieldsDebugPayload() {
       }))
     : [];
 
+  const availableFieldNames = fields.map((field: any) => String(field.name));
+  const availableFieldNameSet = new Set(availableFieldNames);
+  const expectedFieldNameSet = new Set(expectedBusinessFields);
+
   const queryUrl = new URL(ADIF_LTV_QUERY_URL);
   queryUrl.searchParams.set("f", "json");
-  queryUrl.searchParams.set("resultRecordCount", "3");
+  queryUrl.searchParams.set("resultRecordCount", "50");
   queryUrl.searchParams.set("where", "CODLINEA IN ('050','066')");
   queryUrl.searchParams.set("outFields", "*");
   queryUrl.searchParams.set("returnGeometry", "false");
@@ -273,9 +304,78 @@ async function buildLtvFieldsDebugPayload() {
 
   const sampleAttributes = Array.isArray(sampleData.features)
     ? sampleData.features
-        .slice(0, 3)
+        .slice(0, 50)
         .map((feature: any) => feature.attributes ?? {})
     : [];
+
+  function isFilledValue(value: unknown): boolean {
+    if (value == null) {
+      return false;
+    }
+
+    if (typeof value === "string") {
+      return value.trim() !== "";
+    }
+
+    return true;
+  }
+
+  function getSampleValues(fieldName: string): unknown[] {
+    const values: unknown[] = [];
+
+    for (const attributes of sampleAttributes) {
+      const value = attributes[fieldName];
+
+      if (!isFilledValue(value)) {
+        continue;
+      }
+
+      if (!values.includes(value)) {
+        values.push(value);
+      }
+
+      if (values.length >= 5) {
+        break;
+      }
+    }
+
+    return values;
+  }
+
+  const expectedFieldDiagnostics = expectedBusinessFields.map((fieldName) => {
+    const present = availableFieldNameSet.has(fieldName);
+    const nonEmptySampleCount = sampleAttributes.filter((attributes) =>
+      isFilledValue(attributes[fieldName])
+    ).length;
+
+    return {
+      name: fieldName,
+      present,
+      nonEmptySampleCount,
+      sampleValues: getSampleValues(fieldName),
+    };
+  });
+
+  const missingExpectedFields = expectedBusinessFields.filter(
+    (fieldName) => !availableFieldNameSet.has(fieldName)
+  );
+
+  const unusedAvailableFields = availableFieldNames.filter(
+    (fieldName) => !expectedFieldNameSet.has(fieldName)
+  );
+
+  const allFieldDiagnostics = availableFieldNames.map((fieldName) => {
+    const nonEmptySampleCount = sampleAttributes.filter((attributes) =>
+      isFilledValue(attributes[fieldName])
+    ).length;
+
+    return {
+      name: fieldName,
+      usedByApi: expectedFieldNameSet.has(fieldName),
+      nonEmptySampleCount,
+      sampleValues: getSampleValues(fieldName),
+    };
+  });
 
   return {
     ok: true,
@@ -284,6 +384,11 @@ async function buildLtvFieldsDebugPayload() {
     layerUrl: ADIF_LTV_LAYER_URL,
     totalFields: fields.length,
     fields,
+    expectedBusinessFields,
+    missingExpectedFields,
+    unusedAvailableFields,
+    expectedFieldDiagnostics,
+    allFieldDiagnostics,
     sampleCount: sampleAttributes.length,
     sampleAttributes,
   };
