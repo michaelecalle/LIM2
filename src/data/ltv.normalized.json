@@ -1,10 +1,10 @@
 {
   "meta": {
     "line": "050",
-    "publishedAt": "2026-05-19T09:40:35.472Z",
+    "publishedAt": "2026-05-19T19:43:27.577Z",
     "adif": {
-      "source": "cache",
-      "fetchedAt": "2026-05-19T09:35:42.681Z",
+      "source": "arcgis",
+      "fetchedAt": "2026-05-19T19:42:46.214Z",
       "sourceUpdatedAt": "2026-05-18T00:00:00.000Z",
       "sourceUpdatedFile": "20260518_DSLTV.xml"
     }
@@ -92,11 +92,15 @@
       "hora1": "",
       "fecha2": "",
       "hora2": "",
-      "viaCheck": true,
-      "sistema": false,
+      "viaCheck": false,
+      "sistema": true,
       "soloCabeza": false,
       "csv": true,
-      "observaciones": "Afecta a via 6"
+      "observaciones": "Afecta a via 6",
+      "editedFields": {
+        "sistema": true,
+        "viaCheck": true
+      }
     },
     {
       "id": "ltv-adif-159636",
@@ -113,11 +117,15 @@
       "hora1": "",
       "fecha2": "",
       "hora2": "",
-      "viaCheck": true,
-      "sistema": false,
+      "viaCheck": false,
+      "sistema": true,
       "soloCabeza": false,
       "csv": true,
-      "observaciones": "Afecta a via 4"
+      "observaciones": "Afecta a via 4",
+      "editedFields": {
+        "sistema": true,
+        "viaCheck": true
+      }
     },
     {
       "id": "ltv-adif-159646",
@@ -134,11 +142,15 @@
       "hora1": "",
       "fecha2": "",
       "hora2": "",
-      "viaCheck": true,
-      "sistema": false,
+      "viaCheck": false,
+      "sistema": true,
       "soloCabeza": false,
       "csv": true,
-      "observaciones": "AFECTA A VIAS 4 y 6"
+      "observaciones": "AFECTA A VIAS 4 y 6",
+      "editedFields": {
+        "sistema": true,
+        "viaCheck": true
+      }
     },
     {
       "id": "ltv-adif-172223",
@@ -197,11 +209,15 @@
       "hora1": "",
       "fecha2": "",
       "hora2": "",
-      "viaCheck": true,
-      "sistema": false,
+      "viaCheck": false,
+      "sistema": true,
       "soloCabeza": false,
       "csv": false,
-      "observaciones": ""
+      "observaciones": "",
+      "editedFields": {
+        "viaCheck": true,
+        "sistema": true
+      }
     },
     {
       "id": "ltv-adif-161596",
@@ -218,11 +234,15 @@
       "hora1": "",
       "fecha2": "",
       "hora2": "",
-      "viaCheck": true,
-      "sistema": false,
+      "viaCheck": false,
+      "sistema": true,
       "soloCabeza": false,
       "csv": false,
-      "observaciones": ""
+      "observaciones": "",
+      "editedFields": {
+        "viaCheck": true,
+        "sistema": true
+      }
     },
     {
       "id": "ltv-adif-161580",
@@ -239,11 +259,15 @@
       "hora1": "",
       "fecha2": "",
       "hora2": "",
-      "viaCheck": true,
-      "sistema": false,
+      "viaCheck": false,
+      "sistema": true,
       "soloCabeza": false,
       "csv": false,
-      "observaciones": "Vía 9-G1 de La Sagrera"
+      "observaciones": "Vía 9-G1 de La Sagrera",
+      "editedFields": {
+        "viaCheck": true,
+        "sistema": true
+      }
     }
   ],
   "warnings": []
