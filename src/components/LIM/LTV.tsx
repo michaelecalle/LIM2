@@ -64,15 +64,70 @@ type LTVEventDetail = {
     displayedCount?: number
     total?: number
     source?: string
+    ltvSource?: string
   }
   fetchedAt?: string
+  sourceUpdatedAt?: string
   displayedCount?: number
+  ltvSource?: string
 }
+
+type LtvDisplaySource = "normalized" | "adif" | "pdf" | "unknown"
 
 type LtvDisplayMeta = {
   fetchedAt?: string
   sourceUpdatedAt?: string
   displayedCount?: number
+  source?: LtvDisplaySource
+  availableSources: LtvDisplaySource[]
+}
+
+function normalizeLtvDisplaySource(value?: unknown): LtvDisplaySource {
+  const text = String(value ?? "").trim().toLowerCase()
+
+  if (
+    text === "normalized" ||
+    text === "normalise" ||
+    text === "normalisé"
+  ) {
+    return "normalized"
+  }
+
+  if (
+    text === "adif" ||
+    text === "arcgis" ||
+    text === "cache"
+  ) {
+    return "adif"
+  }
+
+  if (
+    text === "pdf" ||
+    text === "pdf_import" ||
+    text === "historical_pdf"
+  ) {
+    return "pdf"
+  }
+
+  return "unknown"
+}
+
+function getLtvSourceCaptionLabel(source?: LtvDisplaySource): string | null {
+  if (source === "normalized") return "Normalisé"
+  if (source === "adif") return "ADIF"
+  if (source === "pdf") return "PDF"
+
+  return null
+}
+
+function normalizeLtvDisplaySourceList(value: unknown): LtvDisplaySource[] {
+  if (!Array.isArray(value)) return []
+
+  const normalized = value
+    .map((item) => normalizeLtvDisplaySource(item))
+    .filter((item): item is LtvDisplaySource => item !== "unknown")
+
+  return Array.from(new Set(normalized))
 }
 
 function formatLtvFetchedAt(value?: string): string | null {
@@ -200,7 +255,9 @@ const LTV: React.FC = () => {
   const [rows, setRows] = useState<LtvRow[]>([])
 
   // Métadonnées d’actualisation LTV envoyées par l’import manuel
-  const [ltvDisplayMeta, setLtvDisplayMeta] = useState<LtvDisplayMeta>({})
+  const [ltvDisplayMeta, setLtvDisplayMeta] = useState<LtvDisplayMeta>({
+    availableSources: [],
+  })
 
     // Acquittement manuel de l'alerte date source ADIF périmée.
   // Si la date ADIF n'est pas celle du jour, la légende clignote.
@@ -275,6 +332,12 @@ const LTV: React.FC = () => {
       const sourceUpdatedAtRaw =
         incomingMeta.sourceUpdatedAt ?? detailAny.sourceUpdatedAt
 
+      const ltvSourceRaw =
+        detailAny.ltvSource ?? incomingMeta.ltvSource ?? incomingMeta.source
+
+      const availableSourcesRaw =
+        detailAny.availableSources ?? incomingMeta.availableSources
+
       const displayedCount =
         typeof displayedCountRaw === "number" && Number.isFinite(displayedCountRaw)
           ? displayedCountRaw
@@ -290,6 +353,9 @@ const LTV: React.FC = () => {
           ? sourceUpdatedAtRaw
           : undefined
 
+      const ltvDisplaySource = normalizeLtvDisplaySource(ltvSourceRaw)
+      const availableSources = normalizeLtvDisplaySourceList(availableSourcesRaw)
+
       console.log("[LTV] ltv:parsed reçu =", {
         mode,
         imgMainLen: imgMain?.length,
@@ -299,6 +365,8 @@ const LTV: React.FC = () => {
           displayedCount,
           fetchedAt,
           sourceUpdatedAt,
+          source: ltvDisplaySource,
+          availableSources,
         },
       })
 
@@ -344,6 +412,8 @@ const LTV: React.FC = () => {
         displayedCount,
         fetchedAt,
         sourceUpdatedAt,
+        source: ltvDisplaySource,
+        availableSources,
       })
 
       // --- DISPLAY_DIRECT : images candidates directement exploitables ---
@@ -489,7 +559,7 @@ const LTV: React.FC = () => {
   // ✅ Signale que la hauteur LTV a probablement changé et que le layout peut être re-mesuré
     useEffect(() => {
     setLtvSourceDateAlertAcknowledged(false)
-  }, [ltvDisplayMeta.sourceUpdatedAt])
+  }, [ltvDisplayMeta.sourceUpdatedAt, ltvDisplayMeta.source])
   useEffect(() => {
     requestAnimationFrame(() => {
       window.setTimeout(() => {
@@ -1711,9 +1781,9 @@ const LTV: React.FC = () => {
     ltvDisplayMeta.sourceUpdatedAt
   )
 
-  const ltvFetchedAtIsStale = isLtvFetchedAtOlderThanTwoHours(
-    ltvDisplayMeta.fetchedAt
-  )
+  const ltvFetchedAtIsStale =
+    ltvDisplayMeta.source === "adif" &&
+    isLtvFetchedAtOlderThanTwoHours(ltvDisplayMeta.fetchedAt)
 
   const ltvCaptionIsRed =
     ltvFetchedAtIsStale || ltvSourceDateIsDifferentFromToday
@@ -1721,21 +1791,51 @@ const LTV: React.FC = () => {
   const ltvCaptionShouldBlink =
     ltvSourceDateIsDifferentFromToday && !ltvSourceDateAlertAcknowledged
 
+  const ltvSourceLabel = getLtvSourceCaptionLabel(ltvDisplayMeta.source)
+
   const ltvCaptionParts = ["LTV"]
 
   if (typeof ltvDisplayMeta.displayedCount === "number") {
     ltvCaptionParts.push(String(ltvDisplayMeta.displayedCount))
   }
 
-  if (ltvFormattedSourceUpdatedAt) {
-    ltvCaptionParts.push(`Données source ADIF du ${ltvFormattedSourceUpdatedAt}`)
+  if (ltvSourceLabel) {
+    ltvCaptionParts.push(`Source : ${ltvSourceLabel}`)
   }
 
-  if (ltvFormattedFetchedAt) {
+  if (ltvFormattedSourceUpdatedAt) {
+    if (ltvDisplayMeta.source === "normalized") {
+      ltvCaptionParts.push(`Publié le ${ltvFormattedSourceUpdatedAt}`)
+    } else if (ltvDisplayMeta.source === "adif") {
+      ltvCaptionParts.push(`Données source ADIF du ${ltvFormattedSourceUpdatedAt}`)
+    } else if (ltvDisplayMeta.source === "pdf") {
+      ltvCaptionParts.push(`PDF du ${ltvFormattedSourceUpdatedAt}`)
+    } else {
+      ltvCaptionParts.push(`Données du ${ltvFormattedSourceUpdatedAt}`)
+    }
+  }
+
+  if (ltvFormattedFetchedAt && ltvDisplayMeta.source === "adif") {
     ltvCaptionParts.push(`Téléchargées le ${ltvFormattedFetchedAt}`)
   }
 
   const ltvCaptionText = ltvCaptionParts.join(" - ")
+
+  const canSwitchLtvSource =
+    ltvDisplayMeta.availableSources.length > 1 &&
+    ltvDisplayMeta.source !== undefined &&
+    ltvDisplayMeta.source !== "unknown"
+
+  const requestLtvSourceSwitch = (direction: "previous" | "next") => {
+    window.dispatchEvent(
+      new CustomEvent("ltv:source-switch-request", {
+        detail: {
+          direction,
+          currentSource: ltvDisplayMeta.source,
+        },
+      })
+    )
+  }
 
   // ------------------------------------------------------------------
   // Rendu global
@@ -1833,8 +1933,46 @@ const LTV: React.FC = () => {
           border: 2px solid #000;
           border-bottom: 0;
           letter-spacing: 0.3px;
-          padding: 4px 0;
+          padding: 3px 0;
           line-height: 1.05;
+        }
+
+        .ltv-caption-inner {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          min-height: 22px;
+        }
+
+        .ltv-caption-text {
+          min-width: 0;
+          text-align: center;
+        }
+
+        .ltv-source-switch-btn {
+          width: 24px;
+          height: 20px;
+          border-radius: 5px;
+          border: 1px solid currentColor;
+          background: rgba(255,255,255,0.65);
+          color: inherit;
+          font-size: 12px;
+          font-weight: 800;
+          line-height: 1;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+        }
+
+        .ltv-source-switch-btn:active {
+          transform: translateY(1px);
+        }
+
+        .dark .ltv-source-switch-btn {
+          background: rgba(0,0,0,0.35);
         }
 
         .ltv-table caption.ltv-caption-stale {
@@ -2149,7 +2287,53 @@ const LTV: React.FC = () => {
             }
           }}
         >
-          {ltvCaptionText}
+          <div className="ltv-caption-inner">
+            {canSwitchLtvSource && (
+              <span
+                role="button"
+                tabIndex={0}
+                className="ltv-source-switch-btn"
+                title="Source LTV précédente"
+                onPointerDown={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  requestLtvSourceSwitch("previous")
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  requestLtvSourceSwitch("previous")
+                }}
+              >
+                ◀
+              </span>
+            )}
+
+            <span className="ltv-caption-text">{ltvCaptionText}</span>
+
+            {canSwitchLtvSource && (
+              <span
+                role="button"
+                tabIndex={0}
+                className="ltv-source-switch-btn"
+                title="Source LTV suivante"
+                onPointerDown={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  requestLtvSourceSwitch("next")
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  requestLtvSourceSwitch("next")
+                }}
+              >
+                ▶
+              </span>
+            )}
+          </div>
         </caption>
 
         {/* Largeurs de colonnes calées */}

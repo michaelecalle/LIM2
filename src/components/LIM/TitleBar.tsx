@@ -26,6 +26,7 @@ import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 import { APP_VERSION } from '../version'
 import { LIGNE_FT_NORMALIZED } from '../../data/normalized/ligneFT.normalized'
+import LTV_NORMALIZED from '../../data/ltv.normalized.json'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
 import {
@@ -290,6 +291,21 @@ meta: {
 }
 }
 
+type NormalizedLtvFile = {
+  meta?: {
+    line?: string
+    publishedAt?: string
+    adif?: {
+      source?: string
+      fetchedAt?: string
+      sourceUpdatedAt?: string
+      sourceUpdatedFile?: string
+    }
+  }
+  rows?: Array<Partial<ManualLtvDisplayRow> & Record<string, unknown>>
+  warnings?: unknown[]
+}
+
 type ManualFtRoutePkRange = {
   trainNumber: number
   routeStart?: string
@@ -534,6 +550,111 @@ source: typeof payload.source === 'string' ? payload.source : undefined,
       displayedCount: rows.length,
     },
   };
+}
+
+function readNormalizedLtvString(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  return String(value)
+}
+
+function readNormalizedLtvBoolean(value: unknown): boolean {
+  if (typeof value === 'boolean') return value
+
+  const text = String(value ?? '').trim().toLowerCase()
+
+  return (
+    text === 'true' ||
+    text === '1' ||
+    text === 'si' ||
+    text === 'sí' ||
+    text === 'oui' ||
+    text === 'x' ||
+    text === '✓'
+  )
+}
+
+function parseNormalizedLtvPk(value: unknown): number | null {
+  const text = String(value ?? '').trim().replace(',', '.')
+  if (!text) return null
+
+  const match = text.match(/\d+(?:\.\d+)?/)
+  if (!match) return null
+
+  const parsed = Number(match[0])
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function normalizedLtvOverlapsRoute(
+  row: ManualLtvDisplayRow,
+  routePkRange: ManualFtRoutePkRange | null
+): boolean {
+  if (!routePkRange) return true
+
+  const pkIni = parseNormalizedLtvPk(row.kmIni)
+  const pkFin = parseNormalizedLtvPk(row.kmFin)
+
+  // Sécurité : si une LTV normalisée a un PK illisible,
+  // on préfère l'afficher plutôt que la masquer par erreur.
+  if (pkIni === null || pkFin === null) return true
+
+  const minPk = Math.min(pkIni, pkFin)
+  const maxPk = Math.max(pkIni, pkFin)
+
+  return maxPk >= routePkRange.minPk && minPk <= routePkRange.maxPk
+}
+
+function mapNormalizedLtvRowToDisplayRow(
+  row: Partial<ManualLtvDisplayRow> & Record<string, unknown>
+): ManualLtvDisplayRow {
+  return {
+    code: readNormalizedLtvString(row.code),
+    section: readNormalizedLtvString(row.section),
+    via: readNormalizedLtvString(row.via),
+    kmIni: readNormalizedLtvString(row.kmIni),
+    kmFin: readNormalizedLtvString(row.kmFin),
+    speed: readNormalizedLtvString(row.speed),
+    motivo: readNormalizedLtvString(row.motivo),
+    fecha1: readNormalizedLtvString(row.fecha1),
+    hora1: readNormalizedLtvString(row.hora1),
+    fecha2: readNormalizedLtvString(row.fecha2),
+    hora2: readNormalizedLtvString(row.hora2),
+    viaCheck: readNormalizedLtvBoolean(row.viaCheck),
+    sistema: readNormalizedLtvBoolean(row.sistema),
+    soloCabeza: readNormalizedLtvBoolean(row.soloCabeza),
+    csv: readNormalizedLtvBoolean(row.csv),
+    observaciones: readNormalizedLtvString(row.observaciones),
+  }
+}
+
+function loadNormalizedLtvRows(
+  routePkRange: ManualFtRoutePkRange | null
+): ManualLtvRowsResult {
+  const payload = LTV_NORMALIZED as NormalizedLtvFile
+
+  const rawRows = Array.isArray(payload.rows) ? payload.rows : []
+  const mappedRows = rawRows.map(mapNormalizedLtvRowToDisplayRow)
+
+  const rows = mappedRows.filter((row) =>
+    normalizedLtvOverlapsRoute(row, routePkRange)
+  )
+
+  const publishedAt =
+    typeof payload.meta?.publishedAt === 'string' &&
+    payload.meta.publishedAt.trim().length > 0
+      ? payload.meta.publishedAt
+      : undefined
+
+  return {
+    rows,
+    meta: {
+      // Pour le normalisé, la fraîcheur à contrôler est celle du fichier publié.
+      fetchedAt: publishedAt,
+      sourceUpdatedAt: publishedAt,
+      source: 'normalized',
+      total: mappedRows.length,
+      displayedCount: rows.length,
+    },
+  }
 }
 
 type ManualPdfCanvasViewerProps = {
@@ -887,6 +1008,23 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     useState<'start' | 'settings'>('start')
   const [activeStartupMode, setActiveStartupMode] = useState<StartupMode | null>(null)
   const startupLaunchModeRef = useRef<StartupMode | null>(null)
+
+  type LtvRuntimeSource = 'normalized' | 'adif' | 'pdf'
+  type LtvSourceSwitchDirection = 'previous' | 'next'
+
+  const currentLtvSourceRef = useRef<LtvRuntimeSource>('normalized')
+
+  const getAvailableLtvSourcesForMode = (
+    mode: StartupMode | null
+  ): LtvRuntimeSource[] => {
+    if (mode === 'manual') return ['normalized', 'adif']
+
+    // Le PDF sera ajouté plus tard dans ce cycle pour le mode mixte.
+    // Pour cette étape, on ne branche que Normalisé ⇄ ADIF.
+    if (mode === 'mixed') return ['normalized', 'adif']
+
+    return []
+  }
 
   const [manualImportOpen, setManualImportOpen] = useState(false)
   const [manualImportContext, setManualImportContext] =
@@ -3075,6 +3213,72 @@ ${coords}
     }
   }
 
+    const dispatchLtvRowsForSource = async (params: {
+    ltvSource: Exclude<LtvRuntimeSource, 'pdf'>
+    trainNumber: string
+    journeySource: string
+    activeMode: StartupMode
+    reason: string
+  }) => {
+    const routePkRange = await waitForFtRoutePkRange(params.trainNumber)
+
+    const result =
+      params.ltvSource === 'adif'
+        ? await fetchManualLtvRows(routePkRange)
+        : loadNormalizedLtvRows(routePkRange)
+
+    const ltvMeta = {
+      ...result.meta,
+      source: params.ltvSource,
+    }
+
+    const availableSources = getAvailableLtvSourcesForMode(params.activeMode)
+
+    currentLtvSourceRef.current = params.ltvSource
+
+    console.log('[TitleBar] LTV source chargée', {
+      trainNumber: params.trainNumber,
+      rowsCount: result.rows.length,
+      firstRow: result.rows[0] ?? null,
+      meta: ltvMeta,
+      journeySource: params.journeySource,
+      ltvSource: params.ltvSource,
+      availableSources,
+      reason: params.reason,
+    })
+
+    window.dispatchEvent(
+      new CustomEvent('ltv:parsed', {
+        detail: {
+          mode: result.rows.length > 0 ? 'DISPLAY_DIRECT' : 'NO_LTV',
+          rows: result.rows,
+          source: params.journeySource,
+          ltvSource: params.ltvSource,
+          availableSources,
+          trainNumber: params.trainNumber,
+          meta: ltvMeta,
+          fetchedAt: ltvMeta.fetchedAt,
+          sourceUpdatedAt: ltvMeta.sourceUpdatedAt,
+          displayedCount: ltvMeta.displayedCount,
+        },
+      })
+    )
+
+    logTestEvent('ltv:source:loaded', {
+      source: 'titlebar',
+      mode: params.journeySource,
+      activeMode: params.activeMode,
+      ltvSource: params.ltvSource,
+      trainNumber: params.trainNumber,
+      rowsCount: result.rows.length,
+      fetchedAt: ltvMeta.fetchedAt ?? null,
+      sourceUpdatedAt: ltvMeta.sourceUpdatedAt ?? null,
+      displayedCount: ltvMeta.displayedCount,
+      total: ltvMeta.total ?? null,
+      reason: params.reason,
+    })
+  }
+  
   const startNormalizedJourneyFromTrain = (
     train: ManualTrainOption,
     options: {
@@ -3185,64 +3389,41 @@ ${coords}
       )
     }
 
-    void waitForFtRoutePkRange(trainNumber)
-      .then((routePkRange) => fetchManualLtvRows(routePkRange))
-      .then(({ rows: manualLtvRows, meta: manualLtvMeta }) => {
-        console.log('[TitleBar] LTV normalisées chargées', {
-          trainNumber,
-          rowsCount: manualLtvRows.length,
-          firstRow: manualLtvRows[0] ?? null,
-          meta: manualLtvMeta,
-          source: options.source,
-        })
+    void dispatchLtvRowsForSource({
+      ltvSource: 'normalized',
+      trainNumber,
+      journeySource: options.source,
+      activeMode: options.activeMode,
+      reason: 'journey_start_default_source',
+    }).catch((error) => {
+      console.warn('[TitleBar] Import LTV normalisées impossible', error)
 
-        window.dispatchEvent(
-          new CustomEvent('ltv:parsed', {
-            detail: {
-              mode: manualLtvRows.length > 0 ? 'DISPLAY_DIRECT' : 'NO_LTV',
-              rows: manualLtvRows,
-              source: options.source,
-              trainNumber,
-meta: manualLtvMeta,
-fetchedAt: manualLtvMeta.fetchedAt,
-sourceUpdatedAt: manualLtvMeta.sourceUpdatedAt,
-displayedCount: manualLtvMeta.displayedCount,
-            },
-          })
-        )
-
-        logTestEvent('ltv:manual-import:loaded', {
-          source: 'titlebar',
-          mode: options.source,
-          trainNumber,
-          rowsCount: manualLtvRows.length,
-          fetchedAt: manualLtvMeta.fetchedAt ?? null,
-          displayedCount: manualLtvMeta.displayedCount,
-          total: manualLtvMeta.total ?? null,
-        })
+      logTestEvent('ltv:manual-import:failed', {
+        source: 'titlebar',
+        mode: options.source,
+        trainNumber,
+        error: error instanceof Error ? error.message : String(error),
       })
-      .catch((error) => {
-        console.warn('[TitleBar] Import LTV normalisées impossible', error)
 
-        logTestEvent('ltv:manual-import:failed', {
-          source: 'titlebar',
-          mode: options.source,
-          trainNumber,
-          error: error instanceof Error ? error.message : String(error),
-        })
-
-        window.dispatchEvent(
-          new CustomEvent('ltv:parsed', {
-            detail: {
-              mode: 'NO_LTV',
-              rows: [],
-              source: options.source,
-              trainNumber,
-              error: error instanceof Error ? error.message : String(error),
+      window.dispatchEvent(
+        new CustomEvent('ltv:parsed', {
+          detail: {
+            mode: 'NO_LTV',
+            rows: [],
+            source: options.source,
+            ltvSource: 'normalized',
+            availableSources: getAvailableLtvSourcesForMode(options.activeMode),
+            trainNumber,
+            meta: {
+              source: 'normalized',
+              displayedCount: 0,
             },
-          })
-        )
-      })
+            displayedCount: 0,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        })
+      )
+    })
   }
 
     const runMixedFirstPageOcr = async (
@@ -3464,6 +3645,104 @@ displayedCount: manualLtvMeta.displayedCount,
       closeManualImport: true,
     })
   }
+
+  useEffect(() => {
+    const onLtvSourceSwitchRequest = (event: Event) => {
+      const ce = event as CustomEvent<{
+        direction?: LtvSourceSwitchDirection
+        requestedSource?: LtvRuntimeSource
+        currentSource?: LtvRuntimeSource
+      }>
+
+      if (simulationEnabled) {
+        logTestEvent('ui:blocked', {
+          control: 'ltvSourceSwitch',
+          source: 'titlebar',
+        })
+        return
+      }
+
+      const mode = activeStartupMode
+      if (mode !== 'manual' && mode !== 'mixed') return
+
+      const trainNumber = trainDisplay
+      if (!trainNumber) return
+
+      const availableSources = getAvailableLtvSourcesForMode(mode)
+      if (availableSources.length <= 1) return
+
+      const detail = ce.detail ?? {}
+
+      const currentSource =
+        detail.currentSource && availableSources.includes(detail.currentSource)
+          ? detail.currentSource
+          : currentLtvSourceRef.current
+
+      const requestedSource =
+        detail.requestedSource && availableSources.includes(detail.requestedSource)
+          ? detail.requestedSource
+          : null
+
+      const currentIndex = Math.max(0, availableSources.indexOf(currentSource))
+
+      const nextSource =
+        requestedSource ??
+        availableSources[
+          detail.direction === 'previous'
+            ? (currentIndex - 1 + availableSources.length) % availableSources.length
+            : (currentIndex + 1) % availableSources.length
+        ]
+
+      if (nextSource === 'pdf') {
+        logTestEvent('ltv:source:switch:skipped', {
+          source: 'titlebar',
+          reason: 'pdf_not_implemented_yet',
+          trainNumber,
+          activeMode: mode,
+        })
+        return
+      }
+
+      const lastParsed = ((window as any).__limLastParsed ?? {}) as any
+
+      const journeySource =
+        typeof lastParsed.source === 'string' && lastParsed.source.trim().length > 0
+          ? lastParsed.source
+          : mode === 'mixed'
+            ? 'mixed_import'
+            : 'manual_import'
+
+      void dispatchLtvRowsForSource({
+        ltvSource: nextSource,
+        trainNumber,
+        journeySource,
+        activeMode: mode,
+        reason: 'user_source_switch',
+      }).catch((error) => {
+        console.warn('[TitleBar] Bascule source LTV impossible', error)
+
+        logTestEvent('ltv:source:switch:failed', {
+          source: 'titlebar',
+          activeMode: mode,
+          trainNumber,
+          requestedSource: nextSource,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+    }
+
+    window.addEventListener(
+      'ltv:source-switch-request',
+      onLtvSourceSwitchRequest as EventListener
+    )
+
+    return () => {
+      window.removeEventListener(
+        'ltv:source-switch-request',
+        onLtvSourceSwitchRequest as EventListener
+      )
+    }
+  }, [activeStartupMode, trainDisplay, simulationEnabled])
 
   const computePdfId = async (file: File): Promise<string> => {
     const buf = await file.arrayBuffer()
