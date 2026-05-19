@@ -689,6 +689,7 @@ function setup() {
   }
 
   window.addEventListener("lim:import-pdf", onImport as EventListener)
+  window.addEventListener("ltv:import-pdf-only", onImport as EventListener)
   window.addEventListener("ltv:request-band", onRequestBand as EventListener)
 }
 

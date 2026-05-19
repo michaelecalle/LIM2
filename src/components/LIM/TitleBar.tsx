@@ -1019,9 +1019,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   ): LtvRuntimeSource[] => {
     if (mode === 'manual') return ['normalized', 'adif']
 
-    // Le PDF sera ajouté plus tard dans ce cycle pour le mode mixte.
-    // Pour cette étape, on ne branche que Normalisé ⇄ ADIF.
-    if (mode === 'mixed') return ['normalized', 'adif']
+    if (mode === 'mixed') return ['normalized', 'adif', 'pdf']
 
     return []
   }
@@ -3278,7 +3276,7 @@ ${coords}
       reason: params.reason,
     })
   }
-  
+
   const startNormalizedJourneyFromTrain = (
     train: ManualTrainOption,
     options: {
@@ -3647,7 +3645,7 @@ ${coords}
   }
 
   useEffect(() => {
-    const onLtvSourceSwitchRequest = (event: Event) => {
+    const onLtvSourceSwitchRequest = async (event: Event) => {
       const ce = event as CustomEvent<{
         direction?: LtvSourceSwitchDirection
         requestedSource?: LtvRuntimeSource
@@ -3694,12 +3692,72 @@ ${coords}
         ]
 
       if (nextSource === 'pdf') {
-        logTestEvent('ltv:source:switch:skipped', {
-          source: 'titlebar',
-          reason: 'pdf_not_implemented_yet',
-          trainNumber,
-          activeMode: mode,
-        })
+        const pdfFile = currentPdfFileRef.current
+
+        if (!pdfFile) {
+          console.warn('[TitleBar] Source PDF LTV demandée mais aucun PDF disponible')
+
+          logTestEvent('ltv:source:switch:failed', {
+            source: 'titlebar',
+            activeMode: mode,
+            trainNumber,
+            requestedSource: 'pdf',
+            reason: 'missing_pdf_file',
+          })
+
+          return
+        }
+
+        try {
+          const preview = await buildMixedPdfLtvPreview(pdfFile)
+          const availableSourcesForPdf = getAvailableLtvSourcesForMode(mode)
+
+          currentLtvSourceRef.current = 'pdf'
+
+          window.dispatchEvent(
+            new CustomEvent('ltv:parsed', {
+              detail: {
+                mode: 'DISPLAY_DIRECT',
+                rows: [],
+                previewImageDataUrl: preview.dataUrl,
+                source: mode === 'mixed' ? 'mixed_import' : 'manual_import',
+                ltvSource: 'pdf',
+                availableSources: availableSourcesForPdf,
+                trainNumber,
+                meta: {
+                  source: 'pdf',
+                  sourceUpdatedAt: preview.sourceUpdatedAt,
+                  displayedCount: 0,
+                },
+                sourceUpdatedAt: preview.sourceUpdatedAt,
+                displayedCount: 0,
+              },
+            })
+          )
+
+          logTestEvent('ltv:source:loaded', {
+            source: 'titlebar',
+            mode: mode === 'mixed' ? 'mixed_import' : 'manual_import',
+            activeMode: mode,
+            ltvSource: 'pdf',
+            trainNumber,
+            rowsCount: 0,
+            sourceUpdatedAt: preview.sourceUpdatedAt ?? null,
+            displayedCount: 0,
+            reason: 'user_source_switch',
+          })
+        } catch (error) {
+          console.warn('[TitleBar] Aperçu PDF LTV impossible', error)
+
+          logTestEvent('ltv:source:switch:failed', {
+            source: 'titlebar',
+            activeMode: mode,
+            trainNumber,
+            requestedSource: 'pdf',
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+
         return
       }
 
@@ -3764,6 +3822,268 @@ ${coords}
     await cache.put(req, res)
     return key
   }
+
+    const buildMixedPdfLtvPreview = async (
+    file: File,
+    verticalShiftPct = 0
+  ): Promise<{ dataUrl: string; sourceUpdatedAt?: string }> => {
+    const arrayBuffer = await file.arrayBuffer()
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) })
+    const pdfDoc = await loadingTask.promise
+
+    try {
+      const page = await pdfDoc.getPage(1)
+      const baseViewport = page.getViewport({ scale: 1 })
+
+      const scale = Math.max(
+        1,
+        Math.min(2, 1400 / Math.max(1, baseViewport.width))
+      )
+
+      const viewport = page.getViewport({ scale })
+
+      const fullCanvas = document.createElement('canvas')
+      const fullContext = fullCanvas.getContext('2d')
+
+      if (!fullContext) {
+        throw new Error('Canvas PDF indisponible')
+      }
+
+      fullCanvas.width = Math.floor(viewport.width)
+      fullCanvas.height = Math.floor(viewport.height)
+
+      const renderTask = page.render({
+        canvasContext: fullContext,
+        viewport,
+      })
+
+      await renderTask.promise
+
+      // Aperçu volontairement simple :
+      // on cible une bande réduite autour de la zone habituelle des LTV.
+      // verticalShiftPct permet seulement de monter/descendre cette bande.
+      const cropHeight = Math.floor(fullCanvas.height * 0.24)
+      const baseTopPct = 0.55
+      const requestedTopPct = baseTopPct + verticalShiftPct
+      const maxTopPct = Math.max(0, 1 - cropHeight / Math.max(1, fullCanvas.height))
+
+      const cropTop = Math.floor(
+        fullCanvas.height * Math.max(0, Math.min(maxTopPct, requestedTopPct))
+      )
+      const cropLeft = Math.floor(fullCanvas.width * 0.02)
+      const cropWidth = Math.floor(fullCanvas.width * 0.96)
+
+      const previewCanvas = document.createElement('canvas')
+      const previewContext = previewCanvas.getContext('2d')
+
+      if (!previewContext) {
+        throw new Error('Canvas aperçu PDF indisponible')
+      }
+
+      previewCanvas.width = cropWidth
+      previewCanvas.height = cropHeight
+
+      previewContext.drawImage(
+        fullCanvas,
+        cropLeft,
+        cropTop,
+        cropWidth,
+        cropHeight,
+        0,
+        0,
+        cropWidth,
+        cropHeight
+      )
+
+      return {
+        dataUrl: previewCanvas.toDataURL('image/png'),
+        sourceUpdatedAt:
+          typeof file.lastModified === 'number' && Number.isFinite(file.lastModified)
+            ? new Date(file.lastModified).toISOString()
+            : undefined,
+      }
+    } finally {
+      try {
+        await pdfDoc.destroy?.()
+      } catch {}
+    }
+  }
+
+  useEffect(() => {
+    const onPdfPreviewShiftRequest = async (event: Event) => {
+      const ce = event as CustomEvent<{
+        direction?: 'up' | 'down'
+      }>
+
+      if (simulationEnabled) {
+        logTestEvent('ui:blocked', {
+          control: 'ltvPdfPreviewShift',
+          source: 'titlebar',
+        })
+        return
+      }
+
+      if (activeStartupMode !== 'mixed') return
+      if (currentLtvSourceRef.current !== 'pdf') return
+
+      const pdfFile = currentPdfFileRef.current
+      if (!pdfFile) return
+
+      const trainNumber = trainDisplay
+      if (!trainNumber) return
+
+      const direction = ce.detail?.direction === 'up' ? 'up' : 'down'
+      const currentShiftRaw = (window as any).__limMixedPdfLtvPreviewShiftPct
+      const currentShift =
+        typeof currentShiftRaw === 'number' && Number.isFinite(currentShiftRaw)
+          ? currentShiftRaw
+          : 0
+
+      const STEP = 0.06
+
+      // On autorise une plage large.
+      // La fonction buildMixedPdfLtvPreview protège déjà contre les dépassements
+      // en limitant réellement le recadrage entre le haut et le bas de la page.
+      const SHIFT_LIMIT = 0.60
+
+      const nextShift =
+        direction === 'up'
+          ? Math.max(-SHIFT_LIMIT, currentShift - STEP)
+          : Math.min(SHIFT_LIMIT, currentShift + STEP)
+
+      ;(window as any).__limMixedPdfLtvPreviewShiftPct = nextShift
+
+      try {
+        const preview = await buildMixedPdfLtvPreview(pdfFile, nextShift)
+        const availableSourcesForPdf = getAvailableLtvSourcesForMode('mixed')
+
+        currentLtvSourceRef.current = 'pdf'
+
+        window.dispatchEvent(
+          new CustomEvent('ltv:parsed', {
+            detail: {
+              mode: 'DISPLAY_DIRECT',
+              rows: [],
+              previewImageDataUrl: preview.dataUrl,
+              source: 'mixed_import',
+              ltvSource: 'pdf',
+              availableSources: availableSourcesForPdf,
+              trainNumber,
+              meta: {
+                source: 'pdf',
+                sourceUpdatedAt: preview.sourceUpdatedAt,
+                displayedCount: 0,
+              },
+              sourceUpdatedAt: preview.sourceUpdatedAt,
+              displayedCount: 0,
+            },
+          })
+        )
+
+        logTestEvent('ltv:pdf-preview:shift', {
+          source: 'titlebar',
+          direction,
+          shiftPct: nextShift,
+          trainNumber,
+        })
+      } catch (error) {
+        console.warn('[TitleBar] Déplacement aperçu PDF LTV impossible', error)
+
+        logTestEvent('ltv:pdf-preview:shift:failed', {
+          source: 'titlebar',
+          direction,
+          trainNumber,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    window.addEventListener(
+      'ltv:pdf-preview-shift-request',
+      onPdfPreviewShiftRequest as EventListener
+    )
+
+    return () => {
+      window.removeEventListener(
+        'ltv:pdf-preview-shift-request',
+        onPdfPreviewShiftRequest as EventListener
+      )
+    }
+  }, [activeStartupMode, trainDisplay, simulationEnabled])
+
+    useEffect(() => {
+    const onLtvPdfHistoryRequest = (event: Event) => {
+      const ce = event as CustomEvent<{
+        source?: string
+      }>
+
+      if (simulationEnabled) {
+        logTestEvent('ui:blocked', {
+          control: 'ltvUsePdf',
+          source: 'titlebar',
+        })
+        return
+      }
+
+      if (activeStartupMode !== 'mixed') {
+        logTestEvent('ltv:pdf-history-request:ignored', {
+          source: 'titlebar',
+          reason: 'not_mixed_mode',
+          activeStartupMode,
+        })
+        return
+      }
+
+      const file = currentPdfFileRef.current
+
+      if (!file) {
+        console.warn('[TitleBar] Utiliser le PDF demandé mais aucun PDF disponible')
+
+        logTestEvent('ltv:pdf-history-request:failed', {
+          source: 'titlebar',
+          reason: 'missing_pdf_file',
+          requestSource: ce.detail?.source ?? null,
+        })
+
+        return
+      }
+
+      currentLtvSourceRef.current = 'pdf'
+
+      logTestEvent('ltv:pdf-history-request:dispatch', {
+        source: 'titlebar',
+        requestSource: ce.detail?.source ?? null,
+        activeStartupMode,
+        pdfName: file.name,
+        pdfId: currentPdfIdRef.current,
+        replayKey: currentPdfReplayKeyRef.current,
+      })
+
+      window.dispatchEvent(
+        new CustomEvent('ltv:import-pdf-only', {
+          detail: {
+            file,
+            pdfId: currentPdfIdRef.current,
+            replayKey: currentPdfReplayKeyRef.current,
+            storage: 'local',
+            source: 'mixed_ltv_use_pdf',
+          },
+        })
+      )
+    }
+
+    window.addEventListener(
+      'ltv:pdf-history-request',
+      onLtvPdfHistoryRequest as EventListener
+    )
+
+    return () => {
+      window.removeEventListener(
+        'ltv:pdf-history-request',
+        onLtvPdfHistoryRequest as EventListener
+      )
+    }
+  }, [activeStartupMode, simulationEnabled])
 
   const onPickPdf: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
     const file = e.target.files?.[0]
@@ -5378,16 +5698,56 @@ setAutoScrollStartedOnce(next)
           </div>
 
           {/* Démarrage */}
-          {pdfMode === 'blue' && (
-            <button
-              type="button"
-              onClick={handleStartClick}
-              className="h-8 px-3 text-xs rounded-md bg-blue-600 text-white font-semibold flex items-center gap-1"
-              title="Démarrer un parcours"
-            >
-              Démarrer
-            </button>
-          )}
+          {pdfMode === 'blue' &&
+            (() => {
+              const storedStartupMode = readStoredStartupMode()
+
+              const startupModeIcon =
+                storedStartupMode === 'manual'
+                  ? '✋'
+                  : storedStartupMode === 'pdf'
+                    ? 'PDF'
+                    : storedStartupMode === 'mixed'
+                      ? '🧩'
+                      : null
+
+              const startupModeTitle =
+                storedStartupMode === 'manual'
+                  ? 'Mode de démarrage sélectionné : manuel'
+                  : storedStartupMode === 'pdf'
+                    ? 'Mode de démarrage sélectionné : PDF historique'
+                    : storedStartupMode === 'mixed'
+                      ? 'Mode de démarrage sélectionné : mixte'
+                      : 'Aucun mode de démarrage enregistré'
+
+              const startupModeIconClassName =
+                storedStartupMode === 'pdf'
+                  ? 'h-8 w-8 rounded-md bg-red-600 text-white flex items-center justify-center text-[10px] font-bold select-none'
+                  : 'h-8 w-8 rounded-md bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100 flex items-center justify-center text-sm select-none'
+
+              return (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleStartClick}
+                    className="h-8 px-3 text-xs rounded-md bg-blue-600 text-white font-semibold flex items-center gap-1"
+                    title="Démarrer un parcours"
+                  >
+                    Démarrer
+                  </button>
+
+                  {startupModeIcon && (
+                    <span
+                      className={startupModeIconClassName}
+                      title={startupModeTitle}
+                      aria-label={startupModeTitle}
+                    >
+                      {startupModeIcon}
+                    </span>
+                  )}
+                </div>
+              )
+            })()}
 
           {/* NORMAL / SECOURS : visible uniquement après démarrage */}
           {pdfMode !== 'blue' && (

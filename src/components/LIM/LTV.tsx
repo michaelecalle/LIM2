@@ -1560,7 +1560,133 @@ const LTV: React.FC = () => {
               {/* Barre d'actions :
                  - affichée SEULEMENT tant que l'image n'est pas verrouillée
                  - disparaît totalement après validation */}
-              {!lockedDisplayDirect && (
+
+                               {ltvDisplayMeta.source === "pdf" && (
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                    padding: "8px 0 10px",
+                    backgroundColor: "#fff",
+                    alignItems: "center",
+                  }}
+                >
+                  <button
+                    style={{
+                      backgroundColor: "#4b5563",
+                      color: "#fff",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      borderRadius: "6px",
+                      padding: "6px 10px",
+                      border: "2px solid #000",
+                      boxShadow: "0 4px 8px rgba(0,0,0,0.4)",
+                      cursor: "pointer",
+                      minWidth: "130px",
+                      lineHeight: 1.2,
+                    }}
+                    onClick={(event) => {
+                      event.stopPropagation()
+
+                      if (simulationEnabled) {
+                        logTestEvent("ui:blocked", {
+                          control: "ltvPdfPreviewShiftUp",
+                          source: "ltv",
+                        })
+                        return
+                      }
+
+                      window.dispatchEvent(
+                        new CustomEvent("ltv:pdf-preview-shift-request", {
+                          detail: {
+                            direction: "up",
+                          },
+                        })
+                      )
+                    }}
+                  >
+                    Monter l’aperçu ▲
+                  </button>
+
+                  <button
+                    style={{
+                      backgroundColor: "#4b5563",
+                      color: "#fff",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      borderRadius: "6px",
+                      padding: "6px 10px",
+                      border: "2px solid #000",
+                      boxShadow: "0 4px 8px rgba(0,0,0,0.4)",
+                      cursor: "pointer",
+                      minWidth: "130px",
+                      lineHeight: 1.2,
+                    }}
+                    onClick={(event) => {
+                      event.stopPropagation()
+
+                      if (simulationEnabled) {
+                        logTestEvent("ui:blocked", {
+                          control: "ltvPdfPreviewShiftDown",
+                          source: "ltv",
+                        })
+                        return
+                      }
+
+                      window.dispatchEvent(
+                        new CustomEvent("ltv:pdf-preview-shift-request", {
+                          detail: {
+                            direction: "down",
+                          },
+                        })
+                      )
+                    }}
+                  >
+                    Descendre l’aperçu ▼
+                  </button>
+
+                  <button
+                    style={{
+                      backgroundColor: "#b91c1c",
+                      color: "#fff",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      borderRadius: "6px",
+                      padding: "6px 12px",
+                      border: "2px solid #000",
+                      boxShadow: "0 4px 8px rgba(0,0,0,0.4)",
+                      cursor: "pointer",
+                      minWidth: "120px",
+                      lineHeight: 1.2,
+                    }}
+                    onClick={(event) => {
+                      event.stopPropagation()
+
+                      if (simulationEnabled) {
+                        logTestEvent("ui:blocked", {
+                          control: "ltvUsePdf",
+                          source: "ltv",
+                        })
+                        return
+                      }
+
+                      window.dispatchEvent(
+                        new CustomEvent("ltv:pdf-history-request", {
+                          detail: {
+                            source: "ltv",
+                          },
+                        })
+                      )
+                    }}
+                  >
+                    Utiliser le PDF
+                  </button>
+                </div>
+              )}
+
+              {!lockedDisplayDirect && ltvDisplayMeta.source !== "pdf" && (
                 <div
                   style={{
                     display: "flex",
@@ -1795,7 +1921,10 @@ const LTV: React.FC = () => {
 
   const ltvCaptionParts = ["LTV"]
 
-  if (typeof ltvDisplayMeta.displayedCount === "number") {
+  if (
+    ltvDisplayMeta.source !== "pdf" &&
+    typeof ltvDisplayMeta.displayedCount === "number"
+  ) {
     ltvCaptionParts.push(String(ltvDisplayMeta.displayedCount))
   }
 
