@@ -2113,7 +2113,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     "9705": {
       "meta": {
         "origine": "BARCELONA SANTS",
-        "destination": "LIMITE ADIF - LFPSA",
+        "destination": "PERPIGNAN",
         "ligne": "050",
         "numeroEspagne": "",
         "numeroFrance": "9704",
@@ -2175,13 +2175,17 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "sn-data-0048": {
           "hora": "16:24",
           "conc": "5"
+        },
+        "sn-data-0055": {
+          "hora": "16:43",
+          "conc": "19"
         }
       },
       "variants": [
         {
           "meta": {
             "origine": "BARCELONA SANTS",
-            "destination": "LIMITE ADIF - LFPSA",
+            "destination": "PERPIGNAN",
             "ligne": "050",
             "numeroEspagne": "",
             "numeroFrance": "9704",
@@ -2256,6 +2260,10 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "sn-data-0048": {
               "hora": "16:24",
               "conc": "5"
+            },
+            "sn-data-0055": {
+              "hora": "16:43",
+              "conc": "19"
             }
           }
         }
@@ -2643,7 +2651,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     },
     "9711": {
       "meta": {
-        "origine": "LIMITE ADIF - LFPSA",
+        "origine": "PERPIGNAN",
         "destination": "BARCELONA SANTS",
         "ligne": "050",
         "numeroEspagne": "",
@@ -2696,12 +2704,15 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "ns-data-0006": {
           "hora": "13:36"
+        },
+        "ns-data-0055": {
+          "hora": "12:06"
         }
       },
       "variants": [
         {
           "meta": {
-            "origine": "LIMITE ADIF - LFPSA",
+            "origine": "PERPIGNAN",
             "destination": "BARCELONA SANTS",
             "ligne": "050",
             "numeroEspagne": "",
@@ -2767,6 +2778,9 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0006": {
               "hora": "13:36"
+            },
+            "ns-data-0055": {
+              "hora": "12:06"
             }
           }
         }
