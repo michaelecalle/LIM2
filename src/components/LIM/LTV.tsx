@@ -1899,7 +1899,7 @@ const LTV: React.FC = () => {
     )
   }
   const ltvFormattedFetchedAt = formatLtvFetchedAt(ltvDisplayMeta.fetchedAt)
-  const ltvFormattedSourceUpdatedAt = formatLtvDateOnly(
+  const ltvFormattedSourceUpdatedAt = formatLtvFetchedAt(
     ltvDisplayMeta.sourceUpdatedAt
   )
 

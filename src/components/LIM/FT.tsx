@@ -3767,22 +3767,17 @@ const isRelock = acceptedMode === "relock";
           // Visuel + base de recalage (comme un clic Standby)
           setSelectedRowIndex(rowIndex);
           recalibrateFromRowRef.current = rowIndex;
+          standbyLockedRowRef.current = rowIndex;
 
           // Optionnel mais cohérent : mettre aussi la ligne active sur cette gare
           setActiveRowIndex(rowIndex);
 
-// On passe en Standby (🕑 orange) SANS couper l’auto-scroll
-window.dispatchEvent(
-  new CustomEvent("ft:auto-scroll-change", {
-    detail: { enabled: true },
-  })
-);
-
-window.dispatchEvent(
-  new CustomEvent("lim:hourly-mode", {
-    detail: { enabled: true, standby: true },
-  })
-);
+          // On passe en Standby (🕑 orange) SANS couper l’autoscroll
+          window.dispatchEvent(
+            new CustomEvent("ft:auto-scroll-change", {
+              detail: { enabled: true, standby: true },
+            })
+          );
         } else {
           // Pas de gare commerciale proche => on ne fait rien (comportement normal)
           logTestEvent("gps:freeze-red:station-standby-skip", {
@@ -4844,8 +4839,20 @@ if (hasFranceFtLocal) {
 
       if (!isVoyageursStop || isOriginOrTerminus) continue;
 
+      const comFromNormalizedRaw = (e as any).com;
+      const comFromNormalized =
+        typeof comFromNormalizedRaw === "string"
+          ? comFromNormalizedRaw.trim()
+          : typeof comFromNormalizedRaw === "number" && Number.isFinite(comFromNormalizedRaw)
+            ? String(comFromNormalizedRaw)
+            : "";
+
       const codesPourHeure = codesCParHeure[horaText] ?? [];
-      const firstCode = codesPourHeure[0];
+      const comFromPdf =
+        codesPourHeure.length > 0 ? codesPourHeure.join(" ").trim() : "";
+
+      const com = comFromNormalized || comFromPdf;
+      const firstCode = com.split(/\s+/)[0];
       const n = Number(firstCode);
 
       if (Number.isFinite(n) && n > 0) {
@@ -5002,8 +5009,20 @@ if (hasFranceFtLocal) {
       const isOriginOrTerminus = i === firstNonNoteIndex || i === lastNonNoteIndex;
       if (!isVoyageursStop || isOriginOrTerminus) continue;
 
+      const comFromNormalizedRaw = (e as any).com;
+      const comFromNormalized =
+        typeof comFromNormalizedRaw === "string"
+          ? comFromNormalizedRaw.trim()
+          : typeof comFromNormalizedRaw === "number" && Number.isFinite(comFromNormalizedRaw)
+            ? String(comFromNormalizedRaw)
+            : "";
+
       const codesPourHeure = codesCParHeure[horaText] ?? [];
-      const firstCode = codesPourHeure[0];
+      const comFromPdf =
+        codesPourHeure.length > 0 ? codesPourHeure.join(" ").trim() : "";
+
+      const com = comFromNormalized || comFromPdf;
+      const firstCode = com.split(/\s+/)[0];
       const n = Number(firstCode);
 
       if (Number.isFinite(n) && n > 0) {

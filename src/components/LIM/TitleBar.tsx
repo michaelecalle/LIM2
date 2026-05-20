@@ -2935,6 +2935,29 @@ ${coords}
     }
   }
 
+    const forceAppRefresh = async () => {
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration()
+
+        if (reg) {
+          await reg.update()
+
+          if (reg.waiting) {
+            await applySwUpdate()
+            return
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[TitleBar][SW] force refresh failed', err)
+    }
+
+    const url = new URL(window.location.href)
+    url.searchParams.set('limRefresh', String(Date.now()))
+    window.location.replace(url.toString())
+  }
+
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
 
@@ -5924,6 +5947,40 @@ if (autoScroll) {
                   <div className="font-semibold">Modifier le mode de démarrage</div>
                   <div className="text-[11px] opacity-70">
                     Choisir le mode utilisé par le bouton Démarrer
+                  </div>
+                </div>
+              </button>
+
+              <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
+
+
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (simulationEnabled) {
+                    logTestEvent('ui:blocked', {
+                      control: 'forceAppRefresh',
+                      source: 'settings',
+                    })
+                    return
+                  }
+
+                  logTestEvent('ui:force-refresh:click', {
+                    source: 'settings',
+                    train: trainDisplay ?? null,
+                  })
+
+                  void forceAppRefresh()
+                }}
+                className="w-full flex items-start justify-between gap-3 py-1 cursor-pointer select-none rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition px-0"
+              >
+                <div className="text-left">
+                  <div className="font-semibold text-blue-600 dark:text-blue-400">
+                    Vider le cache
+                  </div>
+                  <div className="text-[11px] opacity-70">
+                    Recharge l’application pour récupérer la dernière version publiée
                   </div>
                 </div>
               </button>
