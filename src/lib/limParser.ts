@@ -214,8 +214,27 @@ function mergePreferA(a: any, b: any) {
 }
 
 export async function handleFile(file: File): Promise<Fields> {
-  const textA = await readPdfFirstPageText(file)
-  const fieldsA = extractFields(textA || "")
+  const PDF_TEXT_TIMEOUT_MS = 15_000
+
+  let textA = ""
+  let fieldsA: Fields = {}
+
+  try {
+    textA = await Promise.race([
+      readPdfFirstPageText(file),
+      new Promise<string>((_, reject) =>
+        window.setTimeout(
+          () => reject(new Error("PDF first page text timeout")),
+          PDF_TEXT_TIMEOUT_MS
+        )
+      ),
+    ])
+
+    fieldsA = extractFields(textA || "")
+  } catch (err) {
+    console.warn("[limParser] PDF text extraction failed or timed out", err)
+    fieldsA = {}
+  }
 
   const needsOCR =
     !textLooksUsable(textA || "") ||
@@ -235,7 +254,6 @@ export async function handleFile(file: File): Promise<Fields> {
         ocrFallbackFn = mod.ocrFallback
       }
 
-      // ✅ garde-fou : si l'OCR se bloque (offline), on coupe au bout de OCR_TIMEOUT_MS
       const textB = await Promise.race([
         ocrFallbackFn(file),
         new Promise<string>((_, reject) =>
