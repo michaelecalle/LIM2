@@ -77,7 +77,12 @@ export default function App() {
   const [foldInfosLtv, setFoldInfosLtv] = React.useState(false)
 
   const [isDark, setIsDark] = React.useState(() => {
-    if (typeof document === "undefined") return false
+    if (typeof window === "undefined" || typeof document === "undefined") return false
+
+    const storedTheme = window.localStorage.getItem("theme")
+    if (storedTheme === "dark") return true
+    if (storedTheme === "light") return false
+
     const html = document.documentElement
     return (
       html.classList.contains("dark") ||
@@ -545,17 +550,28 @@ export default function App() {
         {pdfMode === "blue" && (
           <div className="mt-3 flex-1 min-h-0">
             <div
-              className={
-                isDark
-                  ? "h-full flex flex-col items-center justify-center rounded-2xl bg-black text-zinc-500"
-                  : "h-full flex flex-col items-center justify-center rounded-2xl bg-zinc-100 text-zinc-200"
-              }
+              className="h-full flex flex-col items-center justify-center rounded-2xl select-none"
+              style={{
+                backgroundColor: isDark ? "#09090b" : "#f4f4f5",
+                color: isDark ? "#f4f4f5" : "#18181b",
+                border: isDark ? "1px solid #27272a" : "1px solid #e4e4e7",
+              }}
             >
-              <div className="text-[300px] leading-none font-semibold tracking-tight select-none">
+              <div
+                className="text-[300px] leading-none font-semibold tracking-tight"
+                style={{
+                  color: isDark ? "rgba(244,244,245,0.10)" : "rgba(24,24,27,0.08)",
+                }}
+              >
                 LIM
               </div>
 
-              <div className={isDark ? "mt-4 max-w-5xl px-10 text-center text-[28px] leading-tight font-medium italic select-none text-zinc-100" : "mt-4 max-w-5xl px-10 text-center text-[28px] leading-tight font-medium italic select-none text-zinc-900"}>
+              <div
+                className="mt-4 max-w-5xl px-10 text-center text-[28px] leading-tight font-medium italic"
+                style={{
+                  color: isDark ? "#f4f4f5" : "#18181b",
+                }}
+              >
                 Cette application constitue un outil d’assistance et de confort de
                 consultation.
                 <br />
@@ -565,7 +581,42 @@ export default function App() {
                 qui restent les seules références de base pour l’exploitation.
               </div>
 
-              <div className="mt-6 text-7xl italic tracking-wide select-none">
+              <div
+                className="mt-8 text-center text-[26px] leading-tight font-semibold italic"
+                style={{
+                  color: isDark ? "#fca5a5" : "#b91c1c",
+                }}
+              >
+                Pour un meilleur confort d’utilisation, passez en mode guidé
+              </div>
+
+              <button
+                type="button"
+                className="mt-3 text-center text-[16px] leading-tight italic underline underline-offset-4 transition-opacity hover:opacity-100 opacity-70"
+                style={{
+                  color: isDark ? "#d4d4d8" : "#52525b",
+                }}
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("lim:manual-open-page", {
+                      detail: {
+                        page: 5,
+                        tocId: "prerequis-ipad",
+                        source: "startup-screen",
+                      },
+                    })
+                  )
+                }}
+              >
+                Procédure conseillée avant la première utilisation
+              </button>
+
+              <div
+                className="mt-10 text-7xl italic tracking-wide"
+                style={{
+                  color: isDark ? "rgba(244,244,245,0.14)" : "rgba(24,24,27,0.10)",
+                }}
+              >
                 Version {APP_VERSION}
               </div>
             </div>

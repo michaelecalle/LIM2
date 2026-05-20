@@ -893,8 +893,28 @@ function ManualPdfCanvasViewer({
   const canGoNext = pageCount > 0 && page < pageCount && !loading
 
   return (
-    <div className="h-full min-h-0 flex flex-col bg-zinc-100 dark:bg-zinc-950">
-      <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+    <div
+      className="h-full min-h-0 flex flex-col"
+      style={{
+        backgroundColor: document.documentElement.classList.contains('dark')
+          ? '#09090b'
+          : '#f4f4f5',
+        color: document.documentElement.classList.contains('dark')
+          ? '#f4f4f5'
+          : '#18181b',
+      }}
+    >
+      <div
+        className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b"
+        style={{
+          backgroundColor: document.documentElement.classList.contains('dark')
+            ? '#18181b'
+            : '#ffffff',
+          borderColor: document.documentElement.classList.contains('dark')
+            ? '#3f3f46'
+            : '#e4e4e7',
+        }}
+      >
         <button
           type="button"
           disabled={!canGoPrevious}
@@ -939,7 +959,12 @@ function ManualPdfCanvasViewer({
 
       <div
         ref={containerRef}
-        className="min-h-0 flex-1 overflow-auto bg-zinc-200 dark:bg-zinc-950 p-3"
+        className="min-h-0 flex-1 overflow-auto p-3"
+        style={{
+          backgroundColor: document.documentElement.classList.contains('dark')
+            ? '#000000'
+            : '#e4e4e7',
+        }}
       >
         {error && (
           <div className="mx-auto max-w-xl rounded-xl bg-red-50 border border-red-200 text-red-700 p-3 text-xs">
@@ -956,7 +981,13 @@ function ManualPdfCanvasViewer({
         {!error && (
           <canvas
             ref={canvasRef}
-            className="mx-auto block bg-white shadow-sm"
+            className="mx-auto block shadow-sm"
+            style={{
+              backgroundColor: '#ffffff',
+              filter: document.documentElement.classList.contains('dark')
+                ? 'invert(1) hue-rotate(180deg)'
+                : 'none',
+            }}
           />
         )}
       </div>
@@ -2865,6 +2896,46 @@ ${coords}
     }
   }
 
+    useEffect(() => {
+    const handler = (event: Event) => {
+      const ce = event as CustomEvent<{
+        page?: number
+        tocId?: string
+        source?: string
+      }>
+
+      const requestedPage =
+        typeof ce.detail?.page === 'number' && Number.isFinite(ce.detail.page)
+          ? Math.trunc(ce.detail.page)
+          : 5
+
+      const requestedTocId =
+        typeof ce.detail?.tocId === 'string' && ce.detail.tocId.trim().length > 0
+          ? ce.detail.tocId
+          : 'prerequis-ipad'
+
+      setManualPage(requestedPage)
+      setManualActiveTocId(requestedTocId)
+      setManualOpen(true)
+
+      if (settingsDetailsRef.current?.hasAttribute('open')) {
+        settingsDetailsRef.current.removeAttribute('open')
+      }
+
+      logTestEvent('ui:manual:open-page', {
+        source: ce.detail?.source ?? 'external_event',
+        page: requestedPage,
+        tocId: requestedTocId,
+      })
+    }
+
+    window.addEventListener('lim:manual-open-page', handler as EventListener)
+
+    return () => {
+      window.removeEventListener('lim:manual-open-page', handler as EventListener)
+    }
+  }, [])
+  
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
       const el = settingsDetailsRef.current
@@ -5166,7 +5237,12 @@ const IconFile = () => null
           }}
         >
           <div
-            className="w-[min(620px,92vw)] rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-lg p-4"
+            className="w-[min(620px,92vw)] rounded-2xl border shadow-lg p-4"
+            style={{
+              backgroundColor: dark ? "#18181b" : "#ffffff",
+              color: dark ? "#f4f4f5" : "#18181b",
+              borderColor: dark ? "#3f3f46" : "#e4e4e7",
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <div>
@@ -5181,7 +5257,12 @@ const IconFile = () => null
             <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-3" />
 
             <div className="space-y-2">
-              <label className="block rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 p-3 cursor-pointer bg-zinc-50 dark:bg-zinc-800/40">
+              <label className="block rounded-xl border p-3 cursor-pointer"
+style={{
+  backgroundColor: dark ? "#27272a" : "#fafafa",
+  color: dark ? "#f4f4f5" : "#18181b",
+  borderColor: dark ? "#52525b" : "#e4e4e7",
+}}>
                 <div className="flex items-start gap-3">
                   <input
                     type="radio"
@@ -5203,7 +5284,12 @@ const IconFile = () => null
                 </div>
               </label>
 
-              <label className="block rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 p-3 cursor-pointer bg-zinc-50 dark:bg-zinc-800/40">
+              <label className="block rounded-xl border p-3 cursor-pointer"
+style={{
+  backgroundColor: dark ? "#27272a" : "#fafafa",
+  color: dark ? "#f4f4f5" : "#18181b",
+  borderColor: dark ? "#52525b" : "#e4e4e7",
+}}>
                 <div className="flex items-start gap-3">
                   <input
                     type="radio"
@@ -5225,7 +5311,12 @@ const IconFile = () => null
                 </div>
               </label>
 
-              <label className="block rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 p-3 cursor-pointer bg-zinc-50 dark:bg-zinc-800/40">
+              <label className="block rounded-xl border p-3 cursor-pointer"
+style={{
+  backgroundColor: dark ? "#27272a" : "#fafafa",
+  color: dark ? "#f4f4f5" : "#18181b",
+  borderColor: dark ? "#52525b" : "#e4e4e7",
+}}>
                 <div className="flex items-start gap-3">
                   <input
                     type="radio"
@@ -5911,7 +6002,14 @@ if (autoScroll) {
               </svg>
             </summary>
 
-            <div className="absolute right-0 mt-2 w-72 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-lg p-3 text-xs z-[9999]">
+            <div
+              className="absolute right-0 mt-2 w-72 rounded-xl border shadow-lg p-3 text-xs z-[9999]"
+              style={{
+                backgroundColor: dark ? "#18181b" : "#ffffff",
+                color: dark ? "#f4f4f5" : "#18181b",
+                borderColor: dark ? "#3f3f46" : "#e4e4e7",
+              }}
+            >
               <div className="text-[11px] font-semibold opacity-70 mb-2">Paramètres</div>
 
               <button
@@ -6229,15 +6327,25 @@ if (autoScroll) {
 
           {manualOpen && (
             <div
-              className="fixed left-0 right-0 z-[9998] bg-zinc-100/95 dark:bg-zinc-950/95 border-t border-zinc-200 dark:border-zinc-700 overflow-hidden"
+              className="fixed left-0 right-0 z-[9998] border-t overflow-hidden"
               style={{
                 top: '4rem',
                 height: 'calc(100vh - 4rem)',
                 maxHeight: 'calc(100dvh - 4rem)',
+                backgroundColor: dark ? 'rgba(9, 9, 11, 0.96)' : 'rgba(244, 244, 245, 0.95)',
+                borderColor: dark ? '#3f3f46' : '#e4e4e7',
+                color: dark ? '#f4f4f5' : '#18181b',
               }}
             >
               <div className="h-full flex flex-col gap-2 p-3">
-                <div className="shrink-0 flex items-center justify-between gap-3 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm px-3 py-2">
+                <div
+                  className="shrink-0 flex items-center justify-between gap-3 rounded-xl border shadow-sm px-3 py-2"
+                  style={{
+                    backgroundColor: dark ? '#18181b' : '#ffffff',
+                    color: dark ? '#f4f4f5' : '#18181b',
+                    borderColor: dark ? '#3f3f46' : '#e4e4e7',
+                  }}
+                >
                   <div className="min-w-0">
                     <div className="text-sm font-semibold">
                       Manuel utilisateur
@@ -6292,7 +6400,14 @@ if (autoScroll) {
                   className="min-h-0 flex-1 grid gap-2"
                   style={{ gridTemplateColumns: '280px minmax(0, 1fr)' }}
                 >
-                  <aside className="min-h-0 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm flex flex-col">
+                  <aside
+                    className="min-h-0 rounded-xl overflow-hidden border shadow-sm flex flex-col"
+                    style={{
+                      backgroundColor: dark ? '#18181b' : '#ffffff',
+                      color: dark ? '#f4f4f5' : '#18181b',
+                      borderColor: dark ? '#3f3f46' : '#e4e4e7',
+                    }}
+                  >
                     <div className="shrink-0 px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
                       <div className="text-xs font-semibold">Sommaire</div>
                       <div className="text-[11px] opacity-60">
@@ -6359,7 +6474,12 @@ if (autoScroll) {
               onClick={() => setAboutOpen(false)}
             >
               <div
-                className="w-[min(900px,92vw)] max-h-[85vh] rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-lg p-4"
+                className="w-[min(900px,92vw)] max-h-[85vh] rounded-2xl border shadow-lg p-4"
+                style={{
+                  backgroundColor: dark ? '#18181b' : '#ffffff',
+                  color: dark ? '#f4f4f5' : '#18181b',
+                  borderColor: dark ? '#3f3f46' : '#e4e4e7',
+                }}
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-start justify-between gap-4">
@@ -6380,8 +6500,13 @@ if (autoScroll) {
                 <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-3" />
 
                 <div
-                  className="rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/70 dark:border-zinc-700/70 p-3 text-xs whitespace-pre-wrap overflow-auto"
-                  style={{ maxHeight: '65vh' }}
+                  className="rounded-xl border p-3 text-xs whitespace-pre-wrap overflow-auto"
+                  style={{
+                    maxHeight: '65vh',
+                    backgroundColor: dark ? '#27272a' : '#fafafa',
+                    color: dark ? '#f4f4f5' : '#18181b',
+                    borderColor: dark ? '#52525b' : '#e4e4e7',
+                  }}
                 >
                   {CHANGELOG_TEXT}
                 </div>
