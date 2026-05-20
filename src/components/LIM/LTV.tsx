@@ -224,6 +224,26 @@ const LTV: React.FC = () => {
     }
   }, [])
 
+  useEffect(() => {
+    const onLtvDiag = (e: Event) => {
+      const ce = e as CustomEvent<{ message?: string }>
+      const message = ce.detail?.message || "LTV diag reçu sans message"
+
+      setLtvDebugText((previous) => {
+        if (!previous || previous.startsWith("LTV diag : en attente")) {
+          return message
+        }
+
+        return `${previous}\n${message}`
+      })
+    }
+
+    window.addEventListener("ltv:diag", onLtvDiag as EventListener)
+
+    return () => {
+      window.removeEventListener("ltv:diag", onLtvDiag as EventListener)
+    }
+  }, [])
 
   // Deux candidates "historiques" envoyées par le parseur en mode DISPLAY_DIRECT
   const [previewImage, setPreviewImage] = useState<string | undefined>(
