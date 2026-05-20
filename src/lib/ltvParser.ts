@@ -516,89 +516,16 @@ async function handleFileForLtv(file: File) {
     mode: c.mode,
   }
 
-  let firstPage: PDFPageProxy | null = null
-  try {
-    firstPage = await pdf.getPage(1)
-  } catch {
-    firstPage = null
-  }
+  // Diagnostic iPad :
+  // on désactive temporairement toute génération d'image/canvas côté ltvParser.
+  // Objectif : vérifier si le blocage du mode PDF historique vient du rendu image LTV.
+  lastPdfForLtv = pdf
+  lastPage1ForLtv = null
 
-  // Mémorise la page 1 pour les futures demandes de bandes (ltv:request-band)
-  if (firstPage) {
-    lastPdfForLtv = pdf
-    lastPage1ForLtv = firstPage
-  } else {
-    lastPdfForLtv = null
-    lastPage1ForLtv = null
-  }
-
-  if (firstPage) {
-    if (c.mode === "DISPLAY_DIRECT") {
-      let bestNativeUrl: string | undefined = undefined
-      let secondNativeUrl: string | undefined = undefined
-
-
-      // Désactivé provisoirement : sur iPad, l'extraction native XObject
-      // semble pouvoir bloquer ou dépasser le garde-fou de traitement PDF.
-      // On conserve le fallback plus simple par bande canvas juste en dessous.
-      console.log("[ltvParser] native XObject extract skipped")
-
-      const { bestDataUrl, debugBands } = await buildDebugBandsForPage1(
-        firstPage,
-        "DISPLAY_DIRECT"
-      )
-
-      if (debugBands && debugBands.length > 0) {
-        parsed.debugBands = debugBands
-      }
-
-      if (bestNativeUrl) {
-        parsed.previewImageDataUrl = bestNativeUrl
-      } else if (bestDataUrl) {
-        parsed.previewImageDataUrl = bestDataUrl
-      } else {
-        try {
-          const fallbackUrl = await renderPageTopCropAsDataURL(firstPage)
-          if (fallbackUrl) {
-            parsed.previewImageDataUrl = fallbackUrl
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-
-      if (secondNativeUrl && secondNativeUrl !== parsed.previewImageDataUrl) {
-        parsed.altPreviewImageDataUrl = secondNativeUrl
-      } else if (bestDataUrl && bestDataUrl !== parsed.previewImageDataUrl) {
-        parsed.altPreviewImageDataUrl = bestDataUrl
-      }
-    } else if (c.mode === "NEEDS_CROP") {
-
-      const { bestDataUrl, debugBands } = await buildDebugBandsForPage1(
-        firstPage,
-        "NEEDS_CROP"
-      )
-
-      if (debugBands && debugBands.length > 0) {
-        parsed.debugBands = debugBands
-      }
-
-      if (bestDataUrl) {
-        parsed.previewImageDataUrl = bestDataUrl
-      } else {
-        try {
-          const fallbackUrl = await renderPageTopCropAsDataURL(firstPage)
-          if (fallbackUrl) {
-            parsed.previewImageDataUrl = fallbackUrl
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-    } else {
-      // NO_LTV → pas d'image.
-    }
-  }
+  console.log("[ltvParser] image generation skipped for diagnostic", {
+    mode: c.mode,
+    pages: pagesText.length,
+  })
 
   dispatchLtvParsed(parsed)
   return parsed
