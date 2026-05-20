@@ -3883,10 +3883,10 @@ ${coords}
       await renderTask.promise
 
       // Aperçu volontairement simple :
-      // on cible une bande réduite autour de la zone habituelle des LTV.
+      // on cible la zone LTV habituelle, située dans la partie haute de la page 1.
       // verticalShiftPct permet seulement de monter/descendre cette bande.
-      const cropHeight = Math.floor(fullCanvas.height * 0.24)
-      const baseTopPct = 0.55
+      const cropHeight = Math.floor(fullCanvas.height * 0.23)
+      const baseTopPct = 0.18
       const requestedTopPct = baseTopPct + verticalShiftPct
       const maxTopPct = Math.max(0, 1 - cropHeight / Math.max(1, fullCanvas.height))
 

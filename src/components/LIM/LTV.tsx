@@ -1661,7 +1661,8 @@ const LTV: React.FC = () => {
                       minWidth: "120px",
                       lineHeight: 1.2,
                     }}
-                    onClick={(event) => {
+                    onPointerDown={(event) => {
+                      event.preventDefault()
                       event.stopPropagation()
 
                       if (simulationEnabled) {
