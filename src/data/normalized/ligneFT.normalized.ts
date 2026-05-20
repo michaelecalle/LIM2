@@ -2113,7 +2113,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     "9705": {
       "meta": {
         "origine": "BARCELONA SANTS",
-        "destination": "PERPIGNAN",
+        "destination": "LIMITE ADIF - LFPSA",
         "ligne": "050",
         "numeroEspagne": "",
         "numeroFrance": "9704",
@@ -2175,17 +2175,13 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "sn-data-0048": {
           "hora": "16:24",
           "conc": "5"
-        },
-        "sn-data-0055": {
-          "hora": "16:43",
-          "conc": "19"
         }
       },
       "variants": [
         {
           "meta": {
             "origine": "BARCELONA SANTS",
-            "destination": "PERPIGNAN",
+            "destination": "LIMITE ADIF - LFPSA",
             "ligne": "050",
             "numeroEspagne": "",
             "numeroFrance": "9704",
@@ -2260,10 +2256,6 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "sn-data-0048": {
               "hora": "16:24",
               "conc": "5"
-            },
-            "sn-data-0055": {
-              "hora": "16:43",
-              "conc": "19"
             }
           }
         }
@@ -2328,7 +2320,8 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "sn-data-0047": {
           "hora": "17:26",
-          "conc": "18"
+          "conc": "18",
+          "com": "3"
         },
         "sn-data-0048": {
           "hora": "17:31",
@@ -2428,7 +2421,8 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0047": {
               "hora": "17:26",
-              "conc": "18"
+              "conc": "18",
+              "com": "3"
             },
             "sn-data-0048": {
               "hora": "17:31",
@@ -2651,7 +2645,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     },
     "9711": {
       "meta": {
-        "origine": "PERPIGNAN",
+        "origine": "LIMITE ADIF - LFPSA",
         "destination": "BARCELONA SANTS",
         "ligne": "050",
         "numeroEspagne": "",
@@ -2704,15 +2698,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "ns-data-0006": {
           "hora": "13:36"
-        },
-        "ns-data-0055": {
-          "hora": "12:06"
         }
       },
       "variants": [
         {
           "meta": {
-            "origine": "PERPIGNAN",
+            "origine": "LIMITE ADIF - LFPSA",
             "destination": "BARCELONA SANTS",
             "ligne": "050",
             "numeroEspagne": "",
@@ -2778,9 +2769,6 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0006": {
               "hora": "13:36"
-            },
-            "ns-data-0055": {
-              "hora": "12:06"
             }
           }
         }
