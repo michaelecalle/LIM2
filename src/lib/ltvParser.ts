@@ -538,43 +538,10 @@ async function handleFileForLtv(file: File) {
       let secondNativeUrl: string | undefined = undefined
 
 
-      try {
-        const extracted = await extractPageBitmapImages(firstPage)
-
-        if (extracted && extracted.length > 0) {
-          // "Bande horizontale plausible" = largeur au moins 2× la hauteur
-          const plausible = extracted.filter(
-            (img) => img.width >= 2 * img.height
-          )
-
-          // Liste exposée à l'UI :
-          // - si on a des bandes plausibles → seulement celles-là
-          // - sinon → toutes les images (fallback)
-          const nativeList =
-            plausible.length > 0 ? plausible : extracted
-
-          parsed.nativeImages = nativeList
-
-          if (plausible.length > 0) {
-            // On trie les bandes plausibles par surface décroissante
-            const byAreaDesc = [...plausible].sort(
-              (a, b) => b.width * b.height - a.width * a.height
-            )
-
-            bestNativeUrl = byAreaDesc[0]?.dataUrl
-            secondNativeUrl = byAreaDesc[1]?.dataUrl
-          } else {
-            // Pas de bande plausible → on retombe sur les plus grandes images globales
-            const byAreaDesc = [...extracted].sort(
-              (a, b) => b.width * b.height - a.width * a.height
-            )
-            bestNativeUrl = byAreaDesc[0]?.dataUrl
-            secondNativeUrl = byAreaDesc[1]?.dataUrl
-          }
-        }
-      } catch (err) {
-        console.warn("[ltvParser] native XObject extract failed", err)
-      }
+      // Désactivé provisoirement : sur iPad, l'extraction native XObject
+      // semble pouvoir bloquer ou dépasser le garde-fou de traitement PDF.
+      // On conserve le fallback plus simple par bande canvas juste en dessous.
+      console.log("[ltvParser] native XObject extract skipped")
 
       const { bestDataUrl, debugBands } = await buildDebugBandsForPage1(
         firstPage,
