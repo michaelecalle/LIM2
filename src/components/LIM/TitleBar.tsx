@@ -1438,8 +1438,25 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const pdfLoadingTimerRef = useRef<number | null>(null)
 
   const PDF_LOADING_TIMEOUT_MS = 45_000
-  const PDF_LOADING_FAIL_MESSAGE =
-    "Le traitement du PDF n’a pas abouti (délai dépassé). Réessayez ou passez en mode SECOURS (affichage PDF brut)."
+  const buildPdfLoadingFailMessage = () => {
+    const file = currentPdfFileRef.current
+    const lastParsed = (window as any).__limLastParsed
+
+    return [
+      "Le traitement du PDF n’a pas abouti (délai dépassé).",
+      "",
+      "Diagnostic :",
+      `- PDF : ${file?.name ?? "inconnu"}`,
+      `- Taille : ${file ? `${Math.round(file.size / 1024)} Ko` : "inconnue"}`,
+      `- Mode de démarrage : ${startupLaunchModeRef.current ?? "inconnu"}`,
+      `- lim:parsed reçu : ${lastParsed ? "OUI" : "NON"}`,
+      `- Train détecté : ${lastParsed?.trenPadded ?? lastParsed?.tren ?? "NON"}`,
+      "",
+      "Si lim:parsed = NON, le blocage est probablement dans le parsing principal du PDF.",
+      "",
+      "Réessayez ou passez en mode SECOURS (affichage PDF brut).",
+    ].join("\n")
+  }
 
   const stopPdfLoadingGuard = () => {
     if (pdfLoadingTimerRef.current != null) {
@@ -1453,7 +1470,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     pdfLoadingTimerRef.current = window.setTimeout(() => {
       pdfLoadingTimerRef.current = null
       setPdfLoading(false)
-      window.alert(PDF_LOADING_FAIL_MESSAGE)
+      window.alert(buildPdfLoadingFailMessage())
     }, PDF_LOADING_TIMEOUT_MS)
   }
 
@@ -2935,7 +2952,7 @@ ${coords}
       window.removeEventListener('lim:manual-open-page', handler as EventListener)
     }
   }, [])
-  
+
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
       const el = settingsDetailsRef.current
