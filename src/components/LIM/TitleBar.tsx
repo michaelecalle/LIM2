@@ -4364,6 +4364,28 @@ ${coords}
       stopPdfLoadingGuard()
       setPdfLoading(false)
 
+      try {
+        const missingTrain =
+          !String((detail as any)?.trenPadded ?? (detail as any)?.tren ?? '').trim()
+
+        if (startupLaunchModeRef.current === 'pdf' && missingTrain) {
+          setPdfLoadingErrorMessage(
+            [
+              'Le PDF a été partiellement analysé, mais le numéro de train n’a pas été identifié.',
+              '',
+              'Diagnostic lim:parsed :',
+              `- tren : ${(detail as any)?.tren ?? 'NON'}`,
+              `- trenPadded : ${(detail as any)?.trenPadded ?? 'NON'}`,
+              `- fecha : ${(detail as any)?.fecha ?? 'NON'}`,
+              `- origenDestino : ${(detail as any)?.origenDestino ?? 'NON'}`,
+              `- composicion : ${(detail as any)?.composicion ?? (detail as any)?.unit ?? 'NON'}`,
+              `- longitud : ${(detail as any)?.longitud ?? 'NON'}`,
+              `- type : ${(detail as any)?.type ?? 'NON'}`,
+            ].join('\n')
+          )
+        }
+      } catch {}
+
       const raw = detail.trenPadded ?? detail.tren
       const disp = toTitleNumber(raw)
       setTrainDisplay(disp)
