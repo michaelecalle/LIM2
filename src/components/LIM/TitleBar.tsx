@@ -1435,6 +1435,8 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
 
   const [pdfLoading, setPdfLoading] = useState(false)
 
+    const [pdfLoadingErrorMessage, setPdfLoadingErrorMessage] = useState<string | null>(null)
+
   const pdfLoadingTimerRef = useRef<number | null>(null)
 
   const PDF_LOADING_TIMEOUT_MS = 45_000
@@ -4199,6 +4201,7 @@ ${coords}
   const onPickPdf: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
     const file = e.target.files?.[0]
     if (file) {
+            setPdfLoadingErrorMessage(null)
       setPdfLoading(true)
       startPdfLoadingGuard()
 
@@ -5242,6 +5245,43 @@ const autoScrollButtonActive = autoScroll || autoScrollStartedOnce
 const IconFile = () => null
   return (
     <header id="lim-titlebar-root" className="surface-header rounded-2xl px-3 py-2 shadow-sm">
+            {pdfLoadingErrorMessage && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[1px]">
+          <div
+            className="w-[min(620px,92vw)] max-h-[80vh] overflow-auto rounded-2xl border shadow-xl p-4"
+            style={{
+              backgroundColor: dark ? '#18181b' : '#ffffff',
+              color: dark ? '#f4f4f5' : '#18181b',
+              borderColor: dark ? '#3f3f46' : '#e4e4e7',
+            }}
+          >
+            <div className="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <div className="text-lg font-semibold">
+                  Échec du traitement PDF
+                </div>
+                <div className="text-xs opacity-70 mt-1">
+                  Diagnostic du traitement
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPdfLoadingErrorMessage(null)}
+                className="h-8 px-3 text-xs rounded-md bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100 font-semibold"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-3" />
+
+            <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
+              {pdfLoadingErrorMessage}
+            </pre>
+          </div>
+        </div>
+      )}
       {startupModeChoiceOpen && (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[1px]"
