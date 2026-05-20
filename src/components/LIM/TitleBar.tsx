@@ -1403,7 +1403,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     pdfProcessingTimerRef.current = window.setTimeout(() => {
       pdfProcessingTimerRef.current = null
       setPdfProcessing(false)
-      window.alert(PDF_PROCESSING_FAIL_MESSAGE)
+      setPdfLoadingErrorMessage(PDF_PROCESSING_FAIL_MESSAGE)
     }, PDF_PROCESSING_TIMEOUT_MS)
   }
 
