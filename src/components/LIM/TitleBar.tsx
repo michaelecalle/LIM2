@@ -5611,6 +5611,14 @@ style={{
                     return
                   }
 
+                  if (standbyMode) {
+                    logTestEvent('ui:autoScroll:standby-click-ignored', {
+                      source: 'titlebar',
+                      reason: 'resume_from_selected_ft_row_only',
+                    })
+                    return
+                  }
+
                   const next = !autoScroll
 
                   logTestEvent('ui:autoScroll:toggle', {

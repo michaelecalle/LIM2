@@ -258,6 +258,7 @@ const LTV: React.FC = () => {
   const [ltvDisplayMeta, setLtvDisplayMeta] = useState<LtvDisplayMeta>({
     availableSources: [],
   })
+  const [ltvDebugText, setLtvDebugText] = useState("LTV diag : en attente de l’événement ltv:parsed")
 
     // Acquittement manuel de l'alerte date source ADIF périmée.
   // Si la date ADIF n'est pas celle du jour, la légende clignote.
@@ -369,6 +370,21 @@ const LTV: React.FC = () => {
           availableSources,
         },
       })
+
+      setLtvDebugText(
+  [
+    `mode=${mode || "?"}`,
+    `imgMain=${imgMain ? "YES" : "NO"}`,
+    `imgAlt=${imgAlt ? "YES" : "NO"}`,
+    `rows=${incomingRows.length}`,
+    `nativeImages=${Array.isArray((ce.detail as any)?.nativeImages)
+      ? (ce.detail as any).nativeImages.length
+      : 0}`,
+    `debugBands=${Array.isArray((ce.detail as any)?.debugBands)
+      ? (ce.detail as any).debugBands.length
+      : 0}`,
+  ].join(" | ")
+)
 
       // Images natives (bande LTV auto, etc.)
       const nativeImages = (ce.detail as any)?.nativeImages as
@@ -1972,6 +1988,18 @@ const LTV: React.FC = () => {
   // ------------------------------------------------------------------
   return (
     <section className="ltv-wrap">
+      <div
+  style={{
+    background: "#300",
+    color: "#fff",
+    fontSize: "10px",
+    padding: "4px",
+    fontFamily: "monospace",
+    wordBreak: "break-word",
+  }}
+>
+  {ltvDebugText}
+</div>
       <style>{`
         .ltv-wrap { 
           background: transparent; 

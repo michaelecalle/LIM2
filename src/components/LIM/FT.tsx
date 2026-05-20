@@ -2052,6 +2052,7 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
 
             setSelectedRowIndex(matchingArrival.rowIndex);
             recalibrateFromRowRef.current = matchingArrival.rowIndex;
+            standbyLockedRowRef.current = matchingArrival.rowIndex;
 
             // 👉 NOUVEAU : on recale immédiatement la FT sur cette ligne
             const container = scrollContainerRef.current;
@@ -5263,10 +5264,11 @@ if (hasFranceFtLocal) {
     const container = e.currentTarget;
     const clickY = e.clientY;
 
-    const isStandby =
-      !autoScrollEnabled &&
-      recalibrateFromRowRef.current !== null &&
-      selectedRowIndex !== null;
+const isStandby =
+  autoScrollEnabledRef.current === true &&
+  selectedRowIndex !== null &&
+  (standbyLockedRowRef.current !== null ||
+    recalibrateFromRowRef.current !== null);
 
     const mainRows =
       container.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main");
@@ -5337,10 +5339,33 @@ if (hasFranceFtLocal) {
 
     // ✅ En standby : même mécanique que pour l'entrée initiale
     // On prend la ligne la plus proche, mais sans relancer le mode horaire
-    if (isStandby) {
-      if (selectedRowIndex === rowIndex) {
-        return;
-      }
+if (isStandby) {
+  if (selectedRowIndex === rowIndex) {
+    setActiveRowIndex(rowIndex);
+    recalibrateFromRowRef.current = rowIndex;
+    standbyLockedRowRef.current = rowIndex;
+    forceRealignOnResumeRef.current = true;
+
+    logTestEvent("ui:standby:resume-request", {
+      rowIndex,
+      hora: resolveHoraForRowIndex(rowIndex) || null,
+      pk: rawEntries[rowIndex]?.pk ?? null,
+      dependencia: rawEntries[rowIndex]?.dependencia ?? null,
+      source: "ft:body-click-selected-row",
+    });
+
+    window.dispatchEvent(
+      new CustomEvent("ft:auto-scroll-change", {
+        detail: {
+          enabled: true,
+          standby: false,
+          source: "ft:body-click-selected-row",
+        },
+      })
+    );
+
+    return;
+  }
 
       setSelectedRowIndex(rowIndex);
       setActiveRowIndex(rowIndex);
@@ -6139,10 +6164,10 @@ right: -1,
 
     // LIGNE INTERMÉDIAIRE POUR LES LTV ORANGE SOUS LA LIGNE PRINCIPALE
     if (ltvNoteLines.length > 0) {
-      const vmaxClassForLtv =
-        csvZoneOpen || highlightKind === "bottom" || highlightKind === "full"
-          ? " ft-v-csv-full"
-          : "";
+const vmaxClassForLtv =
+  highlightKind === "bottom" || highlightKind === "full"
+    ? " ft-v-csv-full"
+    : "";
 
       rows.push(
         <tr className="ft-row-inter ft-row-ltv-note" key={`ltv-note-${i}`}>
