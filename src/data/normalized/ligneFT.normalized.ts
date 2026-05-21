@@ -2110,157 +2110,6 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     ]
   },
   "trains": {
-    "9705": {
-      "meta": {
-        "origine": "BARCELONA SANTS",
-        "destination": "LIMITE ADIF - LFPSA",
-        "ligne": "050",
-        "numeroEspagne": "",
-        "numeroFrance": "9704",
-        "categorieEspagne": "T200",
-        "categorieFrance": "300",
-        "materiel": "TGV 2N2",
-        "composition": "US"
-      },
-      "byRowKey": {
-        "sn-data-0006": {
-          "hora": "15:17"
-        },
-        "sn-data-0012": {
-          "hora": "15:23",
-          "conc": "6"
-        },
-        "sn-data-0019": {
-          "hora": "15:32",
-          "conc": "9"
-        },
-        "sn-data-0020": {
-          "hora": "15:32",
-          "conc": "0"
-        },
-        "sn-data-0023": {
-          "hora": "15:34",
-          "conc": "2"
-        },
-        "sn-data-0030": {
-          "hora": "15:39",
-          "conc": "5"
-        },
-        "sn-data-0032": {
-          "hora": "15:45",
-          "conc": "6"
-        },
-        "sn-data-0034": {
-          "hora": "15:46",
-          "conc": "1"
-        },
-        "sn-data-0036": {
-          "hora": "15:53",
-          "conc": "7"
-        },
-        "sn-data-0039": {
-          "hora": "15:55",
-          "conc": "2"
-        },
-        "sn-data-0041": {
-          "hora": "16:01",
-          "com": "3",
-          "conc": "3"
-        },
-        "sn-data-0047": {
-          "com": "3",
-          "hora": "16:19",
-          "conc": "15"
-        },
-        "sn-data-0048": {
-          "hora": "16:24",
-          "conc": "5"
-        }
-      },
-      "variants": [
-        {
-          "meta": {
-            "origine": "BARCELONA SANTS",
-            "destination": "LIMITE ADIF - LFPSA",
-            "ligne": "050",
-            "numeroEspagne": "",
-            "numeroFrance": "9704",
-            "categorieEspagne": "T200",
-            "categorieFrance": "300",
-            "materiel": "TGV 2N2",
-            "composition": "US",
-            "validity": {
-              "startDate": "",
-              "endDate": "",
-              "days": {
-                "monday": true,
-                "tuesday": true,
-                "wednesday": true,
-                "thursday": true,
-                "friday": true,
-                "saturday": true,
-                "sunday": true
-              }
-            }
-          },
-          "byRowKey": {
-            "sn-data-0006": {
-              "hora": "15:17"
-            },
-            "sn-data-0012": {
-              "hora": "15:23",
-              "conc": "6"
-            },
-            "sn-data-0019": {
-              "hora": "15:32",
-              "conc": "9"
-            },
-            "sn-data-0020": {
-              "hora": "15:32",
-              "conc": "0"
-            },
-            "sn-data-0023": {
-              "hora": "15:34",
-              "conc": "2"
-            },
-            "sn-data-0030": {
-              "hora": "15:39",
-              "conc": "5"
-            },
-            "sn-data-0032": {
-              "hora": "15:45",
-              "conc": "6"
-            },
-            "sn-data-0034": {
-              "hora": "15:46",
-              "conc": "1"
-            },
-            "sn-data-0036": {
-              "hora": "15:53",
-              "conc": "7"
-            },
-            "sn-data-0039": {
-              "hora": "15:55",
-              "conc": "2"
-            },
-            "sn-data-0041": {
-              "hora": "16:01",
-              "com": "3",
-              "conc": "3"
-            },
-            "sn-data-0047": {
-              "com": "3",
-              "hora": "16:19",
-              "conc": "15"
-            },
-            "sn-data-0048": {
-              "hora": "16:24",
-              "conc": "5"
-            }
-          }
-        }
-      ]
-    },
     "9707": {
       "meta": {
         "origine": "BARCELONA SANTS",
@@ -2746,7 +2595,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     },
     "9711": {
       "meta": {
-        "origine": "LIMITE ADIF - LFPSA",
+        "origine": "PERPIGNAN",
         "destination": "BARCELONA SANTS",
         "ligne": "050",
         "numeroEspagne": "",
@@ -2771,40 +2620,50 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "conc": "14"
         },
         "ns-data-0039": {
-          "hora": "12:50"
+          "hora": "12:50",
+          "conc": "3"
         },
         "ns-data-0036": {
-          "hora": "12:53"
+          "hora": "12:53",
+          "conc": "3"
         },
         "ns-data-0034": {
-          "hora": "13:00"
+          "hora": "13:00",
+          "conc": "7"
         },
         "ns-data-0032": {
-          "hora": "13:01"
+          "hora": "13:01",
+          "conc": "1"
         },
         "ns-data-0030": {
-          "hora": "13:06"
+          "hora": "13:06",
+          "conc": "5"
         },
         "ns-data-0023": {
-          "hora": "13:12"
+          "hora": "13:12",
+          "conc": "6"
         },
         "ns-data-0020": {
-          "hora": "13:14"
+          "hora": "13:14",
+          "conc": "2"
         },
         "ns-data-0019": {
-          "hora": "13:15"
+          "hora": "13:15",
+          "conc": "1"
         },
         "ns-data-0012": {
-          "hora": "13:23"
+          "hora": "13:23",
+          "conc": "8"
         },
         "ns-data-0006": {
-          "hora": "13:36"
+          "hora": "13:36",
+          "conc": "13"
         }
       },
       "variants": [
         {
           "meta": {
-            "origine": "LIMITE ADIF - LFPSA",
+            "origine": "PERPIGNAN",
             "destination": "BARCELONA SANTS",
             "ligne": "050",
             "numeroEspagne": "",
@@ -2842,34 +2701,44 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
               "conc": "14"
             },
             "ns-data-0039": {
-              "hora": "12:50"
+              "hora": "12:50",
+              "conc": "3"
             },
             "ns-data-0036": {
-              "hora": "12:53"
+              "hora": "12:53",
+              "conc": "3"
             },
             "ns-data-0034": {
-              "hora": "13:00"
+              "hora": "13:00",
+              "conc": "7"
             },
             "ns-data-0032": {
-              "hora": "13:01"
+              "hora": "13:01",
+              "conc": "1"
             },
             "ns-data-0030": {
-              "hora": "13:06"
+              "hora": "13:06",
+              "conc": "5"
             },
             "ns-data-0023": {
-              "hora": "13:12"
+              "hora": "13:12",
+              "conc": "6"
             },
             "ns-data-0020": {
-              "hora": "13:14"
+              "hora": "13:14",
+              "conc": "2"
             },
             "ns-data-0019": {
-              "hora": "13:15"
+              "hora": "13:15",
+              "conc": "1"
             },
             "ns-data-0012": {
-              "hora": "13:23"
+              "hora": "13:23",
+              "conc": "8"
             },
             "ns-data-0006": {
-              "hora": "13:36"
+              "hora": "13:36",
+              "conc": "13"
             }
           }
         }
