@@ -5645,6 +5645,8 @@ style={{
               <button
                 type="button"
                 onClick={() => {
+                  if (autoScrollStartedOnce) return
+
                   if (simulationEnabled) {
                     logTestEvent('ui:blocked', { control: 'autoScroll', source: 'titlebar' })
                     return
@@ -5659,23 +5661,34 @@ style={{
                   }
 
                   const next = !autoScroll
+                  // Premier Play de la session : on arme le départ en stand-by
+                  const isFirstPlay = next === true && !autoScrollStartedOnce
 
                   logTestEvent('ui:autoScroll:toggle', {
                     enabled: next,
                     source: 'titlebar',
                     standbyMode,
+                    isFirstPlay,
                   })
 setAutoScroll(next)
 setAutoScrollStartedOnce(next)
                   window.dispatchEvent(
                     new CustomEvent('ft:auto-scroll-change', {
-                      detail: { enabled: next, source: 'titlebar' },
+                      detail: {
+                        enabled: next,
+                        ...(isFirstPlay ? { standby: true } : {}),
+                        source: 'titlebar',
+                      },
                     })
                   )
 
                   if (!simulationEnabled && next) {
                     startGpsWatch()
                   }
+                }}
+                style={{
+                  pointerEvents: autoScrollStartedOnce ? 'none' : 'auto',
+                  cursor: autoScrollStartedOnce ? 'default' : 'pointer',
                 }}
                 className={`h-7 px-3 rounded-full flex items-center justify-center text-[11px] transition
                   ${
@@ -5688,7 +5701,7 @@ setAutoScrollStartedOnce(next)
                 `}
                 title={
                   standbyMode
-                    ? 'Standby : cliquer ici pour reprendre'
+                    ? 'Standby'
 : autoScrollButtonActive
   ? 'Défilement automatique engagé'
   : 'Activer le défilement automatique'
