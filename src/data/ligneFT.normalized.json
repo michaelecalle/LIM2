@@ -2120,7 +2120,65 @@
         "materiel": "TGV 2N2",
         "composition": "US"
       },
-      "byRowKey": {},
+      "byRowKey": {
+        "sn-data-0006": {
+          "hora": "15:17"
+        },
+        "sn-data-0012": {
+          "hora": "15:23",
+          "conc": "6"
+        },
+        "sn-data-0019": {
+          "hora": "15:32",
+          "conc": "9"
+        },
+        "sn-data-0020": {
+          "hora": "15:32",
+          "conc": "0"
+        },
+        "sn-data-0023": {
+          "hora": "15:34",
+          "conc": "2"
+        },
+        "sn-data-0030": {
+          "hora": "15:39",
+          "conc": "5"
+        },
+        "sn-data-0032": {
+          "hora": "15:45",
+          "conc": "6"
+        },
+        "sn-data-0034": {
+          "hora": "15:46",
+          "conc": "1"
+        },
+        "sn-data-0036": {
+          "hora": "15:53",
+          "conc": "7"
+        },
+        "sn-data-0039": {
+          "hora": "15:55",
+          "conc": "2"
+        },
+        "sn-data-0041": {
+          "hora": "16:01",
+          "com": "3",
+          "conc": "3"
+        },
+        "sn-data-0047": {
+          "hora": "16:19",
+          "com": "3",
+          "conc": "15"
+        },
+        "sn-data-0048": {
+          "hora": "16:24",
+          "conc": "5"
+        },
+        "sn-data-0055": {
+          "hora": "16:43",
+          "conc": "19"
+        }
+      },
       "variants": [
         {
           "meta": {
@@ -2147,7 +2205,65 @@
               }
             }
           },
-          "byRowKey": {}
+          "byRowKey": {
+            "sn-data-0006": {
+              "hora": "15:17"
+            },
+            "sn-data-0012": {
+              "hora": "15:23",
+              "conc": "6"
+            },
+            "sn-data-0019": {
+              "hora": "15:32",
+              "conc": "9"
+            },
+            "sn-data-0020": {
+              "hora": "15:32",
+              "conc": "0"
+            },
+            "sn-data-0023": {
+              "hora": "15:34",
+              "conc": "2"
+            },
+            "sn-data-0030": {
+              "hora": "15:39",
+              "conc": "5"
+            },
+            "sn-data-0032": {
+              "hora": "15:45",
+              "conc": "6"
+            },
+            "sn-data-0034": {
+              "hora": "15:46",
+              "conc": "1"
+            },
+            "sn-data-0036": {
+              "hora": "15:53",
+              "conc": "7"
+            },
+            "sn-data-0039": {
+              "hora": "15:55",
+              "conc": "2"
+            },
+            "sn-data-0041": {
+              "hora": "16:01",
+              "com": "3",
+              "conc": "3"
+            },
+            "sn-data-0047": {
+              "hora": "16:19",
+              "com": "3",
+              "conc": "15"
+            },
+            "sn-data-0048": {
+              "hora": "16:24",
+              "conc": "5"
+            },
+            "sn-data-0055": {
+              "hora": "16:43",
+              "conc": "19"
+            }
+          }
         }
       ]
     },
@@ -2545,7 +2661,65 @@
         "materiel": "TGV 2N2",
         "composition": "US"
       },
-      "byRowKey": {},
+      "byRowKey": {
+        "ns-data-0055": {
+          "hora": "12:06"
+        },
+        "ns-data-0048": {
+          "hora": "12:24",
+          "conc": "18"
+        },
+        "ns-data-0047": {
+          "hora": "12:30",
+          "com": "3",
+          "conc": "3"
+        },
+        "ns-data-0041": {
+          "com": "3",
+          "hora": "12:47",
+          "conc": "14"
+        },
+        "ns-data-0039": {
+          "hora": "12:50",
+          "conc": "3"
+        },
+        "ns-data-0036": {
+          "hora": "12:53",
+          "conc": "3"
+        },
+        "ns-data-0034": {
+          "hora": "13:00",
+          "conc": "7"
+        },
+        "ns-data-0032": {
+          "hora": "13:01",
+          "conc": "1"
+        },
+        "ns-data-0030": {
+          "hora": "13:06",
+          "conc": "5"
+        },
+        "ns-data-0023": {
+          "hora": "13:12",
+          "conc": "6"
+        },
+        "ns-data-0020": {
+          "hora": "13:14",
+          "conc": "2"
+        },
+        "ns-data-0019": {
+          "hora": "13:15",
+          "conc": "1"
+        },
+        "ns-data-0012": {
+          "hora": "13:23",
+          "conc": "8"
+        },
+        "ns-data-0006": {
+          "hora": "13:36",
+          "conc": "13"
+        }
+      },
       "variants": [
         {
           "meta": {
@@ -2572,7 +2746,65 @@
               }
             }
           },
-          "byRowKey": {}
+          "byRowKey": {
+            "ns-data-0055": {
+              "hora": "12:06"
+            },
+            "ns-data-0048": {
+              "hora": "12:24",
+              "conc": "18"
+            },
+            "ns-data-0047": {
+              "hora": "12:30",
+              "com": "3",
+              "conc": "3"
+            },
+            "ns-data-0041": {
+              "com": "3",
+              "hora": "12:47",
+              "conc": "14"
+            },
+            "ns-data-0039": {
+              "hora": "12:50",
+              "conc": "3"
+            },
+            "ns-data-0036": {
+              "hora": "12:53",
+              "conc": "3"
+            },
+            "ns-data-0034": {
+              "hora": "13:00",
+              "conc": "7"
+            },
+            "ns-data-0032": {
+              "hora": "13:01",
+              "conc": "1"
+            },
+            "ns-data-0030": {
+              "hora": "13:06",
+              "conc": "5"
+            },
+            "ns-data-0023": {
+              "hora": "13:12",
+              "conc": "6"
+            },
+            "ns-data-0020": {
+              "hora": "13:14",
+              "conc": "2"
+            },
+            "ns-data-0019": {
+              "hora": "13:15",
+              "conc": "1"
+            },
+            "ns-data-0012": {
+              "hora": "13:23",
+              "conc": "8"
+            },
+            "ns-data-0006": {
+              "hora": "13:36",
+              "conc": "13"
+            }
+          }
         }
       ]
     },
