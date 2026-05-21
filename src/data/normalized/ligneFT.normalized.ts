@@ -2110,6 +2110,49 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     ]
   },
   "trains": {
+    "9705": {
+      "meta": {
+        "origine": "BARCELONA SANTS",
+        "destination": "PERPIGNAN",
+        "ligne": "050",
+        "numeroEspagne": "",
+        "numeroFrance": "9704",
+        "categorieEspagne": "T200",
+        "categorieFrance": "300",
+        "materiel": "TGV 2N2",
+        "composition": "US"
+      },
+      "byRowKey": {},
+      "variants": [
+        {
+          "meta": {
+            "origine": "BARCELONA SANTS",
+            "destination": "PERPIGNAN",
+            "ligne": "050",
+            "numeroEspagne": "",
+            "numeroFrance": "9704",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
+            "materiel": "TGV 2N2",
+            "composition": "US",
+            "validity": {
+              "startDate": "",
+              "endDate": "",
+              "days": {
+                "monday": true,
+                "tuesday": true,
+                "wednesday": true,
+                "thursday": true,
+                "friday": true,
+                "saturday": true,
+                "sunday": true
+              }
+            }
+          },
+          "byRowKey": {}
+        }
+      ]
+    },
     "9707": {
       "meta": {
         "origine": "BARCELONA SANTS",
@@ -2489,6 +2532,49 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
               "conc": "11"
             }
           }
+        }
+      ]
+    },
+    "9710": {
+      "meta": {
+        "origine": "PERPIGNAN",
+        "destination": "BARCELONA SANTS",
+        "ligne": "050",
+        "numeroEspagne": "",
+        "numeroFrance": "9711",
+        "categorieEspagne": "T200",
+        "categorieFrance": "300",
+        "materiel": "TGV 2N2",
+        "composition": "US"
+      },
+      "byRowKey": {},
+      "variants": [
+        {
+          "meta": {
+            "origine": "PERPIGNAN",
+            "destination": "BARCELONA SANTS",
+            "ligne": "050",
+            "numeroEspagne": "",
+            "numeroFrance": "9711",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
+            "materiel": "TGV 2N2",
+            "composition": "US",
+            "validity": {
+              "startDate": "",
+              "endDate": "",
+              "days": {
+                "monday": true,
+                "tuesday": true,
+                "wednesday": true,
+                "thursday": true,
+                "friday": true,
+                "saturday": true,
+                "sunday": true
+              }
+            }
+          },
+          "byRowKey": {}
         }
       ]
     },
