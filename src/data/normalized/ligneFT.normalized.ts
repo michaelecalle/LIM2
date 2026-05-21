@@ -2261,8 +2261,8 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
                 "wednesday": true,
                 "thursday": true,
                 "friday": true,
-                "saturday": false,
-                "sunday": false
+                "saturday": true,
+                "sunday": true
               }
             }
           },
