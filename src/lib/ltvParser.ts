@@ -790,6 +790,23 @@ function setup() {
 setup()
 
 // ---------------------------------------------------------------------------
+// API publique : initialisation de la page de référence depuis un fichier PDF
+// (utilisée en mode mixte pour que ltv:request-band fonctionne après "Utiliser le PDF")
+// ---------------------------------------------------------------------------
+
+export async function initLtvPageFromFile(file: File): Promise<void> {
+  try {
+    const arrayBuffer = await file.arrayBuffer()
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+    const page1 = await pdf.getPage(1)
+    lastPdfForLtv = pdf
+    lastPage1ForLtv = page1
+  } catch (err) {
+    console.warn("[ltvParser] initLtvPageFromFile : impossible de charger la page 1", err)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // API debug
 // ---------------------------------------------------------------------------
 

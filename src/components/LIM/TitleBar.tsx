@@ -20,6 +20,7 @@ import { getOcrOnlineEnabled, setOcrOnlineEnabled } from '../../lib/ocrSettings'
 import { ocrFallback as ocrFallbackRouter } from '../../lib/ocrRouter'
 import { ocrFallback as ocrFallbackLocal } from '../../lib/ocrLocalFallback'
 import { extractFields, readPdfFirstPageText } from '../../lib/limParser'
+import { initLtvPageFromFile } from '../../lib/ltvParser'
 
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -3833,6 +3834,14 @@ ${coords}
                 mode: 'DISPLAY_DIRECT',
                 rows: [],
                 previewImageDataUrl: preview.dataUrl,
+                debugBands: [
+                  {
+                    dataUrl: preview.fullPageDataUrl,
+                    topPct: 0,
+                    bottomPct: 1,
+                    chosen: true,
+                  },
+                ],
                 source: mode === 'mixed' ? 'mixed_import' : 'manual_import',
                 ltvSource: 'pdf',
                 availableSources: availableSourcesForPdf,
@@ -3939,7 +3948,7 @@ ${coords}
     const buildMixedPdfLtvPreview = async (
     file: File,
     verticalShiftPct = 0
-  ): Promise<{ dataUrl: string; sourceUpdatedAt?: string }> => {
+  ): Promise<{ dataUrl: string; fullPageDataUrl: string; sourceUpdatedAt?: string }> => {
     const arrayBuffer = await file.arrayBuffer()
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) })
     const pdfDoc = await loadingTask.promise
@@ -4008,8 +4017,12 @@ ${coords}
         cropHeight
       )
 
+      // Image pleine page (utilisée comme base pour le recadrage manuel)
+      const fullPageDataUrl = fullCanvas.toDataURL('image/png')
+
       return {
         dataUrl: previewCanvas.toDataURL('image/png'),
+        fullPageDataUrl,
         sourceUpdatedAt:
           typeof file.lastModified === 'number' && Number.isFinite(file.lastModified)
             ? new Date(file.lastModified).toISOString()
@@ -4078,6 +4091,14 @@ ${coords}
               mode: 'DISPLAY_DIRECT',
               rows: [],
               previewImageDataUrl: preview.dataUrl,
+              debugBands: [
+                {
+                  dataUrl: preview.fullPageDataUrl,
+                  topPct: 0,
+                  bottomPct: 1,
+                  chosen: true,
+                },
+              ],
               source: 'mixed_import',
               ltvSource: 'pdf',
               availableSources: availableSourcesForPdf,
@@ -4161,8 +4182,6 @@ ${coords}
         return
       }
 
-      currentLtvSourceRef.current = 'pdf'
-
       logTestEvent('ltv:pdf-history-request:dispatch', {
         source: 'titlebar',
         requestSource: ce.detail?.source ?? null,
@@ -4172,17 +4191,37 @@ ${coords}
         replayKey: currentPdfReplayKeyRef.current,
       })
 
-      window.dispatchEvent(
-        new CustomEvent('ltv:import-pdf-only', {
-          detail: {
-            file,
-            pdfId: currentPdfIdRef.current,
-            replayKey: currentPdfReplayKeyRef.current,
-            storage: 'local',
-            source: 'mixed_ltv_use_pdf',
-          },
-        })
-      )
+      // Initialise la référence de page dans ltvParser pour que ltv:request-band fonctionne
+      void initLtvPageFromFile(file)
+
+      // Génère le bandeau PDF et bascule le LTV en mode NEEDS_CROP
+      void buildMixedPdfLtvPreview(file).then((preview) => {
+        const availableSources = getAvailableLtvSourcesForMode('mixed')
+        currentLtvSourceRef.current = 'pdf'
+
+        window.dispatchEvent(
+          new CustomEvent('ltv:parsed', {
+            detail: {
+              mode: 'NEEDS_CROP',
+              previewImageDataUrl: preview.dataUrl,
+              rows: [],
+              source: 'mixed_import',
+              ltvSource: 'pdf',
+              availableSources,
+              trainNumber: trainDisplay,
+              meta: {
+                source: 'pdf',
+                sourceUpdatedAt: preview.sourceUpdatedAt,
+                displayedCount: 0,
+              },
+              sourceUpdatedAt: preview.sourceUpdatedAt,
+              displayedCount: 0,
+            },
+          })
+        )
+      }).catch((err) => {
+        console.warn('[TitleBar] Utiliser le PDF LTV impossible', err)
+      })
     }
 
     window.addEventListener(

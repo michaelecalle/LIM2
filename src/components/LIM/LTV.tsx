@@ -224,26 +224,6 @@ const LTV: React.FC = () => {
     }
   }, [])
 
-  useEffect(() => {
-    const onLtvDiag = (e: Event) => {
-      const ce = e as CustomEvent<{ message?: string }>
-      const message = ce.detail?.message || "LTV diag reçu sans message"
-
-      setLtvDebugText((previous) => {
-        if (!previous || previous.startsWith("LTV diag : en attente")) {
-          return message
-        }
-
-        return `${previous}\n${message}`
-      })
-    }
-
-    window.addEventListener("ltv:diag", onLtvDiag as EventListener)
-
-    return () => {
-      window.removeEventListener("ltv:diag", onLtvDiag as EventListener)
-    }
-  }, [])
 
   // Deux candidates "historiques" envoyées par le parseur en mode DISPLAY_DIRECT
   const [previewImage, setPreviewImage] = useState<string | undefined>(
@@ -278,7 +258,6 @@ const LTV: React.FC = () => {
   const [ltvDisplayMeta, setLtvDisplayMeta] = useState<LtvDisplayMeta>({
     availableSources: [],
   })
-  const [ltvDebugText, setLtvDebugText] = useState("LTV diag : en attente de l’événement ltv:parsed")
 
     // Acquittement manuel de l'alerte date source ADIF périmée.
   // Si la date ADIF n'est pas celle du jour, la légende clignote.
@@ -391,20 +370,6 @@ const LTV: React.FC = () => {
         },
       })
 
-      setLtvDebugText(
-  [
-    `mode=${mode || "?"}`,
-    `imgMain=${imgMain ? "YES" : "NO"}`,
-    `imgAlt=${imgAlt ? "YES" : "NO"}`,
-    `rows=${incomingRows.length}`,
-    `nativeImages=${Array.isArray((ce.detail as any)?.nativeImages)
-      ? (ce.detail as any).nativeImages.length
-      : 0}`,
-    `debugBands=${Array.isArray((ce.detail as any)?.debugBands)
-      ? (ce.detail as any).debugBands.length
-      : 0}`,
-  ].join(" | ")
-)
 
       // Images natives (bande LTV auto, etc.)
       const nativeImages = (ce.detail as any)?.nativeImages as
@@ -1275,7 +1240,9 @@ const LTV: React.FC = () => {
                     borderRadius: "4px",
                     boxShadow: "0 4px 8px rgba(0,0,0,0.8)",
                     backgroundColor: "#000",
-                  }}
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                  } as React.CSSProperties}
                 >
                   {/* conteneur zoomé/translaté */}
                   <div
@@ -1296,6 +1263,8 @@ const LTV: React.FC = () => {
                       ref={previewImgRef}
                       src={previewImage}
                       alt="LTV brute"
+                      draggable={false}
+                      onContextMenu={(e) => e.preventDefault()}
                       style={{
                         maxWidth: "100%",
                         height: "auto",
@@ -1303,7 +1272,10 @@ const LTV: React.FC = () => {
                         borderRadius: "4px",
                         boxShadow: "0 4px 8px rgba(0,0,0,0.5)",
                         display: "block",
-                      }}
+                        userSelect: "none",
+                        WebkitUserSelect: "none",
+                        WebkitTouchCallout: "none",
+                      } as React.CSSProperties}
                     />
 
                     {/* Masque assombrissant hors zone recadrée */}
@@ -2008,18 +1980,6 @@ const LTV: React.FC = () => {
   // ------------------------------------------------------------------
   return (
     <section className="ltv-wrap">
-      <div
-  style={{
-    background: "#300",
-    color: "#fff",
-    fontSize: "10px",
-    padding: "4px",
-    fontFamily: "monospace",
-    wordBreak: "break-word",
-  }}
->
-  {ltvDebugText}
-</div>
       <style>{`
         .ltv-wrap { 
           background: transparent; 
@@ -2119,23 +2079,26 @@ const LTV: React.FC = () => {
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 8px;
-          min-height: 22px;
+          position: relative;
+          min-height: 36px;
         }
 
         .ltv-caption-text {
           min-width: 0;
           text-align: center;
+          padding: 0 52px; /* réserve de place pour les boutons aux extrémités */
         }
 
         .ltv-source-switch-btn {
-          width: 24px;
-          height: 20px;
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          width: 48px;
           border-radius: 5px;
           border: 1px solid currentColor;
           background: rgba(255,255,255,0.65);
           color: inherit;
-          font-size: 12px;
+          font-size: 16px;
           font-weight: 800;
           line-height: 1;
           cursor: pointer;
@@ -2145,8 +2108,16 @@ const LTV: React.FC = () => {
           padding: 0;
         }
 
+        .ltv-source-switch-btn--prev {
+          left: 2px;
+        }
+
+        .ltv-source-switch-btn--next {
+          right: 2px;
+        }
+
         .ltv-source-switch-btn:active {
-          transform: translateY(1px);
+          opacity: 0.7;
         }
 
         .dark .ltv-source-switch-btn {
@@ -2321,36 +2292,38 @@ const LTV: React.FC = () => {
           z-index: 9999;
           cursor: grab;
           user-select: none;
+          -webkit-user-select: none;
           touch-action: none;
+          -webkit-touch-callout: none;
         }
 
-        /* Horizontal edges (top & bottom) */
+        /* Horizontal edges (top & bottom) — 44px min (recommandation Apple) */
         .crop-edge.top,
         .crop-edge.bottom {
-          height: 12px;            /* zone cliquable */
+          height: 44px;
           left: 0;
           right: 0;
           transform: translateY(-50%);
         }
 
-        /* Vertical edges (left & right) */
+        /* Vertical edges (left & right) — 44px min */
         .crop-edge.left,
         .crop-edge.right {
-          width: 12px;             /* zone cliquable */
+          width: 44px;
           top: 0;
           bottom: 0;
           transform: translateX(-50%);
         }
 
-        /* Ligne rouge fine */
+        /* Ligne rouge visible */
         .crop-edge::before {
           content: "";
           position: absolute;
-          background: rgba(255, 0, 0, 0.6);
+          background: rgba(255, 0, 0, 0.85);
         }
         .crop-edge.top::before,
         .crop-edge.bottom::before {
-          height: 2px;
+          height: 3px;
           left: 0;
           right: 0;
           top: 50%;
@@ -2358,11 +2331,37 @@ const LTV: React.FC = () => {
         }
         .crop-edge.left::before,
         .crop-edge.right::before {
-          width: 2px;
+          width: 3px;
           top: 0;
           bottom: 0;
           left: 50%;
           transform: translateX(-50%);
+        }
+
+        /* Poignée visuelle au centre de chaque bord */
+        .crop-edge::after {
+          content: "";
+          position: absolute;
+          background: rgba(255, 255, 255, 0.95);
+          border: 2px solid rgba(200, 0, 0, 0.9);
+          border-radius: 4px;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+        }
+        .crop-edge.top::after,
+        .crop-edge.bottom::after {
+          width: 48px;
+          height: 14px;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+        }
+        .crop-edge.left::after,
+        .crop-edge.right::after {
+          width: 14px;
+          height: 48px;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
         }
 
         @media print {
@@ -2470,7 +2469,7 @@ const LTV: React.FC = () => {
               <span
                 role="button"
                 tabIndex={0}
-                className="ltv-source-switch-btn"
+                className="ltv-source-switch-btn ltv-source-switch-btn--prev"
                 title="Source LTV précédente"
                 onPointerDown={(event) => {
                   event.preventDefault()
@@ -2494,7 +2493,7 @@ const LTV: React.FC = () => {
               <span
                 role="button"
                 tabIndex={0}
-                className="ltv-source-switch-btn"
+                className="ltv-source-switch-btn ltv-source-switch-btn--next"
                 title="Source LTV suivante"
                 onPointerDown={(event) => {
                   event.preventDefault()
