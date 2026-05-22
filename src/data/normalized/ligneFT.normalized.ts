@@ -18,7 +18,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "dependencia": "CAN TUNIS AV",
         "radio": "◯ GSMR",
         "rampCaract": "25",
-        "csv": false,
+        "csv": true,
         "notes": [],
         "etcs": "①"
       },
@@ -37,7 +37,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "dependencia": "BIF CAN TUNIS AV",
         "radio": "◯ GSMR",
         "rampCaract": "25",
-        "csv": false,
+        "csv": true,
         "notes": [],
         "etcs": "①"
       },
