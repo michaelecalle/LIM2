@@ -1,5 +1,0 @@
-1) Export TS → CS
-python export_ligneFT_to_csv.py src/data/ligneFT.ts --out .
-
-2) Import CSV → TS (régénère un fichier complet)
-python import_csv_to_ligneFT.py --pair FT_LIGNE_PAIR.csv --impair FT_LIGNE_IMPAIR.csv --zones CSV_ZONES.csv --out ligneFT.ts
