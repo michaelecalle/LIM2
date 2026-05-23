@@ -674,6 +674,11 @@ if (referenceMode === "GPS") {
   const recalibrateFromRowRef = React.useRef<number | null>(null);
   // ✅ Verrou dédié : ligne qui a réellement déclenché l'entrée en standby
   const standbyLockedRowRef = React.useRef<number | null>(null);
+  // Bug 1 fix : blocage du recalcul delta au premier Play (stand-by initial)
+  const skipInitialStandbyRecalibrationRef = React.useRef(false);
+  // Bug 2 fix : compteur pour forcer le re-déclenchement du useEffect de recalibration
+  // (utile quand autoScrollEnabled reste true pendant la sortie de stand-by)
+  const [recalibrateTrigger, setRecalibrateTrigger] = React.useState(0);
   // Dernière ligne FT utilisée comme “point d’ancrage” GPS
   const lastAnchoredRowRef = React.useRef<number | null>(null);
   // Premier démarrage déjà “consommé” ?
@@ -1546,10 +1551,10 @@ const orangeToRedStartedAtRef = React.useRef<number | null>(null);
 
           // Sélection visuelle (cadre rouge)
           setSelectedRowIndex(idx);
-          // Base de recalage pour le futur démarrage réel
-          recalibrateFromRowRef.current = idx;
-          // ✅ On verrouille aussi explicitement la ligne de standby
+          // ✅ On verrouille la ligne de standby (le delta sera calculé à la sortie, pas ici)
           standbyLockedRowRef.current = idx;
+          // Bug 1 fix : bloquer le recalcul delta que le useEffect déclencherait sinon
+          skipInitialStandbyRecalibrationRef.current = true;
 
           // Standby initial : l'autoscroll reste engagé, mais en pause sur la première ligne
 setAutoScrollEnabled(true);
@@ -1589,6 +1594,9 @@ detail: { enabled: true, standby: true },
           });
 
           recalibrateFromRowRef.current = resumeRowIndex;
+          // Bug 2 fix : forcer le re-déclenchement du useEffect même si autoScrollEnabled
+          // reste à true (le state ne changerait pas, l'effect ne se relancerait pas sinon)
+          setRecalibrateTrigger(prev => prev + 1);
           setActiveRowIndex(resumeRowIndex);
           setSelectedRowIndex(null);
           forceRealignOnResumeRef.current = true;
@@ -1864,27 +1872,34 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
     };
   };
 
-    // ✅ Choix de la base : soit ligne sélectionnée (Standby), soit première ligne
-    const forcedIndex = recalibrateFromRowRef.current;
-    if (forcedIndex != null) {
-      autoScrollBaseRef.current = captureBaseFromRowIndex(forcedIndex);
-
-      if (autoScrollBaseRef.current) {
-        lastDeltaRecalageRef.current = {
-          rowIndex: forcedIndex,
-          source: "MANUAL",
-          ts: Date.now(),
-        };
-
-        logTestEvent("ft:delta:recalage:mark", {
-          rowIndex: forcedIndex,
-          source: "MANUAL",
-        });
-      }
-
-      recalibrateFromRowRef.current = null;
+    // Bug 1 fix : au premier Play (stand-by initial), on ne calcule aucun delta.
+    // Le delta sera calculé quand l'utilisateur tapera sur la ligne pour valider le départ.
+    if (skipInitialStandbyRecalibrationRef.current) {
+      skipInitialStandbyRecalibrationRef.current = false;
+      // autoScrollBaseRef.current reste null : FT figée visuellement, aucun delta affiché
     } else {
-      autoScrollBaseRef.current = captureBaseFromFirstRow();
+      // ✅ Choix de la base : soit ligne sélectionnée (Standby), soit première ligne
+      const forcedIndex = recalibrateFromRowRef.current;
+      if (forcedIndex != null) {
+        autoScrollBaseRef.current = captureBaseFromRowIndex(forcedIndex);
+
+        if (autoScrollBaseRef.current) {
+          lastDeltaRecalageRef.current = {
+            rowIndex: forcedIndex,
+            source: "MANUAL",
+            ts: Date.now(),
+          };
+
+          logTestEvent("ft:delta:recalage:mark", {
+            rowIndex: forcedIndex,
+            source: "MANUAL",
+          });
+        }
+
+        recalibrateFromRowRef.current = null;
+      } else {
+        autoScrollBaseRef.current = captureBaseFromFirstRow();
+      }
     }
 
     // On mémorise la position de scroll actuelle comme "base"
@@ -2213,7 +2228,7 @@ window.dispatchEvent(
       clearInterval(timer);
       window.removeEventListener("ft:force-time", handleForceTime);
     };
-  }, [autoScrollEnabled]);
+  }, [autoScrollEnabled, recalibrateTrigger]);
 
   // avance auto de la ligne active tant qu'on est en play :
   // on ajuste le scroll pour rapprocher la ligne active de la ligne rouge
