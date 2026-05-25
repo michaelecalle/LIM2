@@ -2075,8 +2075,21 @@ ${coords}
 
   const CHANGELOG_TEXT = `🆕 Changelog
 
-- Ajout de la possibilité de récupérer les LTV directement depuis ADIF au lieu du PDF.
-- Mise en place de différents modes de démarrage.
+- Modes de démarrage : mixte, manuel, PDF historique.
+- LTV depuis ADIF (alternative au PDF).
+- Recadrage LTV en mode mixte (bouton "Utiliser le PDF").
+- Flèches sources LTV aux extrémités de la barre de légende.
+- Bouton Play : entrée automatique en stand-by sur la première ligne au premier clic.
+- Bouton Play verrouillé une fois le parcours lancé (indicateur d'état visible).
+- Correction clignotement du numéro de train en mode plié.
+- Correction stand-by : la sortie revenait à la première station au lieu de la ligne sélectionnée.
+- Correction delta horaire au premier Play et à la sortie manuelle du stand-by.
+- Correction GPS : protection contre l'écrasement de la ligne active lors d'un recalage manuel.
+- Correction "ressort" : la fiche train ne revient plus à sa position initiale pendant le stand-by.
+- Correction scroll : la fiche train reste bien sur la ligne de recalage après sortie du stand-by.
+- Remarques LTV en sens sud-nord : les PK s'affichent dans le sens de circulation.
+- Mode plié : affichage du nombre de LTV normalisées.
+- Bouton "Forcer la mise à jour" (ex "Vider le cache").
 - Corrections de bugs divers.
 `
 
@@ -5246,7 +5259,7 @@ if (autoScroll) {
             </summary>
 
             <div
-              className="absolute right-0 mt-2 w-72 rounded-xl border shadow-lg p-3 text-xs z-[9999]"
+              className={`absolute right-0 mt-2 w-72 rounded-xl border shadow-lg p-3 text-xs z-[9999]${dark ? ' dark' : ''}`}
               style={{
                 backgroundColor: dark ? "#18181b" : "#ffffff",
                 color: dark ? "#f4f4f5" : "#18181b",

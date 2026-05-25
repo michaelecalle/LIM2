@@ -510,7 +510,7 @@ export default function App() {
         {/* ✅ Toast mise à jour */}
         {updateToastOpen && (
           <div className="fixed top-3 right-3 z-[99999]">
-            <div className="rounded-xl shadow-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3 text-sm">
+            <div className={`rounded-xl shadow-lg border px-4 py-3 text-sm${isDark ? ' dark bg-zinc-900 border-zinc-700 text-zinc-100' : ' bg-white border-zinc-200 text-zinc-900'}`}>
               <div className="font-semibold">✅ LIM a été mise à jour</div>
               <div className="mt-1 text-xs opacity-70">
                 {updatePrevVersion ? (
