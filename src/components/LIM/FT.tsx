@@ -117,6 +117,9 @@ export default function FT({ variant = "classic" }: FTProps) {
           manualScrollTimeoutRef.current = null;
           isManualScrollRef.current = false;
 
+          // En stand-by, l'utilisateur choisit une ligne de référence : ne pas déclencher le ressort
+          if (standbyLockedRowRef.current !== null) return;
+
           const container = scrollContainerRef.current;
           if (!container) return;
           if (!autoScrollEnabledRef.current) return;
@@ -679,6 +682,7 @@ if (referenceMode === "GPS") {
   // Bug 2 fix : compteur pour forcer le re-déclenchement du useEffect de recalibration
   // (utile quand autoScrollEnabled reste true pendant la sortie de stand-by)
   const [recalibrateTrigger, setRecalibrateTrigger] = React.useState(0);
+  const [forceRealignTrigger, setForceRealignTrigger] = React.useState(0);
   // Dernière ligne FT utilisée comme “point d’ancrage” GPS
   const lastAnchoredRowRef = React.useRef<number | null>(null);
   // Premier démarrage déjà “consommé” ?
@@ -1597,6 +1601,7 @@ detail: { enabled: true, standby: true },
           // Bug 2 fix : forcer le re-déclenchement du useEffect même si autoScrollEnabled
           // reste à true (le state ne changerait pas, l'effect ne se relancerait pas sinon)
           setRecalibrateTrigger(prev => prev + 1);
+          setForceRealignTrigger(prev => prev + 1);
           setActiveRowIndex(resumeRowIndex);
           setSelectedRowIndex(null);
           forceRealignOnResumeRef.current = true;
@@ -2312,7 +2317,7 @@ useEffect(() => {
       behavior: "auto",
     });
     lastAutoScrollTopRef.current = targetScrollTop;
-  }, [autoScrollEnabled, activeRowIndex, referenceMode]);
+  }, [autoScrollEnabled, activeRowIndex, referenceMode, forceRealignTrigger]);
 
   //
   // ===== 2. LOGIQUE MÉTIER DE SENS ===================================
@@ -2598,7 +2603,9 @@ useEffect(() => {
       const observationText = cleanLtvText(row.observaciones);
 
       const prefix = speed ? `LTV${speed}` : "LTV";
-      const noteBase = `${prefix} PK ${kmIniText} → ${kmFinText}`;
+      const noteBase = isPkIncreasing
+        ? `${prefix} PK ${kmFinText} → ${kmIniText}`
+        : `${prefix} PK ${kmIniText} → ${kmFinText}`;
 const note = observationText
   ? `${noteBase} — ${observationText}`
   : noteBase;
@@ -3863,8 +3870,30 @@ const isRelock = acceptedMode === "relock";
           const currentRefMode = referenceModeRef.current;
 
           if (hasGpsFix && onLine && currentRefMode === "GPS") {
-            // Ligne active = ligne GPS (PK projeté)
-            setActiveRowIndex(idx);
+            // ✅ Si un recalage MANUEL a placé la référence sur une ligne que le GPS n'a pas
+            // encore atteinte (train physiquement avant le point de recalage), on ne laisse pas
+            // le GPS écraser la ligne active calculée par l'horloge.
+            // La protection se lève seule quand le GPS arrive à la ligne de recalage.
+            const lastRecalForActiveRow = lastDeltaRecalageRef.current;
+            let gpsActiveRowBlocked = false;
+            if (lastRecalForActiveRow?.source === "MANUAL" && lastRecalForActiveRow?.rowIndex != null) {
+              const recalTime = parseHoraToMinutes(resolveHoraForRowIndex(lastRecalForActiveRow.rowIndex));
+              const gpsTime = parseHoraToMinutes(resolveHoraForRowIndex(idx));
+              gpsActiveRowBlocked = recalTime != null && gpsTime != null && gpsTime < recalTime;
+              if (gpsActiveRowBlocked) {
+                logTestEvent("ft:gps:active-row-blocked-by-manual-recal", {
+                  gpsIdx: idx,
+                  recalRowIndex: lastRecalForActiveRow.rowIndex,
+                  gpsTimeMin: gpsTime,
+                  recalTimeMin: recalTime,
+                });
+              }
+            }
+
+            if (!gpsActiveRowBlocked) {
+              // Ligne active = ligne GPS (PK projeté)
+              setActiveRowIndex(idx);
+            }
 
             const lastIdx = lastAnchoredRowRef.current;
             const isNewAnchor = lastIdx == null || lastIdx !== idx;

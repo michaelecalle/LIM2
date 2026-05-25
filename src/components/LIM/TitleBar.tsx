@@ -138,6 +138,8 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   type LtvSourceSwitchDirection = 'previous' | 'next'
 
   const currentLtvSourceRef = useRef<LtvRuntimeSource>('normalized')
+  const [ltvCountForTitle, setLtvCountForTitle] = useState<number | null>(null)
+  const [ltvIsNormalized, setLtvIsNormalized] = useState(false)
 
   const getAvailableLtvSourcesForMode = (
     mode: StartupMode | null
@@ -2469,6 +2471,9 @@ ${coords}
       })
     )
 
+    setLtvCountForTitle(result.rows.length)
+    setLtvIsNormalized(params.ltvSource === 'normalized')
+
     logTestEvent('ltv:source:loaded', {
       source: 'titlebar',
       mode: params.journeySource,
@@ -4153,6 +4158,9 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
     setGpsPkDisplay(null)
     setGpsPkPeekVisible(false)
 
+    setLtvCountForTitle(null)
+    setLtvIsNormalized(false)
+
     setScheduleDelta(null)
     setScheduleDeltaIsLarge(false)
     setScheduleDeltaSec(null)
@@ -4268,6 +4276,8 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
   if (trainType && String(trainType).trim().length > 0) extendedParts.push(String(trainType).trim())
   if (trainComposition && String(trainComposition).trim().length > 0)
     extendedParts.push(String(trainComposition).trim())
+  if (ltvIsNormalized && ltvCountForTitle !== null && ltvCountForTitle > 0)
+    extendedParts.push(`${ltvCountForTitle} LTV`)
 
   const fullTitle =
     folded && extendedParts.length > 0 ? `${baseTitle} - ${extendedParts.join(' - ')}` : baseTitle
@@ -4571,7 +4581,7 @@ style={{
           onClick={() => setManualImportOpen(false)}
         >
           <div
-            className="w-[min(520px,92vw)] rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-lg p-4"
+            className={`w-[min(520px,92vw)] rounded-2xl border shadow-lg p-4${dark ? ' dark bg-zinc-900 border-zinc-700 text-zinc-100' : ' bg-white border-zinc-200 text-zinc-900'}`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-4">
@@ -4617,7 +4627,8 @@ style={{
                 <select
                   value={manualImportSelectedTrain}
                   onChange={(e) => setManualImportSelectedTrain(e.target.value)}
-                  className="w-full h-10 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 text-sm"
+                  className={`w-full h-10 rounded-lg border px-3 text-sm${dark ? ' bg-zinc-800 border-zinc-700 text-zinc-100' : ' bg-white border-zinc-300 text-zinc-900'}`}
+                  style={dark ? { colorScheme: 'dark' } : undefined}
                 >
                   <option value="">Sélectionner un train…</option>
 
@@ -4965,8 +4976,8 @@ setAutoScrollStartedOnce(next)
               )}
 
               {folded && extendedParts.length > 0 && (
-                <span className="min-w-0 truncate">
-                  {` - ${extendedParts.join(' - ')}`}
+                <span className="min-w-0 truncate ml-1">
+                  {`- ${extendedParts.join(' - ')}`}
                 </span>
               )}
             </span>
@@ -5307,10 +5318,10 @@ if (autoScroll) {
               >
                 <div className="text-left">
                   <div className="font-semibold text-blue-600 dark:text-blue-400">
-                    Vider le cache
+                    Forcer la mise à jour
                   </div>
                   <div className="text-[11px] opacity-70">
-                    Recharge l’application pour récupérer la dernière version publiée
+                    Recharge l’application et les données pour récupérer la dernière version publiée
                   </div>
                 </div>
               </button>
