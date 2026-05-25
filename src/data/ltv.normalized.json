@@ -1,17 +1,17 @@
 {
   "meta": {
     "line": "050",
-    "publishedAt": "2026-05-24T11:19:20.594Z",
+    "publishedAt": "2026-05-25T15:57:04.449Z",
     "adif": {
-      "source": "arcgis",
-      "fetchedAt": "2026-05-24T11:19:12.573Z",
-      "sourceUpdatedAt": "2026-05-18T00:00:00.000Z",
-      "sourceUpdatedFile": "20260518_DSLTV.xml"
+      "source": "cache",
+      "fetchedAt": "2026-05-25T15:49:57.307Z",
+      "sourceUpdatedAt": "2026-05-25T00:00:00.000Z",
+      "sourceUpdatedFile": "20260525_DSLTV.xml"
     }
   },
   "rows": [
     {
-      "id": "ltv-adif-51791",
+      "id": "ltv-adif-48",
       "origin": "adif",
       "status": "unchanged",
       "code": "000051791",
@@ -29,81 +29,69 @@
       "sistema": false,
       "soloCabeza": false,
       "csv": false,
-      "observaciones": "PM\n* AFECTA A TRENES CON ERTMS",
-      "editedFields": {
-        "speed": true,
+      "observaciones": "PM * \nAFECTA A TRENES CON ERTMS",
+      "vatardFields": {
+        "motivo": true,
         "observaciones": true
-      }
-    },
-    {
-      "id": "ltv-adif-171005",
-      "origin": "adif",
-      "status": "unchanged",
-      "code": "000171005",
-      "section": "LIMITE ADIF - LFPSA → FIGUERES-VILAFANT",
-      "via": "I",
-      "kmIni": "751.389",
-      "kmFin": "750.984",
-      "speed": "80",
-      "motivo": "ESTADO APARATOS DE VIA",
-      "fecha1": "",
-      "hora1": "",
-      "fecha2": "",
-      "hora2": "",
-      "viaCheck": false,
-      "sistema": false,
-      "soloCabeza": false,
-      "csv": true,
-      "observaciones": "Al paso por vía desviada"
-    },
-    {
-      "id": "ltv-adif-171006",
-      "origin": "adif",
-      "status": "unchanged",
-      "code": "000171006",
-      "section": "LIMITE ADIF - LFPSA → FIGUERES-VILAFANT",
-      "via": "II",
-      "kmIni": "751.389",
-      "kmFin": "750.984",
-      "speed": "80",
-      "motivo": "ESTADO APARATOS DE VIA",
-      "fecha1": "",
-      "hora1": "",
-      "fecha2": "",
-      "hora2": "",
-      "viaCheck": false,
-      "sistema": false,
-      "soloCabeza": false,
-      "csv": true,
-      "observaciones": "Al paso por vía desviada"
-    },
-    {
-      "id": "ltv-adif-159638",
-      "origin": "adif",
-      "status": "unchanged",
-      "code": "000159638",
-      "section": "LIMITE ADIF - LFPSA → FIGUERES-VILAFANT",
-      "via": "E",
-      "kmIni": "750.330",
-      "kmFin": "749.165",
-      "speed": "30",
-      "motivo": "ESTADO DE VIA",
-      "fecha1": "",
-      "hora1": "",
-      "fecha2": "",
-      "hora2": "",
-      "viaCheck": false,
-      "sistema": true,
-      "soloCabeza": false,
-      "csv": true,
-      "observaciones": "Afecta a via 6",
+      },
       "editedFields": {
-        "sistema": true,
+        "observaciones": true,
+        "speed": true,
         "viaCheck": true
       }
     },
     {
-      "id": "ltv-adif-159636",
+      "id": "ltv-adif-49",
+      "origin": "adif",
+      "status": "unchanged",
+      "code": "000171006",
+      "section": "LIMITE ADIF - LFPSA → FIGUERES-VILAFANT",
+      "via": "ll",
+      "kmIni": "751.389",
+      "kmFin": "750.984",
+      "speed": "80",
+      "motivo": "",
+      "fecha1": "",
+      "hora1": "",
+      "fecha2": "",
+      "hora2": "",
+      "viaCheck": false,
+      "sistema": false,
+      "soloCabeza": false,
+      "csv": true,
+      "observaciones": "Al paso por via desviada",
+      "editedFields": {
+        "observaciones": true,
+        "csv": true
+      }
+    },
+    {
+      "id": "ltv-adif-50",
+      "origin": "adif",
+      "status": "unchanged",
+      "code": "000171005",
+      "section": "LIMITE ADIF - LFPSA → FIGUERES-VILAFANT",
+      "via": "l",
+      "kmIni": "751.389",
+      "kmFin": "750.984",
+      "speed": "80",
+      "motivo": "",
+      "fecha1": "",
+      "hora1": "",
+      "fecha2": "",
+      "hora2": "",
+      "viaCheck": false,
+      "sistema": false,
+      "soloCabeza": false,
+      "csv": true,
+      "observaciones": "Al paso por via desviada",
+      "editedFields": {
+        "observaciones": true,
+        "csv": true
+      }
+    },
+    {
+      "id": "ltv-adif-51",
       "origin": "adif",
       "status": "unchanged",
       "code": "000159636",
@@ -122,13 +110,47 @@
       "soloCabeza": false,
       "csv": true,
       "observaciones": "Afecta a via 4",
+      "vatardFields": {
+        "motivo": true,
+        "observaciones": true,
+        "csv": true
+      },
       "editedFields": {
-        "sistema": true,
-        "viaCheck": true
+        "observaciones": true,
+        "sistema": true
       }
     },
     {
-      "id": "ltv-adif-159646",
+      "id": "ltv-adif-52",
+      "origin": "adif",
+      "status": "unchanged",
+      "code": "000159638",
+      "section": "LIMITE ADIF - LFPSA → FIGUERES-VILAFANT",
+      "via": "E",
+      "kmIni": "750.330",
+      "kmFin": "749.165",
+      "speed": "30",
+      "motivo": "ESTADO DE VIA",
+      "fecha1": "",
+      "hora1": "",
+      "fecha2": "",
+      "hora2": "",
+      "viaCheck": false,
+      "sistema": true,
+      "soloCabeza": false,
+      "csv": true,
+      "observaciones": "Afecta a via 6",
+      "vatardFields": {
+        "motivo": true,
+        "observaciones": true,
+        "csv": true
+      },
+      "editedFields": {
+        "sistema": true
+      }
+    },
+    {
+      "id": "ltv-adif-53",
       "origin": "adif",
       "status": "unchanged",
       "code": "000159646",
@@ -147,22 +169,26 @@
       "soloCabeza": false,
       "csv": true,
       "observaciones": "AFECTA A VIAS 4 y 6",
+      "vatardFields": {
+        "motivo": true,
+        "observaciones": true,
+        "csv": true
+      },
       "editedFields": {
-        "sistema": true,
-        "viaCheck": true
+        "sistema": true
       }
     },
     {
-      "id": "ltv-adif-172223",
+      "id": "ltv-adif-54",
       "origin": "adif",
       "status": "unchanged",
       "code": "000172223",
       "section": "GIRONA → VILOBI D'ONYAR",
-      "via": "II",
+      "via": "ll",
       "kmIni": "713.794",
       "kmFin": "713.694",
       "speed": "80",
-      "motivo": "ESTADO DE VIA",
+      "motivo": "",
       "fecha1": "",
       "hora1": "",
       "fecha2": "",
@@ -171,19 +197,22 @@
       "sistema": false,
       "soloCabeza": false,
       "csv": true,
-      "observaciones": ""
+      "observaciones": "",
+      "editedFields": {
+        "csv": true
+      }
     },
     {
-      "id": "ltv-adif-172020",
+      "id": "ltv-adif-55",
       "origin": "adif",
       "status": "unchanged",
       "code": "000172020",
       "section": "RIELLS-A. V.",
-      "via": "I",
+      "via": "l",
       "kmIni": "678.500",
       "kmFin": "678.000",
       "speed": "160",
-      "motivo": "ESTADO DE VIA",
+      "motivo": "",
       "fecha1": "",
       "hora1": "",
       "fecha2": "",
@@ -192,35 +221,13 @@
       "sistema": false,
       "soloCabeza": false,
       "csv": false,
-      "observaciones": ""
-    },
-    {
-      "id": "ltv-adif-161595",
-      "origin": "adif",
-      "status": "unchanged",
-      "code": "000161595",
-      "section": "LA SAGRERA AV",
-      "via": "E",
-      "kmIni": "627.220",
-      "kmFin": "626.880",
-      "speed": "30",
-      "motivo": "ESTADO DE VIA",
-      "fecha1": "",
-      "hora1": "",
-      "fecha2": "",
-      "hora2": "",
-      "viaCheck": false,
-      "sistema": true,
-      "soloCabeza": false,
-      "csv": false,
       "observaciones": "",
       "editedFields": {
-        "viaCheck": true,
-        "sistema": true
+        "viaCheck": true
       }
     },
     {
-      "id": "ltv-adif-161596",
+      "id": "ltv-adif-56",
       "origin": "adif",
       "status": "unchanged",
       "code": "000161596",
@@ -239,13 +246,42 @@
       "soloCabeza": false,
       "csv": false,
       "observaciones": "",
+      "vatardFields": {
+        "motivo": true
+      },
       "editedFields": {
-        "viaCheck": true,
         "sistema": true
       }
     },
     {
-      "id": "ltv-adif-161580",
+      "id": "ltv-adif-57",
+      "origin": "adif",
+      "status": "unchanged",
+      "code": "000161595",
+      "section": "LA SAGRERA AV",
+      "via": "E",
+      "kmIni": "627.220",
+      "kmFin": "626.880",
+      "speed": "30",
+      "motivo": "ESTADO DE VIA",
+      "fecha1": "",
+      "hora1": "",
+      "fecha2": "",
+      "hora2": "",
+      "viaCheck": false,
+      "sistema": true,
+      "soloCabeza": false,
+      "csv": false,
+      "observaciones": "",
+      "vatardFields": {
+        "motivo": true
+      },
+      "editedFields": {
+        "sistema": true
+      }
+    },
+    {
+      "id": "ltv-adif-58",
       "origin": "adif",
       "status": "unchanged",
       "code": "000161580",
@@ -264,8 +300,11 @@
       "soloCabeza": false,
       "csv": false,
       "observaciones": "Vía 9-G1 de La Sagrera",
+      "vatardFields": {
+        "motivo": true,
+        "observaciones": true
+      },
       "editedFields": {
-        "viaCheck": true,
         "sistema": true
       }
     }
