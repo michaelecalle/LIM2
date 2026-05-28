@@ -2457,6 +2457,107 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
               "conc": "11"
             }
           }
+        },
+        {
+          "meta": {
+            "origine": "BARCELONA SANTS",
+            "destination": "PERPIGNAN",
+            "ligne": "050",
+            "numeroEspagne": "",
+            "numeroFrance": "9706",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
+            "materiel": "TGV 2N2",
+            "composition": "UM",
+            "validity": {
+              "startDate": "",
+              "endDate": "",
+              "days": {
+                "monday": true,
+                "tuesday": true,
+                "wednesday": true,
+                "thursday": true,
+                "friday": true,
+                "saturday": true,
+                "sunday": true
+              }
+            }
+          },
+          "byRowKey": {
+            "sn-data-0006": {
+              "hora": "16:24"
+            },
+            "sn-data-0012": {
+              "hora": "16:30",
+              "conc": "6"
+            },
+            "sn-data-0019": {
+              "hora": "16:39",
+              "conc": "9"
+            },
+            "sn-data-0020": {
+              "hora": "16:39",
+              "conc": "0"
+            },
+            "sn-data-0023": {
+              "hora": "16:41",
+              "conc": "2"
+            },
+            "sn-data-0030": {
+              "hora": "16:46",
+              "conc": "5"
+            },
+            "sn-data-0032": {
+              "hora": "16:52",
+              "conc": "6"
+            },
+            "sn-data-0034": {
+              "hora": "16:53",
+              "conc": "1"
+            },
+            "sn-data-0036": {
+              "hora": "17:00",
+              "conc": "7"
+            },
+            "sn-data-0039": {
+              "hora": "17:02",
+              "conc": "2"
+            },
+            "sn-data-0041": {
+              "hora": "17:08",
+              "com": "3",
+              "conc": "6"
+            },
+            "sn-data-0047": {
+              "hora": "17:26",
+              "conc": "15",
+              "com": "3"
+            },
+            "sn-data-0048": {
+              "hora": "17:31",
+              "conc": "5"
+            },
+            "sn-data-0049": {
+              "hora": "17:35",
+              "conc": "4"
+            },
+            "sn-data-0050": {
+              "hora": "17:36",
+              "conc": "1"
+            },
+            "sn-data-0051": {
+              "hora": "17:38",
+              "conc": "2"
+            },
+            "sn-data-0052": {
+              "hora": "17:39",
+              "conc": "1"
+            },
+            "sn-data-0055": {
+              "hora": "17:50",
+              "conc": "11"
+            }
+          }
         }
       ]
     },
@@ -2898,6 +2999,107 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         }
       },
       "variants": [
+        {
+          "meta": {
+            "origine": "PERPIGNAN",
+            "destination": "BARCELONA SANTS",
+            "ligne": "050",
+            "numeroEspagne": "",
+            "numeroFrance": "9713",
+            "categorieEspagne": "T200",
+            "categorieFrance": "300",
+            "materiel": "TGV 2N2",
+            "composition": "US",
+            "validity": {
+              "startDate": "",
+              "endDate": "",
+              "days": {
+                "monday": true,
+                "tuesday": true,
+                "wednesday": true,
+                "thursday": true,
+                "friday": true,
+                "saturday": true,
+                "sunday": true
+              }
+            }
+          },
+          "byRowKey": {
+            "ns-data-0055": {
+              "hora": "13:06"
+            },
+            "ns-data-0052": {
+              "hora": "13:16",
+              "conc": "10"
+            },
+            "ns-data-0051": {
+              "hora": "13:17",
+              "conc": "1"
+            },
+            "ns-data-0050": {
+              "hora": "13:19",
+              "conc": "2"
+            },
+            "ns-data-0049": {
+              "hora": "13:20",
+              "conc": "1"
+            },
+            "ns-data-0048": {
+              "hora": "13:25",
+              "conc": "5"
+            },
+            "ns-data-0047": {
+              "hora": "13:33",
+              "com": "3",
+              "conc": "8"
+            },
+            "ns-data-0041": {
+              "hora": "13:50",
+              "com": "3",
+              "conc": "17"
+            },
+            "ns-data-0039": {
+              "hora": "13:53",
+              "conc": "3"
+            },
+            "ns-data-0036": {
+              "hora": "13:56",
+              "conc": "3"
+            },
+            "ns-data-0034": {
+              "hora": "14:03",
+              "conc": "7"
+            },
+            "ns-data-0032": {
+              "hora": "14:04",
+              "conc": "1"
+            },
+            "ns-data-0030": {
+              "hora": "14:09",
+              "conc": "5"
+            },
+            "ns-data-0023": {
+              "hora": "14:15",
+              "conc": "6"
+            },
+            "ns-data-0020": {
+              "hora": "14:17",
+              "conc": "2"
+            },
+            "ns-data-0019": {
+              "hora": "14:18",
+              "conc": "1"
+            },
+            "ns-data-0012": {
+              "hora": "14:25",
+              "conc": "7"
+            },
+            "ns-data-0006": {
+              "hora": "14:32",
+              "conc": "7"
+            }
+          }
+        },
         {
           "meta": {
             "origine": "PERPIGNAN",
