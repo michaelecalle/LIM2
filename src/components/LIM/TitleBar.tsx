@@ -106,6 +106,7 @@ const [autoScrollStartedOnce, setAutoScrollStartedOnce] = useState(false)
 const autoScrollRef = useRef(false)
 const autoScrollStartedOnceRef = useRef(false)
 const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
+  const [stationArretActive, setStationArretActive] = useState(false)
   const [hourlyMode, setHourlyMode] = useState(false)
   const [referenceMode, setReferenceMode] = useState<'HORAIRE' | 'GPS'>('HORAIRE')
   const [standbyMode, setStandbyMode] = useState(false)
@@ -3857,6 +3858,13 @@ if (enabled || standby) {
         }
       }
 
+      if (state === 'ARRET') {
+        // Mode ARRÊT GPS : icône reste verte, texte "ARRÊT"
+        setGpsState(2)
+        setStationArretActive(true)
+        return
+      }
+
       if (state === 'RED') {
         setGpsState(0)
         setGpsPkDisplay(null)
@@ -3873,6 +3881,7 @@ if (enabled || standby) {
 
       if (state === 'GREEN') {
         setGpsState(2)
+        setStationArretActive(false)
 
 // ✅ Au retour réel en GPS, on réaligne l’état visuel du bouton Play
 // uniquement si l'autoscroll a déjà été engagé.
@@ -3895,6 +3904,17 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testModeEnabled])
+
+  // ✅ Indicateur ARRÊT en gare (mode GPS ou standby horaire)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent
+      const active = !!ce?.detail?.active
+      setStationArretActive(active)
+    }
+    window.addEventListener('lim:station-arret', handler as EventListener)
+    return () => window.removeEventListener('lim:station-arret', handler as EventListener)
+  }, [])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -4839,31 +4859,44 @@ setAutoScrollStartedOnce(next)
               <button
                 type="button"
                 onClick={() => {
+                  if (stationArretActive && gpsState === 2) {
+                    // Sortie manuelle du mode ARRÊT GPS
+                    window.dispatchEvent(new CustomEvent('ft:station-arret-manual-exit'))
+                    return
+                  }
                   showGpsPkTemporarily()
                 }}
                 className={`
                   relative h-7 px-3 rounded-full text-xs font-semibold bg-white dark:bg-zinc-900 transition
-                  ${!testModeEnabled && gpsState === 2 && gpsPkDisplay ? 'cursor-pointer' : 'cursor-default'}
+                  ${stationArretActive && gpsState === 2 ? 'cursor-pointer' : ''}
+                  ${!stationArretActive && !testModeEnabled && gpsState === 2 && gpsPkDisplay ? 'cursor-pointer' : ''}
+                  ${stationArretActive || (!stationArretActive && !testModeEnabled && gpsState !== 2) ? '' : ''}
                   ${gpsState === 0 ? 'border-[3px] border-red-500 text-red-600 dark:text-red-400' : ''}
                   ${gpsState === 1 ? 'border-[3px] border-orange-400 text-orange-500 dark:text-orange-300' : ''}
                   ${gpsState === 2 ? 'border-[3px] border-emerald-400 text-emerald-500 dark:text-emerald-300' : ''}
                 `}
                 title={
-                  gpsState === 0
-                    ? 'GPS indisponible / non calé'
-                    : gpsState === 1
-                      ? 'GPS présent mais hors ligne de référence'
-                      : !testModeEnabled && gpsPkDisplay
-                        ? 'GPS OK : appuyer pour afficher temporairement le PK'
-                        : 'GPS OK : position calée sur la ligne'
+                  stationArretActive && gpsState === 2
+                    ? 'Arrêt en gare détecté — appuyer pour forcer la reprise sans recalage'
+                    : stationArretActive && gpsState === 0
+                      ? 'Arrêt en gare (mode horaire)'
+                      : gpsState === 0
+                        ? 'GPS indisponible / non calé'
+                        : gpsState === 1
+                          ? 'GPS présent mais hors ligne de référence'
+                          : !testModeEnabled && gpsPkDisplay
+                            ? 'GPS OK : appuyer pour afficher temporairement le PK'
+                            : 'GPS OK : position calée sur la ligne'
                 }
               >
-                <span className="relative z-10 tabular-nums">
-                  {(testModeEnabled || gpsPkPeekVisible) && gpsState === 2 && gpsPkDisplay
-                    ? `PK ${gpsPkDisplay}`
-                    : 'GPS'}
+                <span className={`relative z-10 tabular-nums${stationArretActive ? ' animate-pulse' : ''}`}>
+                  {stationArretActive
+                    ? 'ARRÊT'
+                    : (testModeEnabled || gpsPkPeekVisible) && gpsState === 2 && gpsPkDisplay
+                      ? `PK ${gpsPkDisplay}`
+                      : 'GPS'}
                 </span>
-                {gpsState === 0 && (
+                {gpsState === 0 && !stationArretActive && (
                   <span className="pointer-events-none absolute inset-1 z-20" aria-hidden>
                     <span
                       className="absolute top-1/2 left-1 right-1 h-[2px] bg-red-500/80"

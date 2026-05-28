@@ -23,6 +23,16 @@ type GpsPosition = {
 
 type ReferenceMode = "HORAIRE" | "GPS";
 
+type StationArretState = {
+  frozenSKm: number;
+  frozenRowIndex: number;
+  frozenAccuracy: number;
+  departureThresholdKm: number;
+  firstMovementTime: number | null;
+  prevSKm: number;
+  consecutiveSteps: number;
+};
+
 type FtLtvRowForFtDisplay = {
   code?: string;
   section?: string;
@@ -56,7 +66,7 @@ export default function FT({ variant = "classic" }: FTProps) {
   const [testModeEnabled, setTestModeEnabled] = useState(false);
 
   // État GPS pour l'UI (couleur de l'indicateur de position)
-  type GpsStateUi = "RED" | "ORANGE" | "GREEN";
+  type GpsStateUi = "RED" | "ORANGE" | "GREEN" | "ARRET";
   const [gpsStateUi, setGpsStateUi] = useState<GpsStateUi>("RED");
 
   useEffect(() => {
@@ -64,7 +74,7 @@ export default function FT({ variant = "classic" }: FTProps) {
       const ce = e as CustomEvent<any>;
       const s = ce?.detail?.state as GpsStateUi | undefined;
 
-      if (s === "RED" || s === "ORANGE" || s === "GREEN") {
+      if (s === "RED" || s === "ORANGE" || s === "GREEN" || s === "ARRET") {
         setGpsStateUi(s);
 
         // ✅ GPS passif : l'indicateur peut passer GREEN avant Play,
@@ -677,6 +687,10 @@ if (referenceMode === "GPS") {
   const recalibrateFromRowRef = React.useRef<number | null>(null);
   // ✅ Verrou dédié : ligne qui a réellement déclenché l'entrée en standby
   const standbyLockedRowRef = React.useRef<number | null>(null);
+  // GPS ARRÊT mode : données de l'arrêt en cours (null = pas en mode ARRÊT)
+  const stationArretRef = React.useRef<StationArretState | null>(null);
+  // Timestamp de départ réel pour le recalage (consommé une seule fois)
+  const recalibrateAtTimeRef = React.useRef<Date | null>(null);
   // Bug 1 fix : blocage du recalcul delta au premier Play (stand-by initial)
   const skipInitialStandbyRecalibrationRef = React.useRef(false);
   // Bug 2 fix : compteur pour forcer le re-déclenchement du useEffect de recalibration
@@ -1376,10 +1390,14 @@ if (referenceMode === "GPS") {
         lastGpsStateEmitAtRef.current = nowTs;
         lastGpsStateEmitPkRef.current = pkForUi;
 
+        // Mode ARRÊT : si le GPS figure rouge à cause du freeze gare, on maintient GREEN
+        const emitState =
+          stationArretRef.current != null && nextState === "RED" ? "ARRET" : nextState;
+
         window.dispatchEvent(
           new CustomEvent("lim:gps-state", {
             detail: {
-              state: nextState,
+              state: emitState,
               reasonCodes,
               pk: pkForUi,
               pkRaw: pkRaw ?? null,
@@ -1393,9 +1411,13 @@ if (referenceMode === "GPS") {
       };
 
       const prevState = gpsStateRef.current;
+      // En mode ARRÊT gare, on ne laisse pas gpsStateRef passer en RED
+      // (cela couperait le mode GPS et le ruban ne suivrait plus)
+      const effectiveNextState =
+        stationArretRef.current != null && nextState === "RED" ? "GREEN" : nextState;
 
-      if (prevState !== nextState) {
-        gpsStateRef.current = nextState;
+      if (prevState !== effectiveNextState) {
+        gpsStateRef.current = effectiveNextState;
 
         emitGpsState(true);
 
@@ -1416,7 +1438,7 @@ if (referenceMode === "GPS") {
           orangeTimeoutMs: ORANGE_TIMEOUT_MS,
         });
       } else {
-        if (nextState === "GREEN") {
+        if (nextState === "GREEN" || effectiveNextState === "GREEN") {
           emitGpsState(false);
         }
       }
@@ -1474,6 +1496,8 @@ if (referenceMode === "GPS") {
 
   // Si le PK figé est proche (<= 1 km) d’une gare commerciale => standby auto
   const STATION_PROX_KM = 1.0;
+  // Précision GPS max pour activer le mode ARRÊT GPS (sinon : standby horaire classique)
+  const GPS_ARRET_MAX_ACCURACY_M = 200;
 
   // État "GPS OK" (fix + sur la ligne) pour l'hystérésis
   const gpsHealthyRef = React.useRef<boolean>(false);
@@ -1607,6 +1631,16 @@ detail: { enabled: true, standby: true },
           forceRealignOnResumeRef.current = true;
           standbyLockedRowRef.current = null;
         }
+
+        // Sortie de standby horaire : annuler aussi le marqueur ARRÊT si présent
+        if (stationArretRef.current != null) {
+          stationArretRef.current = null;
+          window.dispatchEvent(
+            new CustomEvent("lim:station-arret", {
+              detail: { active: false, source: "horaire_resume" },
+            })
+          );
+        }
       }
 
       console.log(
@@ -1638,6 +1672,25 @@ detail: { enabled: true, standby: true },
         handlerAutoScroll as EventListener
       );
     };
+  }, []);
+
+  // ✅ Sortie manuelle du mode ARRÊT GPS (tap sur l'icône ARRÊT dans TitleBar)
+  useEffect(() => {
+    const handler = () => {
+      if (stationArretRef.current === null) return;
+      logTestEvent("gps:arret:manual-exit", {
+        frozenSKm: stationArretRef.current.frozenSKm,
+        frozenRowIndex: stationArretRef.current.frozenRowIndex,
+      });
+      stationArretRef.current = null;
+      window.dispatchEvent(
+        new CustomEvent("lim:station-arret", {
+          detail: { active: false, source: "manual" },
+        })
+      );
+    };
+    window.addEventListener("ft:station-arret-manual-exit", handler);
+    return () => window.removeEventListener("ft:station-arret-manual-exit", handler);
   }, []);
 
     // ✅ Replay / Simulation : sélection et recalage "déterministes" sans clic DOM
@@ -1770,7 +1823,8 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
 
   // Base "mode Standby" : à partir de la ligne sélectionnée
   const captureBaseFromRowIndex = (rowIndex: number) => {
-    const now = new Date();
+    const now = recalibrateAtTimeRef.current ?? new Date();
+    recalibrateAtTimeRef.current = null;
     const nowMin = now.getHours() * 60 + now.getMinutes();
     const nowMinFloat = nowMin + now.getSeconds() / 60;
 
@@ -3508,7 +3562,8 @@ const isRelock = acceptedMode === "relock";
 
       // ✅ vrai uniquement AU MOMENT où on bascule en RED à cause du figeage
       const enteredRedFromFreeze =
-        prevGpsState !== "RED" && nextState === "RED" && pkFrozenRed === true;
+        prevGpsState !== "RED" && nextState === "RED" && pkFrozenRed === true &&
+        stationArretRef.current === null; // guard : évite le re-déclenchement pendant ARRÊT
 
       // ✅ utile pour log : entrée ORANGE provoquée par PK incohérent
       const enteredOrangeFromPkIncoherent =
@@ -3540,10 +3595,14 @@ const isRelock = acceptedMode === "relock";
         lastGpsStateEmitAtRef.current = now;
         lastGpsStateEmitPkRef.current = pkForUi;
 
+        // Mode ARRÊT : si le GPS figure rouge à cause du freeze gare, on maintient GREEN
+        const emitState =
+          stationArretRef.current != null && nextState === "RED" ? "ARRET" : nextState;
+
         window.dispatchEvent(
           new CustomEvent("lim:gps-state", {
             detail: {
-              state: nextState, // "RED" | "ORANGE" | "GREEN"
+              state: emitState,
               reasonCodes,
               pk: pkForUi,
               pkRaw: pkRaw ?? null,
@@ -3556,9 +3615,13 @@ const isRelock = acceptedMode === "relock";
         );
       };
 
-      if (gpsStateRef.current !== nextState) {
+      // En mode ARRÊT gare, on ne laisse pas gpsStateRef passer en RED
+      const effectiveNextState =
+        stationArretRef.current != null && nextState === "RED" ? "GREEN" : nextState;
+
+      if (gpsStateRef.current !== effectiveNextState) {
         const prevState = gpsStateRef.current;
-        gpsStateRef.current = nextState;
+        gpsStateRef.current = effectiveNextState;
 
         // 🔊 Source de vérité GPS (FT) -> TitleBar (FORCÉ si changement d'état)
         emitGpsStateToTitleBar(true);
@@ -3748,59 +3811,88 @@ const isRelock = acceptedMode === "relock";
         if (nearest) {
           const { rowIndex, deltaKm } = nearest;
 
-          console.log(
-            "[FT][gps] RED sur figeage + proche gare commerciale -> Standby auto sur rowIndex=",
-            rowIndex,
-            "deltaKm=",
-            deltaKm,
-            "pk=",
-            pk
-          );
+          const currentSKm =
+            typeof (detail as any).s_km === "number" &&
+            Number.isFinite((detail as any).s_km)
+              ? ((detail as any).s_km as number)
+              : null;
 
-          logTestEvent("gps:freeze-red:station-standby", {
-            rowIndex,
-            deltaKm,
-            pk,
-            state: gpsStateRef.current,
-            reason: "pk_frozen_red_near_commercial_stop",
-            stationProxKm: STATION_PROX_KM,
-          });
+          const canUseGpsArret =
+            accuracyM != null &&
+            accuracyM <= GPS_ARRET_MAX_ACCURACY_M &&
+            currentSKm != null;
 
-          // 🔎 DEBUG DIAGNOSTIC standby auto
-          const autoStandbyEntry = rawEntries[rowIndex] as any;
-          const autoStandbyHora = resolveHoraForRowIndex(rowIndex);
-
-          logTestEvent("ft:standby:auto:debug", {
-            rowIndex,
-            pk,
-            deltaKm,
-            selectedRowIndexBefore: selectedRowIndex,
-            activeRowIndexBefore: activeRowIndex,
-            recalibrateFromRowBefore: recalibrateFromRowRef.current,
-            standbyLockedRowBefore: standbyLockedRowRef.current,
-            horaResolved: autoStandbyHora || null,
-            rowPk: autoStandbyEntry?.pk ?? null,
-            rowPkAdif: autoStandbyEntry?.pk_adif ?? null,
-            rowPkLfp: autoStandbyEntry?.pk_lfp ?? null,
-            rowPkRfn: autoStandbyEntry?.pk_rfn ?? null,
-            rowNetwork: autoStandbyEntry?.network ?? null,
-            dependencia: autoStandbyEntry?.dependencia ?? null,
-          });
-
-          // Visuel + base de recalage (comme un clic Standby)
-          setSelectedRowIndex(rowIndex);
-          recalibrateFromRowRef.current = rowIndex;
-          standbyLockedRowRef.current = rowIndex;
-
-          // Optionnel mais cohérent : mettre aussi la ligne active sur cette gare
-          setActiveRowIndex(rowIndex);
-
-          // On passe en Standby (🕑 orange) SANS couper l’autoscroll
-          window.dispatchEvent(
-            new CustomEvent("ft:auto-scroll-change", {
-              detail: { enabled: true, standby: true },
-            })
-          );
+          if (canUseGpsArret) {
+            // ✅ Mode ARRÊT GPS : on reste en GPS vert, pas de standby horaire
+            const deptThreshKm = Math.max(0.075, (4 * accuracyM!) / 1000);
+            stationArretRef.current = {
+              frozenSKm: currentSKm!,
+              frozenRowIndex: rowIndex,
+              frozenAccuracy: accuracyM!,
+              departureThresholdKm: deptThreshKm,
+              firstMovementTime: null,
+              prevSKm: currentSKm!,
+              consecutiveSteps: 0,
+            };
+            window.dispatchEvent(
+              new CustomEvent("lim:station-arret", {
+                detail: { active: true, source: "gps" },
+              })
+            );
+            logTestEvent("gps:freeze-red:station-arret", {
+              rowIndex,
+              deltaKm,
+              pk,
+              currentSKm,
+              accuracyM,
+              deptThreshKm,
+            });
+          } else {
+            // Fallback : standby horaire classique (gare souterraine ou GPS dégradé)
+            const autoStandbyEntry = rawEntries[rowIndex] as any;
+            const autoStandbyHora = resolveHoraForRowIndex(rowIndex);
+            logTestEvent("ft:standby:auto:debug", {
+              rowIndex,
+              pk,
+              deltaKm,
+              selectedRowIndexBefore: selectedRowIndex,
+              activeRowIndexBefore: activeRowIndex,
+              recalibrateFromRowBefore: recalibrateFromRowRef.current,
+              standbyLockedRowBefore: standbyLockedRowRef.current,
+              horaResolved: autoStandbyHora || null,
+              rowPk: autoStandbyEntry?.pk ?? null,
+              rowPkAdif: autoStandbyEntry?.pk_adif ?? null,
+              rowPkLfp: autoStandbyEntry?.pk_lfp ?? null,
+              rowPkRfn: autoStandbyEntry?.pk_rfn ?? null,
+              rowNetwork: autoStandbyEntry?.network ?? null,
+              dependencia: autoStandbyEntry?.dependencia ?? null,
+              accuracyM,
+              canUseGpsArret,
+            });
+            logTestEvent("gps:freeze-red:station-standby", {
+              rowIndex,
+              deltaKm,
+              pk,
+              state: gpsStateRef.current,
+              reason: canUseGpsArret ? "s_km_null" : "accuracy_too_poor_or_missing",
+              accuracyM,
+              stationProxKm: STATION_PROX_KM,
+            });
+            setSelectedRowIndex(rowIndex);
+            recalibrateFromRowRef.current = rowIndex;
+            standbyLockedRowRef.current = rowIndex;
+            setActiveRowIndex(rowIndex);
+            window.dispatchEvent(
+              new CustomEvent("ft:auto-scroll-change", {
+                detail: { enabled: true, standby: true },
+              })
+            );
+            window.dispatchEvent(
+              new CustomEvent("lim:station-arret", {
+                detail: { active: true, source: "horaire" },
+              })
+            );
+          }
         } else {
           // Pas de gare commerciale proche => on ne fait rien (comportement normal)
           logTestEvent("gps:freeze-red:station-standby-skip", {
@@ -3808,6 +3900,71 @@ const isRelock = acceptedMode === "relock";
             reason: "no_near_commercial_stop",
             stationProxKm: STATION_PROX_KM,
           });
+        }
+      }
+
+      // ✅ Monitoring départ en mode ARRÊT GPS
+      if (stationArretRef.current != null) {
+        const arret = stationArretRef.current;
+        const currentSKm =
+          typeof (detail as any).s_km === "number" &&
+          Number.isFinite((detail as any).s_km)
+            ? ((detail as any).s_km as number)
+            : null;
+
+        if (currentSKm != null) {
+          const delta = currentSKm - arret.frozenSKm;
+
+          if (delta > 0.010) {
+            if (arret.firstMovementTime === null) {
+              arret.firstMovementTime = nowTs;
+              arret.prevSKm = currentSKm;
+              arret.consecutiveSteps = 1;
+              logTestEvent("gps:arret:first-movement", {
+                currentSKm,
+                frozenSKm: arret.frozenSKm,
+                delta,
+              });
+            } else if (currentSKm > arret.prevSKm + 0.005) {
+              arret.consecutiveSteps++;
+              arret.prevSKm = currentSKm;
+
+              if (
+                arret.consecutiveSteps >= 3 &&
+                delta >= arret.departureThresholdKm
+              ) {
+                // ✅ Départ confirmé
+                logTestEvent("gps:arret:departure-confirmed", {
+                  frozenSKm: arret.frozenSKm,
+                  currentSKm,
+                  delta,
+                  firstMovementTime: arret.firstMovementTime,
+                  confirmationLagMs: nowTs - arret.firstMovementTime!,
+                  consecutiveSteps: arret.consecutiveSteps,
+                  departureThresholdKm: arret.departureThresholdKm,
+                });
+
+                const frozenRowIndex = arret.frozenRowIndex;
+                const firstMovementTime = arret.firstMovementTime!;
+                stationArretRef.current = null;
+
+                window.dispatchEvent(
+                  new CustomEvent("lim:station-arret", {
+                    detail: { active: false, source: "departure" },
+                  })
+                );
+
+                // Recalage delta avec le timestamp du premier mouvement réel
+                recalibrateAtTimeRef.current = new Date(firstMovementTime);
+                recalibrateFromRowRef.current = frozenRowIndex;
+                setRecalibrateTrigger((prev) => prev + 1);
+                setForceRealignTrigger((prev) => prev + 1);
+                setActiveRowIndex(frozenRowIndex);
+                setSelectedRowIndex(null);
+                forceRealignOnResumeRef.current = true;
+              }
+            }
+          }
         }
       }
 
