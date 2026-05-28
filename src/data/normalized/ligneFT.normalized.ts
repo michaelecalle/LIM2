@@ -3110,7 +3110,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "categorieEspagne": "T200",
             "categorieFrance": "300",
             "materiel": "TGV 2N2",
-            "composition": "US",
+            "composition": "UM",
             "validity": {
               "startDate": "",
               "endDate": "",
