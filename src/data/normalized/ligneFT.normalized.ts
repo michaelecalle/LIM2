@@ -2480,7 +2480,13 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
                 "friday": true,
                 "saturday": true,
                 "sunday": true
-              }
+              },
+              "specificDates": [
+                "2026-05-30",
+                "2026-06-06",
+                "2026-06-13",
+                "2026-06-28"
+              ]
             }
           },
           "byRowKey": {
