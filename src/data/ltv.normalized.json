@@ -1,10 +1,10 @@
 {
   "meta": {
     "line": "050",
-    "publishedAt": "2026-05-29T06:01:07.736Z",
+    "publishedAt": "2026-05-29T12:04:42.397Z",
     "adif": {
       "source": "arcgis",
-      "fetchedAt": "2026-05-29T05:34:06.371Z",
+      "fetchedAt": "2026-05-29T12:04:08.971Z",
       "sourceUpdatedAt": "2026-05-25T00:00:00.000Z",
       "sourceUpdatedFile": "20260525_DSLTV.xml"
     }
