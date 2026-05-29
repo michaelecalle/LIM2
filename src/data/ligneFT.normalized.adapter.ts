@@ -276,16 +276,20 @@ function isDateWithinRange(
   return true;
 }
 
-function getActiveVariantByRowKey(
-  train: NormalizedTrain
-): Record<string, NormalizedTrainRowOverride> | undefined {
-  const variants = (train as any).variants;
-  if (!Array.isArray(variants) || variants.length === 0) return undefined;
+function findActiveVariant(
+  variants: any[],
+  currentDateIso: string,
+  currentDayKey: VariantDayKey
+): any | undefined {
+  // Priorité 1 : variante à dates spécifiques
+  const specificDateMatch = variants.find((variant: any) => {
+    const dates = variant?.meta?.validity?.specificDates;
+    return Array.isArray(dates) && dates.includes(currentDateIso);
+  });
+  if (specificDateMatch) return specificDateMatch;
 
-  const currentDateIso = getCurrentLocalDateIso();
-  const currentDayKey = getCurrentDayKey();
-
-  const matchedVariant = variants.find((variant: any) => {
+  // Priorité 2 : jour de semaine + plage de dates
+  return variants.find((variant: any) => {
     const validity = variant?.meta?.validity;
     if (!validity) return false;
 
@@ -299,6 +303,18 @@ function getActiveVariantByRowKey(
     const dayValue = validity?.days?.[currentDayKey];
     return dayValue === true;
   });
+}
+
+function getActiveVariantByRowKey(
+  train: NormalizedTrain
+): Record<string, NormalizedTrainRowOverride> | undefined {
+  const variants = (train as any).variants;
+  if (!Array.isArray(variants) || variants.length === 0) return undefined;
+
+  const currentDateIso = getCurrentLocalDateIso();
+  const currentDayKey = getCurrentDayKey();
+
+  const matchedVariant = findActiveVariant(variants, currentDateIso, currentDayKey);
 
   if (!matchedVariant?.byRowKey) return undefined;
 
@@ -372,20 +388,7 @@ export function getTrainLigne(
     const currentDateIso = getCurrentLocalDateIso();
     const currentDayKey = getCurrentDayKey();
 
-    const matchedVariant = variants.find((variant: any) => {
-      const validity = variant?.meta?.validity;
-      if (!validity) return false;
-
-      const startDate = asNonEmptyString(validity.startDate);
-      const endDate = asNonEmptyString(validity.endDate);
-
-      if (!isDateWithinRange(currentDateIso, startDate, endDate)) {
-        return false;
-      }
-
-      const dayValue = validity?.days?.[currentDayKey];
-      return dayValue === true;
-    });
+    const matchedVariant = findActiveVariant(variants, currentDateIso, currentDayKey);
 
     const variantLigne = asNonEmptyString(matchedVariant?.meta?.ligne);
     if (variantLigne) return variantLigne;
@@ -432,20 +435,7 @@ export function getTrainComposition(
     const currentDateIso = getCurrentLocalDateIso();
     const currentDayKey = getCurrentDayKey();
 
-    const matchedVariant = variants.find((variant: any) => {
-      const validity = variant?.meta?.validity;
-      if (!validity) return false;
-
-      const startDate = asNonEmptyString(validity.startDate);
-      const endDate = asNonEmptyString(validity.endDate);
-
-      if (!isDateWithinRange(currentDateIso, startDate, endDate)) {
-        return false;
-      }
-
-      const dayValue = validity?.days?.[currentDayKey];
-      return dayValue === true;
-    });
+    const matchedVariant = findActiveVariant(variants, currentDateIso, currentDayKey);
 
     const variantComposition = asNonEmptyString(matchedVariant?.meta?.composition);
     if (variantComposition) return variantComposition;

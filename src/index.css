@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Active le mode nuit via la classe .dark (Tailwind v4) */
+@variant dark (&:where(.dark, .dark *));
+
 /* ===============================
    LIMGPT α2.1 — Transitions globales
    - Ajoute un fondu doux lors des changements de thème (Jour/Nuit)

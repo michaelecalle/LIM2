@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   buildTestLogFile,
   startTestSession,
@@ -2315,18 +2316,19 @@ ${coords}
   const [brightness, setBrightness] = useState<number>(getInitialBrightness)
 
   useEffect(() => {
-    const b = `brightness(${brightness})`
     const html = document.documentElement
     const body = document.body
     const root = getRootEl()
     const main = getMainEl()
+    // NE PAS appliquer filter sur les éléments racine.
+    // filter crée un stacking context qui piège les modales (position:fixed
+    // z-[99999]) dans un sous-contexte — résultat : l'en-tête de la fiche
+    // train (Infos, z=auto) s'affiche par-dessus les modales.
+    // La luminosité est désormais gérée par l'overlay #lim-dim-overlay
+    // (z=1, pointer-events:none) ajouté dans le JSX ci-dessous.
     ;[html, body, root, main].forEach((el) => {
       if (el) (el as HTMLElement).style.filter = ''
     })
-    if (main) (main as HTMLElement).style.filter = b
-    if (root) (root as HTMLElement).style.filter = b
-    body.style.filter = b
-    html.style.filter = b
     try {
       localStorage.setItem('brightness', String(brightness))
     } catch {}
@@ -4442,7 +4444,27 @@ const autoScrollButtonActive = autoScroll || autoScrollStartedOnce
 const IconFile = () => null
   return (
     <header id="lim-titlebar-root" className="surface-header rounded-2xl px-3 py-2 shadow-sm">
-            {pdfLoadingErrorMessage && (
+      {/* ── Overlay de luminosité ──────────────────────────────────────────────
+          Remplace filter:brightness() sur html/body/root/main.
+          • z-index:1  → au-dessus du contenu (z=auto) mais SOUS toutes les
+            modales (z=9999–99999), ce qui corrige le bug d'empilement.
+          • pointer-events:none → les interactions passent à travers.
+          • Aucun filter sur les éléments racine → aucun stacking context
+            parasite → les modales (fixed z-[99999]) s'affichent correctement
+            par-dessus tout le contenu, y compris l'en-tête de la fiche train.
+          ──────────────────────────────────────────────────────────────────── */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 1,
+          pointerEvents: 'none',
+          backgroundColor: `rgba(0,0,0,${Math.max(0, 1 - brightness).toFixed(3)})`,
+          transition: 'background-color 0.28s ease',
+        }}
+      />
+      {pdfLoadingErrorMessage && createPortal(
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[1px]">
           <div
             className="w-[min(620px,92vw)] max-h-[80vh] overflow-auto rounded-2xl border shadow-xl p-4"
@@ -4477,9 +4499,10 @@ const IconFile = () => null
               {pdfLoadingErrorMessage}
             </pre>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
-      {startupModeChoiceOpen && (
+      {startupModeChoiceOpen && createPortal(
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[1px]"
           onClick={() => {
@@ -4605,10 +4628,11 @@ style={{
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {manualImportOpen && (
+      {manualImportOpen && createPortal(
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[1px]"
           onClick={() => setManualImportOpen(false)}
@@ -4676,7 +4700,7 @@ style={{
               </label>
 
               {selectedManualImportTrain && (
-                <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/70 dark:border-zinc-700/70 p-3 text-xs space-y-1">
+                <div className={`rounded-xl border p-3 text-xs space-y-1${dark ? ' bg-zinc-800/40 border-zinc-700/70' : ' bg-zinc-50 border-zinc-200/70'}`}>
                   <div>
                     <span className="font-semibold">Train ES : </span>
                     {selectedManualImportTrain.trainNumber}
@@ -4743,7 +4767,8 @@ style={{
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <div className="flex items-center justify-between gap-2">
@@ -5757,7 +5782,7 @@ if (autoScroll) {
             </div>
           )}
 
-          {aboutOpen && (
+          {aboutOpen && createPortal(
             <div
               className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 backdrop-blur-[1px]"
               onClick={() => setAboutOpen(false)}
@@ -5800,7 +5825,8 @@ if (autoScroll) {
                   {CHANGELOG_TEXT}
                 </div>
               </div>
-            </div>
+            </div>,
+            document.body
           )}
 
           <input
