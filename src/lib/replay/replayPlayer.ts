@@ -175,6 +175,7 @@ export class ReplayPlayer {
   private durationMs = 0;
 
   private speed = 1;
+  private skipImportPdfEvents = false;
 
   private startedAtPerf: number | null = null;
   private startedAtNowMs: number | null = null;
@@ -197,8 +198,9 @@ export class ReplayPlayer {
   }
 
   getCursor(): ReplayCursor {
-    const current = this.events[this.cursorIdx];
-    return { idx: this.cursorIdx, tMs: current ? current.tMs : this.nowMs };
+    // Toujours retourner nowMs (position réelle), pas le prochain événement.
+    // Évite le saut visuel vers le prochain event quand il n'y a pas d'event proche.
+    return { idx: this.cursorIdx, tMs: this.nowMs };
   }
 
   getDurationMs(): number {
@@ -214,6 +216,10 @@ export class ReplayPlayer {
     const base = Date.parse(this.startIso);
     if (!Number.isFinite(base)) return null;
     return new Date(base + Math.max(0, this.nowMs)).toISOString();
+  }
+
+  setSkipImportPdfEvents(skip: boolean): void {
+    this.skipImportPdfEvents = skip;
   }
 
   setSpeed(speed: number): void {
@@ -305,8 +311,122 @@ export class ReplayPlayer {
       this.pause();
     }
 
+    // Catch-up : rejouer tous les événements entre la position actuelle et la cible
+    // pour que l'état de l'app (autoscroll, GPS, mode…) soit cohérent.
+    // En recul : on repart depuis le début (idx=0).
+    const isBackward = clamped < this.nowMs;
+    const fromIdx = isBackward ? 0 : this.cursorIdx;
+    const toIdx = this.findCursorForTime(clamped);
+
+    if (toIdx > fromIdx) {
+      this.opts.logger(
+        `[replay] seek catch-up ${isBackward ? "↩ recul" : "↪ avance"} : ${toIdx - fromIdx} événements`,
+        { fromIdx, toIdx, fromMs: this.nowMs, toMs: clamped }
+      );
+      this.applyCatchupRange(fromIdx, toIdx);
+    }
+
     this.nowMs = clamped;
-    this.cursorIdx = this.findCursorForTime(clamped);
+    this.cursorIdx = toIdx;
+  }
+
+  // Rejoue une plage d'événements de façon synchrone (sans barrier async).
+  // Utilisé lors d'un seek pour reconstruire l'état de l'app.
+  private applyCatchupRange(fromIdx: number, toIdx: number): void {
+    // Optimisation : pour gps:position, on ne dispatche que le dernier de la plage
+    // (évite de spammer la FT avec des milliers de positions GPS).
+    let lastGpsPosIdx = -1;
+    for (let i = fromIdx; i < toIdx; i++) {
+      if (this.events[i].kind === "gps:position") lastGpsPosIdx = i;
+    }
+
+    for (let i = fromIdx; i < toIdx; i++) {
+      const ev = this.events[i];
+      if (ev.kind === "gps:position" && i !== lastGpsPosIdx) continue;
+      this.applyCatchupEvent(ev);
+    }
+  }
+
+  // Version synchrone de applyEvent : même logique, mais sans await (pas de barrier).
+  private applyCatchupEvent(ev: ReplayEvent): void {
+    const { kind, payload } = ev;
+
+    switch (kind) {
+      case "import:pdf":
+        // PDF déjà chargé depuis le ZIP — on ignore
+        return;
+
+      case "ui:autoScroll:toggle": {
+        const enabled = !!payload?.enabled;
+        const isFirstPlay = !!payload?.isFirstPlay;
+        const standby = !!payload?.standby || (isFirstPlay && enabled);
+        dispatch("ft:auto-scroll-change", { ...(payload ?? {}), enabled, standby, source: "replay-catchup" });
+        dispatch("lim:hourly-mode", { enabled, standby });
+        return;
+      }
+
+      case "ui:standby:enter": {
+        dispatch("ft:standby:set", { rowIndex: payload?.rowIndex });
+        dispatch("ft:auto-scroll-change", { enabled: false, standby: true, source: "replay-catchup" });
+        dispatch("lim:hourly-mode", { enabled: false, standby: true });
+        return;
+      }
+
+      case "ui:standby:resume": {
+        dispatch("ft:standby:set", { rowIndex: payload?.rowIndex });
+        dispatch("ft:auto-scroll-change", { enabled: true, source: "replay-catchup" });
+        dispatch("lim:hourly-mode", { enabled: true, standby: false });
+        return;
+      }
+
+      case "settings:ocrOnline:set": {
+        try {
+          localStorage.setItem("ocrOnlineEnabled", !!payload?.enabled ? "1" : "0");
+        } catch {}
+        return;
+      }
+
+      case "settings:simulation:set": {
+        dispatch("sim:enable", { enabled: !!payload?.enabled });
+        return;
+      }
+
+      case "ui:pdf:mode-change": {
+        dispatch("lim:pdf-mode-change", { ...(payload ?? {}), source: "replay-catchup" });
+        return;
+      }
+
+      case "gps:state-change": {
+        const state = payload?.nextState;
+        const pk = payload?.pk ?? null;
+        if (state) dispatch("lim:gps-state", { state, pk, source: "replay-catchup" });
+        return;
+      }
+
+      case "gps:position": {
+        dispatch("gps:position", payload);
+        return;
+      }
+
+      case "ui:schedule-delta": {
+        const text = payload?.text ?? null;
+        const isLargeDelay = !!(payload?.isLargeDelay ?? payload?.isLarge);
+        const deltaSec = typeof payload?.deltaSec === "number" ? payload.deltaSec : null;
+        dispatch("lim:schedule-delta", { text, isLargeDelay, deltaSec });
+        return;
+      }
+
+      case "ft:reference-mode": {
+        const mode = payload?.mode as "HORAIRE" | "GPS" | undefined;
+        if (mode === "HORAIRE" || mode === "GPS") {
+          dispatch("lim:reference-mode", { mode });
+        }
+        return;
+      }
+
+      default:
+        return;
+    }
   }
 
   // ---------------- core ----------------
@@ -380,6 +500,10 @@ export class ReplayPlayer {
     // --- mapping v1 ---
     switch (kind) {
       case "import:pdf": {
+        if (this.skipImportPdfEvents) {
+          this.opts.logger("[replay] import:pdf skipped (PDF déjà chargé depuis le ZIP)");
+          return;
+        }
         this.opts.logger("[replay] import:pdf", payload);
 
         const file = await fetchPdfAsFile(payload);
@@ -400,13 +524,22 @@ export class ReplayPlayer {
       case "ui:autoScroll:toggle": {
         this.opts.logger("[replay] ui:autoScroll:toggle", payload);
         const enabled = !!payload?.enabled;
+        const isFirstPlay = !!payload?.isFirstPlay;
 
-        // On forward aussi le payload brut pour ne rien perdre
+        // Reconstituer "standby: true" pour le premier Play :
+        // Le log stocke isFirstPlay mais pas standby (standby est ajouté côté
+        // dispatchEvent dans TitleBar mais pas dans logTestEvent). On le
+        // reconstruit ici pour rétrocompatibilité avec les anciens logs.
+        const standby = !!payload?.standby || (isFirstPlay && enabled);
+
         dispatch("ft:auto-scroll-change", {
           ...(payload ?? {}),
           enabled,
+          standby,
           source: "replay",
         });
+        // Met à jour les indicateurs TitleBar (bouton play, mode horaire)
+        dispatch("lim:hourly-mode", { enabled, standby });
         return;
       }
 
@@ -418,6 +551,7 @@ export class ReplayPlayer {
           standby: true,
           source: "replay",
         });
+        dispatch("lim:hourly-mode", { enabled: false, standby: true });
         return;
       }
 
@@ -425,6 +559,7 @@ export class ReplayPlayer {
         const rowIndex = payload?.rowIndex;
         dispatch("ft:standby:set", { rowIndex });
         dispatch("ft:auto-scroll-change", { enabled: true, source: "replay" });
+        dispatch("lim:hourly-mode", { enabled: true, standby: false });
         return;
       }
 
@@ -453,16 +588,43 @@ export class ReplayPlayer {
         return;
       }
 
+      case "gps:state-change": {
+        const state = payload?.nextState;
+        const pk = payload?.pk ?? null;
+        if (state) dispatch("lim:gps-state", { state, pk, source: "replay" });
+        return;
+      }
+
+      case "gps:position": {
+        dispatch("gps:position", payload);
+        return;
+      }
+
+      case "ui:schedule-delta": {
+        // Indicateur retard/avance dans TitleBar.
+        // Le log utilise "isLarge", TitleBar écoute "isLargeDelay" — on passe les deux.
+        const text = payload?.text ?? null;
+        const isLargeDelay = !!(payload?.isLargeDelay ?? payload?.isLarge);
+        const deltaSec = typeof payload?.deltaSec === "number" ? payload.deltaSec : null;
+        dispatch("lim:schedule-delta", { text, isLargeDelay, deltaSec });
+        return;
+      }
+
+      case "ft:reference-mode": {
+        // Indicateur mode référence (HORAIRE / GPS) dans TitleBar.
+        const mode = payload?.mode as "HORAIRE" | "GPS" | undefined;
+        if (mode === "HORAIRE" || mode === "GPS") {
+          dispatch("lim:reference-mode", { mode });
+        }
+        return;
+      }
+
       // --- ignorer : outputs/diagnostics ---
       case "ft:scroll:viewport":
       case "ft:delta:tick":
-      case "ft:reference-mode":
-      case "ui:schedule-delta":
       case "gps:watch:start":
       case "gps:watch:stop":
       case "gps:watch:error":
-      case "gps:position":
-      case "gps:state-change":
       case "gps:mode-change":
       case "gps:mode-check":
       case "testlog:uploaded":

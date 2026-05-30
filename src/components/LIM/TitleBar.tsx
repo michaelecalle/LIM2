@@ -158,6 +158,19 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     useState<'manual' | 'mixed_fallback'>('manual')
   const [manualImportSelectedTrain, setManualImportSelectedTrain] = useState('')
 
+  // Replay : ouverture du mode manuel avec le numéro de train pré-rempli
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent
+      const trainNumber = String(ce?.detail?.trainNumber ?? '')
+      setManualImportContext('manual')
+      setManualImportSelectedTrain(trainNumber)
+      setManualImportOpen(true)
+    }
+    window.addEventListener('replay:start-manual', handler as EventListener)
+    return () => window.removeEventListener('replay:start-manual', handler as EventListener)
+  }, [])
+
   const manualImportTrainOptions = useMemo<ManualTrainOption[]>(() => {
     const trains = (LIGNE_FT_NORMALIZED as any)?.trains ?? {}
 
@@ -1284,6 +1297,24 @@ ${coords}
     window.dispatchEvent(new CustomEvent('lim:pdf-mode-change', { detail: { mode: pdfMode } }))
     logTestEvent('ui:pdf:mode-change', { mode: pdfMode })
   }, [pdfMode])
+
+  // Pendant le replay, le player/overlay dispatch lim:pdf-mode-change avec
+  // source='replay' ou 'replay-catchup'. TitleBar étant la source de vérité de
+  // pdfMode, il doit se mettre à jour pour rendre les indicateurs (GPS, Play, 🕑).
+  // Pas de boucle : TitleBar dispatch toujours SANS ces flags source.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent
+      const source = ce?.detail?.source as string | undefined
+      if (source !== 'replay' && source !== 'replay-catchup') return
+      const mode = ce?.detail?.mode as 'blue' | 'green' | 'red' | undefined
+      if (mode === 'blue' || mode === 'green' || mode === 'red') {
+        setPdfMode(mode)
+      }
+    }
+    window.addEventListener('lim:pdf-mode-change', handler as EventListener)
+    return () => window.removeEventListener('lim:pdf-mode-change', handler as EventListener)
+  }, [])
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('lim:test-mode', { detail: { enabled: testModeEnabled } }))
@@ -4831,6 +4862,7 @@ style={{
                     source: 'titlebar',
                     standbyMode,
                     isFirstPlay,
+                    standby: isFirstPlay && next, // inclus pour que le replay puisse le reconstruire sans ambiguïté
                   })
 setAutoScroll(next)
 setAutoScrollStartedOnce(next)
@@ -5532,56 +5564,14 @@ if (autoScroll) {
               {testModeEnabled && (
                 <button
                   type="button"
-                  onClick={() => gpsReplayInputRef.current?.click()}
-                  disabled={gpsReplayBusy}
-                  className={
-                    gpsReplayBusy
-                      ? 'relative overflow-hidden w-full h-8 px-3 text-xs rounded-md bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-100 flex items-center justify-center cursor-not-allowed'
-                      : 'w-full h-8 px-3 text-xs rounded-md bg-amber-500 text-white font-semibold flex items-center justify-center'
-                  }
-                  title="Importer un log NDJSON et exporter la projection GPS→PK (mode test)"
+                  onClick={() => window.dispatchEvent(new CustomEvent('replay:show'))}
+                  className="w-full h-8 px-3 text-xs rounded-md bg-amber-500 text-white font-semibold flex items-center justify-center"
+                  title="Ouvrir la barre de navigation replay"
                 >
-                  {gpsReplayBusy && (
-                    <span
-                      aria-hidden
-                      className="absolute inset-0"
-                      style={{
-                        width: `${Math.max(0, Math.min(100, Math.round(gpsReplayProgress * 100)))}%`,
-                      }}
-                    >
-                      <span className="absolute inset-0 bg-amber-500/60" />
-                    </span>
-                  )}
-
-                  <span className="relative z-10">
-                    {gpsReplayBusy ? 'Replay GPS…' : 'Importer GPS (replay offline)'}
-                  </span>
+                  Replay
                 </button>
               )}
 
-              {testModeEnabled && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      const kml = buildRibbonKml()
-                      downloadTextFile(
-                        'ribbon_LAV050.kml',
-                        kml,
-                        'application/vnd.google-earth.kml+xml'
-                      )
-                      window.alert('KML ruban exporté : ribbon_LAV050.kml')
-                    } catch (err: any) {
-                      console.warn('[TitleBar] export KML failed', err)
-                      window.alert(`Export KML impossible: ${err?.message ?? String(err)}`)
-                    }
-                  }}
-                  className="w-full h-8 px-3 text-xs rounded-md bg-indigo-600 text-white font-semibold flex items-center justify-center"
-                  title="Exporter le ruban (KML) pour inspection dans Google Earth"
-                >
-                  Exporter KML ruban
-                </button>
-              )}
 
               <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
 

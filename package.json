@@ -13,6 +13,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "lucide-react": "^0.548.0",
     "pdfjs-dist": "^5.7.284",
     "react": "^19.1.1",

@@ -360,6 +360,16 @@ export default function App() {
             })
           },
 
+          loadText: async (text: string) => {
+            await player.loadFromText(text)
+            console.log("[replay] loaded from text", {
+              status: player.getStatus(),
+              durationMs: player.getDurationMs(),
+            })
+          },
+
+          skipImportPdf: () => player.setSkipImportPdfEvents(true),
+
           play: () => player.play(),
           pause: () => player.pause(),
           stop: () => player.stop(),
