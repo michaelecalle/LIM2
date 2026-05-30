@@ -821,6 +821,9 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       },
     ])
 
+    // Upload silencieux en arrière-plan (non-bloquant)
+    uploadZipToGitHub(zipBlob, zipFilename)
+
     try {
       const navAny = typeof navigator !== 'undefined' ? (navigator as any) : null
       const canShare = !!navAny?.share && !!navAny?.canShare
@@ -844,6 +847,54 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     }
 
     return downloadBlobFile(zipFilename, zipBlob)
+  }
+
+  // Upload silencieux du ZIP vers le repo GitHub privé (fire-and-forget).
+  // Non-bloquant : toute erreur réseau est ignorée sans alert.
+  const uploadZipToGitHub = (zipBlob: Blob, zipFilename: string): void => {
+    const token = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined
+    if (!token) return // pas configuré → skip silencieux
+
+    const owner = (import.meta.env.VITE_GITHUB_LOG_OWNER as string | undefined) ?? 'michaelecalle'
+    const repo = (import.meta.env.VITE_GITHUB_LOG_REPO as string | undefined) ?? 'lim-logs'
+
+    void (async () => {
+      try {
+        // Base64 via FileReader — fiable pour les grands fichiers
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => {
+            const dataUrl = reader.result as string
+            resolve(dataUrl.substring(dataUrl.indexOf(',') + 1))
+          }
+          reader.onerror = reject
+          reader.readAsDataURL(zipBlob)
+        })
+
+        const res = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(zipFilename)}`,
+          {
+            method: 'PUT',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: `log: ${zipFilename}`,
+              content: base64,
+            }),
+          }
+        )
+
+        if (!res.ok) {
+          console.warn('[LIM] Upload GitHub échoué:', res.status)
+        } else {
+          console.log('[LIM] Upload GitHub OK:', zipFilename)
+        }
+      } catch (err) {
+        console.warn('[LIM] Upload GitHub erreur (silencieux):', err)
+      }
+    })()
   }
 
   const buildRibbonKml = () => {
@@ -5255,8 +5306,8 @@ setAutoScrollStartedOnce(next)
             </button>
           )}
 
-          {/* STOP (remplace l'ancien toggle LFP / AUTO / ADIF) */}
-          {testModeEnabled && (
+          {/* STOP — visible dès qu'un trajet est en cours, mode test ou non */}
+          {pdfMode !== 'blue' && (
             <button
               type="button"
               onClick={async () => {
@@ -5266,8 +5317,7 @@ setAutoScrollStartedOnce(next)
                 }
 
                 const ok = window.confirm(
-                  'Arrêter le mode test ?\n\n' +
-                    '(équivaut à STOP : arrêt de la session et export local des logs)'
+                  'Terminer le trajet et exporter les logs ?'
                 )
                 if (!ok) return
 
@@ -5321,7 +5371,7 @@ if (autoScroll) {
                 setTestModeEnabled(false)
               }}
               className="h-8 px-3 text-xs rounded-md bg-red-600 text-white font-semibold flex items-center gap-1"
-              title="Stop : arrêter le mode test et exporter les logs"
+              title="Terminer le trajet et exporter les logs"
             >
               <span className="font-bold">STOP</span>
             </button>
