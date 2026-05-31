@@ -527,6 +527,9 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   // ne contient que des reflets du replay, pas de données réelles.
   const wasReplaySessionRef = useRef(false)
 
+  // État de l'upload au moment du Stop ('idle' | 'uploading' | 'success' | 'failed')
+  const [stopUploadStatus, setStopUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'failed'>('idle')
+
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('sim:enable', { detail: { enabled: simulationEnabled } })
@@ -826,9 +829,6 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       },
     ])
 
-    // Upload silencieux en arrière-plan (non-bloquant)
-    uploadZipToGitHub(zipBlob, zipFilename)
-
     try {
       const navAny = typeof navigator !== 'undefined' ? (navigator as any) : null
       const canShare = !!navAny?.share && !!navAny?.canShare
@@ -854,29 +854,31 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     return downloadBlobFile(zipFilename, zipBlob)
   }
 
-  // Upload silencieux du ZIP vers le repo GitHub privé (fire-and-forget).
-  // Non-bloquant : toute erreur réseau est ignorée sans alert.
-  const uploadZipToGitHub = (zipBlob: Blob, zipFilename: string): void => {
-    if (wasReplaySessionRef.current) return // session replay → pas d'upload
+  // Upload du ZIP vers le repo GitHub privé.
+  // Retourne true si succès, false si échec ou timeout (30 s).
+  const uploadZipToGitHub = async (zipBlob: Blob, zipFilename: string): Promise<boolean> => {
+    if (wasReplaySessionRef.current) return false
     const token = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined
-    if (!token) return // pas configuré → skip silencieux
+    if (!token) return false
 
     const owner = (import.meta.env.VITE_GITHUB_LOG_OWNER as string | undefined) ?? 'michaelecalle'
     const repo = (import.meta.env.VITE_GITHUB_LOG_REPO as string | undefined) ?? 'lim-logs'
 
-    void (async () => {
-      try {
-        // Base64 via FileReader — fiable pour les grands fichiers
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => {
-            const dataUrl = reader.result as string
-            resolve(dataUrl.substring(dataUrl.indexOf(',') + 1))
-          }
-          reader.onerror = reject
-          reader.readAsDataURL(zipBlob)
-        })
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const dataUrl = reader.result as string
+          resolve(dataUrl.substring(dataUrl.indexOf(',') + 1))
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(zipBlob)
+      })
 
+      const controller = new AbortController()
+      const timeoutId = window.setTimeout(() => controller.abort(), 30_000)
+
+      try {
         const res = await fetch(
           `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(zipFilename)}`,
           {
@@ -885,22 +887,59 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
               Authorization: `Bearer ${token}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-              message: `log: ${zipFilename}`,
-              content: base64,
-            }),
+            body: JSON.stringify({ message: `log: ${zipFilename}`, content: base64 }),
+            signal: controller.signal,
           }
         )
-
-        if (!res.ok) {
-          console.warn('[LIM] Upload GitHub échoué:', res.status)
-        } else {
-          console.log('[LIM] Upload GitHub OK:', zipFilename)
-        }
-      } catch (err) {
-        console.warn('[LIM] Upload GitHub erreur (silencieux):', err)
+        window.clearTimeout(timeoutId)
+        return res.ok
+      } catch {
+        window.clearTimeout(timeoutId)
+        return false
       }
-    })()
+    } catch {
+      return false
+    }
+  }
+
+  // Construit le ZIP (log + PDF) sans l'exporter ni l'uploader.
+  const buildCurrentZipBundle = async (): Promise<{ blob: Blob; filename: string } | null> => {
+    const builtLog = buildTestLogFile()
+    if (!builtLog.ok || !builtLog.blob) return null
+
+    const pdfFile = currentPdfFileRef.current
+    const naming = getCurrentTestExportNaming()
+    const logFilename = naming?.logFilename ?? builtLog.filename ?? 'LIM_testlog.log'
+    const zipFilename = naming?.zipFilename ?? 'LIM_export_test.zip'
+
+    if (!pdfFile) return { blob: builtLog.blob, filename: logFilename }
+
+    const pdfFilename = naming?.pdfFilename ?? sanitizeArchiveEntryFilename(pdfFile.name)
+    const pdfModifiedAt =
+      typeof pdfFile.lastModified === 'number' && Number.isFinite(pdfFile.lastModified)
+        ? new Date(pdfFile.lastModified)
+        : new Date()
+
+    const zipBlob = await buildZipBlob([
+      { filename: logFilename, blob: builtLog.blob, modifiedAt: new Date() },
+      { filename: pdfFilename, blob: pdfFile, modifiedAt: pdfModifiedAt },
+    ])
+    return { blob: zipBlob, filename: zipFilename }
+  }
+
+  // Lance l'export local (share sheet iPad ou téléchargement fallback).
+  const doLocalExport = async (blob: Blob, filename: string): Promise<void> => {
+    try {
+      const navAny = typeof navigator !== 'undefined' ? (navigator as any) : null
+      if (navAny?.share && navAny?.canShare && typeof File !== 'undefined') {
+        const file = new File([blob], filename, { type: 'application/zip' })
+        if (navAny.canShare({ files: [file] })) {
+          await navAny.share({ files: [file], title: 'LIM — logs', text: filename })
+          return
+        }
+      }
+    } catch {}
+    downloadBlobFile(filename, blob)
   }
 
   const buildRibbonKml = () => {
@@ -5321,75 +5360,96 @@ setAutoScrollStartedOnce(next)
 
           {/* STOP — visible dès qu'un trajet est en cours, mode test ou non */}
           {pdfMode !== 'blue' && (
-            <button
-              type="button"
-              onClick={async () => {
-                if (simulationEnabled) {
-                  logTestEvent('ui:blocked', { control: 'stopButton', source: 'titlebar' })
-                  return
-                }
-
-                const ok = window.confirm(
-                  'Terminer le trajet et exporter les logs ?'
-                )
-                if (!ok) return
-
-setAutoScroll(false)
-setAutoScrollStartedOnce(false)
-
-if (autoScroll) {
-  window.dispatchEvent(
-                    new CustomEvent('ft:auto-scroll-change', {
-                      detail: { enabled: false, source: 'titlebar_stop_button' },
-                    })
-                  )
-                }
-
-                stopGpsWatch()
-                setGpsState(0)
-                setGpsPkDisplay(null)
-                setGpsPkPeekVisible(false)
-
-                setScheduleDelta(null)
-                setScheduleDeltaIsLarge(false)
-                setScheduleDeltaSec(null)
-
-                if (testRecording) {
-                  logTestEvent('ui:test:stop', { source: 'titlebar_stop_button' })
-                  stopTestSession()
-                  setTestRecording(false)
-                }
-
-                if (!wasReplaySessionRef.current) {
-                  try {
-                    const exported = await exportCurrentTestBundleLocal()
-                    if (!exported) {
-                      window.alert('Aucun élément de test à exporter.')
-                    }
-                  } catch (err: any) {
-                    window.alert('Export local du paquet de test impossible.')
+            stopUploadStatus !== 'idle' ? (
+              /* Indicateur de statut pendant / après l'upload */
+              <div
+                className={`h-8 px-3 text-xs rounded-md font-semibold flex items-center gap-1.5 ${
+                  stopUploadStatus === 'success'
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                    : stopUploadStatus === 'failed'
+                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'
+                    : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700/60 dark:text-zinc-300'
+                }`}
+              >
+                {stopUploadStatus === 'uploading' && (
+                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                )}
+                {stopUploadStatus === 'uploading' && 'Envoi en cours…'}
+                {stopUploadStatus === 'success' && '✅ Logs envoyés'}
+                {stopUploadStatus === 'failed' && '📥 Export local…'}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (simulationEnabled) {
+                    logTestEvent('ui:blocked', { control: 'stopButton', source: 'titlebar' })
+                    return
                   }
-                }
 
-                setPdfMode('blue')
-                setPdfLoading(false)
-                stopPdfLoadingGuard()
+                  const ok = window.confirm('Terminer le trajet et exporter les logs ?')
+                  if (!ok) return
 
-                currentPdfFileRef.current = null
-                currentPdfIdRef.current = null
-                currentPdfReplayKeyRef.current = null
+                  // Arrêt immédiat des automatismes
+                  setAutoScroll(false)
+                  setAutoScrollStartedOnce(false)
+                  if (autoScroll) {
+                    window.dispatchEvent(new CustomEvent('ft:auto-scroll-change', {
+                      detail: { enabled: false, source: 'titlebar_stop_button' },
+                    }))
+                  }
+                  stopGpsWatch()
+                  setGpsState(0)
+                  setGpsPkDisplay(null)
+                  setGpsPkPeekVisible(false)
+                  setScheduleDelta(null)
+                  setScheduleDeltaIsLarge(false)
+                  setScheduleDeltaSec(null)
 
-                window.dispatchEvent(new CustomEvent('lim:clear-pdf'))
-                window.dispatchEvent(new CustomEvent('ft:clear-pdf'))
-                window.dispatchEvent(new CustomEvent('lim:pdf-raw', { detail: { file: null } }))
+                  if (testRecording) {
+                    logTestEvent('ui:test:stop', { source: 'titlebar_stop_button' })
+                    stopTestSession()
+                    setTestRecording(false)
+                  }
 
-                setTestModeEnabled(false)
-              }}
-              className="h-8 px-3 text-xs rounded-md bg-red-600 text-white font-semibold flex items-center gap-1"
-              title="Terminer le trajet et exporter les logs"
-            >
-              <span className="font-bold">STOP</span>
-            </button>
+                  if (!wasReplaySessionRef.current) {
+                    const zipData = await buildCurrentZipBundle()
+                    if (zipData) {
+                      setStopUploadStatus('uploading')
+                      const success = await uploadZipToGitHub(zipData.blob, zipData.filename)
+                      if (success) {
+                        setStopUploadStatus('success')
+                        await new Promise<void>(resolve => window.setTimeout(resolve, 3000))
+                      } else {
+                        setStopUploadStatus('failed')
+                        await doLocalExport(zipData.blob, zipData.filename)
+                      }
+                    }
+                  }
+
+                  setStopUploadStatus('idle')
+
+                  // Reset complet de l'app
+                  setPdfMode('blue')
+                  setPdfLoading(false)
+                  stopPdfLoadingGuard()
+                  currentPdfFileRef.current = null
+                  currentPdfIdRef.current = null
+                  currentPdfReplayKeyRef.current = null
+                  window.dispatchEvent(new CustomEvent('lim:clear-pdf'))
+                  window.dispatchEvent(new CustomEvent('ft:clear-pdf'))
+                  window.dispatchEvent(new CustomEvent('lim:pdf-raw', { detail: { file: null } }))
+                  setTestModeEnabled(false)
+                }}
+                className="h-8 px-3 text-xs rounded-md bg-red-600 text-white font-semibold flex items-center gap-1"
+                title="Terminer le trajet et exporter les logs"
+              >
+                <span className="font-bold">STOP</span>
+              </button>
+            )
           )}
           {/* Paramètres */}
           <details ref={settingsDetailsRef} className="relative">

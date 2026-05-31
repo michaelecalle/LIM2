@@ -497,17 +497,11 @@ Ces informations sont **anonymes** et servent uniquement à analyser le fonction
 
 Les informations de diagnostic peuvent être exportées sous forme de fichier.
 
-Deux cas sont possibles :
+À la fin du trajet, appuyer sur le bouton **STOP** visible dans la barre supérieure.
 
-- **en mode test** :
-  - à la fin du test, appuyer sur le bouton **STOP** ;
+L’application propose alors l’export d’un fichier de log. Ce fichier doit être transmis (par exemple par mail) pour analyse.
 
-  - l’application propose l’export d’un fichier de log ;
-  - ce fichier doit être transmis (par exemple par mail) pour analyse.
-
-- **hors mode test** :
-  - il est possible d’exporter les logs manuellement depuis le menu des paramètres ;
-  - utiliser le bouton **Exporter les logs**.
+Il est également possible d’exporter les logs depuis le menu des **paramètres** en utilisant le bouton **Exporter les logs**.
 
 
 
