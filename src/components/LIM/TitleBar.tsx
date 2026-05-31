@@ -522,6 +522,11 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const [testModeEnabled, setTestModeEnabled] = useState(false)
   const [simulationEnabled, setSimulationEnabled] = useState(false)
 
+  // Vrai si un replay a été lancé pendant cette session.
+  // Bloque l'export local et l'upload GitHub : le log de session replay
+  // ne contient que des reflets du replay, pas de données réelles.
+  const wasReplaySessionRef = useRef(false)
+
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('sim:enable', { detail: { enabled: simulationEnabled } })
@@ -852,6 +857,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   // Upload silencieux du ZIP vers le repo GitHub privé (fire-and-forget).
   // Non-bloquant : toute erreur réseau est ignorée sans alert.
   const uploadZipToGitHub = (zipBlob: Blob, zipFilename: string): void => {
+    if (wasReplaySessionRef.current) return // session replay → pas d'upload
     const token = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined
     if (!token) return // pas configuré → skip silencieux
 
@@ -1348,6 +1354,21 @@ ${coords}
     window.dispatchEvent(new CustomEvent('lim:pdf-mode-change', { detail: { mode: pdfMode } }))
     logTestEvent('ui:pdf:mode-change', { mode: pdfMode })
   }, [pdfMode])
+
+  // Quand un replay démarre : arrêter l'enregistrement de session (inutile,
+  // le log ne contiendrait que le reflet du replay) et poser le flag.
+  useEffect(() => {
+    const handler = () => {
+      wasReplaySessionRef.current = true
+      if (testRecording) {
+        stopTestSession()
+        setTestRecording(false)
+      }
+    }
+    window.addEventListener('replay:play-started', handler)
+    return () => window.removeEventListener('replay:play-started', handler)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testRecording])
 
   // Pendant le replay, le player/overlay dispatch lim:pdf-mode-change avec
   // source='replay' ou 'replay-catchup'. TitleBar étant la source de vérité de
@@ -2619,6 +2640,7 @@ ${coords}
 
       const label = labelParts.join('_')
 
+      wasReplaySessionRef.current = false // nouveau vrai trajet → réinitialiser
       startTestSession(label)
       setTestRecording(true)
 
@@ -5338,13 +5360,15 @@ if (autoScroll) {
                   setTestRecording(false)
                 }
 
-                try {
-                  const exported = await exportCurrentTestBundleLocal()
-                  if (!exported) {
-                    window.alert('Aucun élément de test à exporter.')
+                if (!wasReplaySessionRef.current) {
+                  try {
+                    const exported = await exportCurrentTestBundleLocal()
+                    if (!exported) {
+                      window.alert('Aucun élément de test à exporter.')
+                    }
+                  } catch (err: any) {
+                    window.alert('Export local du paquet de test impossible.')
                   }
-                } catch (err: any) {
-                  window.alert('Export local du paquet de test impossible.')
                 }
 
                 setPdfMode('blue')

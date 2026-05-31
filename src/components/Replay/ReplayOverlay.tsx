@@ -840,6 +840,7 @@ export default function ReplayOverlay() {
                       playerApi?.pause?.();
                     } else {
                       window.dispatchEvent(new CustomEvent("lim:infos-ltv-fold-change", { detail: { folded: true } }));
+                      window.dispatchEvent(new CustomEvent("replay:play-started"));
                       playerApi?.play?.();
                     }
                     setTick((v) => v + 1);
