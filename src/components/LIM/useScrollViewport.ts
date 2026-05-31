@@ -161,24 +161,6 @@ export function useScrollViewport(args: UseScrollViewportArgs): UseScrollViewpor
         lastDataRow
       );
 
-      // log labo
-      logTestEvent("ft:scroll:viewport", {
-        scrollTop,
-        clientHeight,
-        rowCount: rowEls.length,
-        firstVisible,
-        lastVisible,
-
-        // indices "réels" côté data
-        firstDataRow,
-        lastDataRow,
-
-        autoScrollEnabled,
-        referenceMode: referenceModeRef.current,
-        isManualScroll: isManualScrollRef.current,
-        isProgrammaticScroll: isProgrammaticScrollRef.current,
-      });
-
       // on met à jour le state : ✅ indices "réels" (data-ft-row) si disponibles
       const nextFirst =
         typeof firstDataRow === "number" && Number.isFinite(firstDataRow)

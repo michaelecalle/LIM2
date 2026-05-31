@@ -216,24 +216,6 @@ export default function FT({ variant = "classic" }: FTProps) {
       lastDataRow
     );
 
-    // log labo
-    logTestEvent("ft:scroll:viewport", {
-      scrollTop,
-      clientHeight,
-      rowCount: rowEls.length,
-      firstVisible,
-      lastVisible,
-
-      // indices "réels" côté data
-      firstDataRow,
-      lastDataRow,
-
-      autoScrollEnabled,
-      referenceMode: referenceModeRef.current,
-      isManualScroll: isManualScrollRef.current,
-      isProgrammaticScroll: isProgrammaticScrollRef.current,
-    });
-
     // on met à jour le state : ✅ indices "réels" (data-ft-row) si disponibles
     const nextFirst =
       typeof firstDataRow === "number" && Number.isFinite(firstDataRow)
@@ -596,10 +578,6 @@ export default function FT({ variant = "classic" }: FTProps) {
 
   useEffect(() => {
     console.log("[FT][mode] referenceMode changé =>", referenceMode);
-
-    logTestEvent("ft:reference-mode", {
-      mode: referenceMode,
-    });
 
     window.dispatchEvent(
       new CustomEvent("lim:reference-mode", {
@@ -2074,15 +2052,6 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
         } | heure EFFECTIVE utilisée pour le '>' = ${effectiveHHMM}`
       );
 
-      logTestEvent("ft:delta:tick", {
-        nowHHMM: minutesToHHMM(nowMin),
-        baseFirstHoraHHMM:
-          baseFirstHoraMin != null ? minutesToHHMM(baseFirstHoraMin) : "INVALID",
-        elapsedMinutes: elapsed,
-        effectiveHHMM,
-        fixedDelay: base.fixedDelay ?? null,
-      });
-
       // ✅ Garde-fou : si la base horaire est invalide, on ne touche ni à la ligne active
       // ni au scroll. On conserve simplement la dernière ligne valide.
       if (
@@ -2092,16 +2061,6 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
         effectiveMin == null ||
         !Number.isFinite(effectiveMin)
       ) {
-        logTestEvent("ft:delta:tick:invalid-base", {
-          nowHHMM: minutesToHHMM(nowMin),
-          baseRealMinInt: base.realMinInt ?? null,
-          baseFirstHoraMin: base.firstHoraMin ?? null,
-          elapsedMinutes: elapsed,
-          effectiveMin,
-          fixedDelay: base.fixedDelay ?? null,
-          activeRowIndexBefore: activeRowIndex,
-          referenceMode: referenceModeRef.current,
-        });
         return;
       }
 

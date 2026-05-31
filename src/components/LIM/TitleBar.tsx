@@ -3857,8 +3857,6 @@ ${coords}
 
       const text = rawText && rawText.trim().length > 0 ? rawText.trim() : null
 
-      logTestEvent('ui:schedule-delta', { text, isLarge })
-
       if (text) {
         setScheduleDelta(text)
         setScheduleDeltaIsLarge(isLarge)
@@ -3866,14 +3864,10 @@ ${coords}
         if (deltaSec !== null) {
           setScheduleDeltaSec(deltaSec)
         }
-
-        logTestEvent('ui:schedule-delta', { text, isLarge, deltaSec })
       } else {
         setScheduleDelta(null)
         setScheduleDeltaIsLarge(false)
         setScheduleDeltaSec(null)
-
-        logTestEvent('ui:schedule-delta', { text: null, isLarge: false, deltaSec: null })
       }
     }
 
@@ -4911,9 +4905,6 @@ style={{
                   logTestEvent('ui:autoScroll:toggle', {
                     enabled: next,
                     source: 'titlebar',
-                    standbyMode,
-                    isFirstPlay,
-                    standby: isFirstPlay && next, // inclus pour que le replay puisse le reconstruire sans ambiguïté
                   })
 setAutoScroll(next)
 setAutoScrollStartedOnce(next)

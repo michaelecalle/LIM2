@@ -40,6 +40,12 @@ function fmtRelHMS(ms: number): string {
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
+const GH_TOKEN = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined;
+const GH_OWNER = (import.meta.env.VITE_GITHUB_LOG_OWNER as string | undefined) ?? "michaelecalle";
+const GH_REPO = (import.meta.env.VITE_GITHUB_LOG_REPO as string | undefined) ?? "lim-logs";
+
+type GhFile = { name: string; size: number; sha: string };
+
 export default function ReplayOverlay() {
   /* ── Visibilité : ouverte via le bouton Replay dans les paramètres ── */
   const [isVisible, setIsVisible] = useState(false);
@@ -170,6 +176,96 @@ export default function ReplayOverlay() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadedName, setLoadedName] = useState<string | null>(null);
   const [localOffsetMs, setLocalOffsetMs] = useState(0);
+
+  /* ── Chargement depuis GitHub ── */
+  const [ghOpen, setGhOpen] = useState(false);
+  const [ghFiles, setGhFiles] = useState<GhFile[] | null>(null);
+  const [ghListLoading, setGhListLoading] = useState(false);
+  const [ghListError, setGhListError] = useState<string | null>(null);
+  const [ghDeletePending, setGhDeletePending] = useState<GhFile | null>(null);
+  const [ghDeleting, setGhDeleting] = useState(false);
+
+  const fetchGhFiles = async () => {
+    if (!GH_TOKEN) return;
+    setGhListLoading(true);
+    setGhListError(null);
+    setGhFiles(null);
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/`,
+        { headers: { Authorization: `Bearer ${GH_TOKEN}` } }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: any[] = await res.json();
+      const zips = data
+        .filter((f) => f.type === "file" && f.name.toLowerCase().endsWith(".zip"))
+        .sort((a, b) => b.name.localeCompare(a.name)); // plus récent en premier
+      setGhFiles(zips.map((f) => ({ name: f.name, size: f.size, sha: f.sha })));
+    } catch (err: any) {
+      setGhListError(err?.message ?? "Erreur de chargement");
+    } finally {
+      setGhListLoading(false);
+    }
+  };
+
+  const handleGhOpen = () => {
+    setGhOpen(true);
+    if (ghFiles === null && !ghListLoading) void fetchGhFiles();
+  };
+
+  const handleGhDelete = async (file: GhFile) => {
+    if (!GH_TOKEN) return;
+    setGhDeleting(true);
+    setGhListError(null);
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${encodeURIComponent(file.name)}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${GH_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: `delete: ${file.name}`,
+            sha: file.sha,
+          }),
+        }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setGhFiles((prev) => prev ? prev.filter((f) => f.sha !== file.sha) : null);
+      setGhDeletePending(null);
+    } catch (err: any) {
+      setGhListError(err?.message ?? "Erreur de suppression");
+    } finally {
+      setGhDeleting(false);
+    }
+  };
+
+  const handleGhSelect = async (filename: string) => {
+    if (!GH_TOKEN) return;
+    setGhOpen(false);
+    setLoadBusy(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${encodeURIComponent(filename)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${GH_TOKEN}`,
+            Accept: "application/vnd.github.raw",
+          },
+        }
+      );
+      if (!res.ok) throw new Error(`Téléchargement échoué : HTTP ${res.status}`);
+      const blob = await res.blob();
+      const file = new File([blob], filename, { type: "application/zip" });
+      await handleZipLoad(file);
+    } catch (err: any) {
+      setLoadError(err?.message ?? String(err));
+      setLoadBusy(false);
+    }
+  };
 
   const handleZipLoad = async (file: File) => {
     setLoadBusy(true);
@@ -388,8 +484,19 @@ export default function ReplayOverlay() {
               disabled={loadBusy}
               style={{ ...btnBase, fontSize: 11, padding: "4px 10px", opacity: loadBusy ? 0.5 : 1, cursor: loadBusy ? "not-allowed" : "pointer" }}
             >
-              {loadBusy ? "⏳" : "📂 Charger"}
+              {loadBusy ? "⏳" : "📂 Local"}
             </button>
+
+            {GH_TOKEN && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); handleGhOpen(); }}
+                disabled={loadBusy}
+                style={{ ...btnBase, fontSize: 11, padding: "4px 10px", opacity: loadBusy ? 0.5 : 1, cursor: loadBusy ? "not-allowed" : "pointer" }}
+              >
+                ☁️ En ligne
+              </button>
+            )}
 
             <button
               type="button"
@@ -418,6 +525,174 @@ export default function ReplayOverlay() {
 
         {/* ─── Contenu ─── */}
         <div style={{ padding: "14px 14px 12px" }}>
+
+          {/* ── Panneau fichiers en ligne ── */}
+          {ghOpen && GH_TOKEN && (
+            <div
+              style={{
+                marginBottom: 12,
+                border: "1px solid rgba(0,0,0,0.15)",
+                borderRadius: 10,
+                overflow: "hidden",
+              }}
+              className="dark:border-white/20"
+            >
+              {/* En-tête panneau */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "6px 10px",
+                  background: "rgba(0,0,0,0.05)",
+                  borderBottom: "1px solid rgba(0,0,0,0.10)",
+                }}
+                className="dark:bg-white/8 dark:border-white/15"
+              >
+                <span style={{ fontSize: 11, fontWeight: 700 }}>☁️ Fichiers en ligne</span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => void fetchGhFiles()}
+                    disabled={ghListLoading}
+                    style={{ fontSize: 11, opacity: ghListLoading ? 0.4 : 0.7, background: "none", border: "none", cursor: "pointer", padding: "0 4px" }}
+                    title="Actualiser la liste"
+                  >
+                    🔄
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGhOpen(false)}
+                    style={{ fontSize: 12, opacity: 0.55, background: "none", border: "none", cursor: "pointer", padding: "0 4px" }}
+                    title="Fermer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {/* Corps */}
+              <div style={{ padding: "6px 4px", maxHeight: 160, overflowY: "auto" }}>
+                {ghListLoading && (
+                  <div style={{ fontSize: 11, opacity: 0.6, padding: "4px 8px" }}>Chargement…</div>
+                )}
+                {ghListError && (
+                  <div style={{ fontSize: 11, color: "#ef4444", padding: "4px 8px" }}>⚠ {ghListError}</div>
+                )}
+                {!ghListLoading && ghFiles?.length === 0 && (
+                  <div style={{ fontSize: 11, opacity: 0.55, padding: "4px 8px", fontStyle: "italic" }}>
+                    Aucun fichier disponible.
+                  </div>
+                )}
+                {ghFiles?.map((f) => (
+                  <div
+                    key={f.name}
+                    style={{ display: "flex", alignItems: "center", gap: 4, borderRadius: 6 }}
+                    className={ghDeletePending?.sha === f.sha ? "bg-red-50 dark:bg-red-950/30" : ""}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void handleGhSelect(f.name)}
+                      style={{
+                        flex: 1,
+                        textAlign: "left",
+                        padding: "5px 10px",
+                        fontSize: 11,
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        borderRadius: 6,
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      className="hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                    >
+                      📦 {f.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGhDeletePending(ghDeletePending?.sha === f.sha ? null : f)}
+                      title="Supprimer ce fichier"
+                      style={{
+                        flexShrink: 0,
+                        width: 22,
+                        height: 22,
+                        borderRadius: 4,
+                        border: "none",
+                        background: "transparent",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        color: "#ef4444",
+                        opacity: 0.7,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginRight: 4,
+                      }}
+                    >
+                      🗑
+                    </button>
+                  </div>
+                ))}
+
+                {/* Barre de confirmation de suppression */}
+                {ghDeletePending && (
+                  <div
+                    style={{
+                      margin: "6px 6px 2px",
+                      padding: "8px 10px",
+                      borderRadius: 8,
+                      background: "rgba(239,68,68,0.08)",
+                      border: "1px solid rgba(239,68,68,0.3)",
+                      fontSize: 11,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: 6, wordBreak: "break-all" }}>
+                      Supprimer «&nbsp;{ghDeletePending.name}&nbsp;» ?
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        type="button"
+                        disabled={ghDeleting}
+                        onClick={() => void handleGhDelete(ghDeletePending)}
+                        style={{
+                          padding: "3px 12px",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          borderRadius: 6,
+                          border: "none",
+                          background: "#ef4444",
+                          color: "#fff",
+                          cursor: ghDeleting ? "not-allowed" : "pointer",
+                          opacity: ghDeleting ? 0.6 : 1,
+                        }}
+                      >
+                        {ghDeleting ? "⏳" : "Supprimer"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={ghDeleting}
+                        onClick={() => setGhDeletePending(null)}
+                        style={{
+                          padding: "3px 10px",
+                          fontSize: 11,
+                          borderRadius: 6,
+                          border: "1px solid currentColor",
+                          background: "transparent",
+                          cursor: "pointer",
+                          opacity: 0.7,
+                        }}
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {loadError && (
             <div style={{ fontSize: 11, color: "#ef4444", marginBottom: 8, fontWeight: 600 }}>
