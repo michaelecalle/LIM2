@@ -10,12 +10,16 @@ type ManualPdfCanvasViewerProps = {
   pdfUrl: string
   page: number
   onPageChange: (page: number) => void
+  /** Appliquer l'inversion couleurs en mode nuit (true par défaut).
+   *  Passer false pour les documents où les couleurs doivent être fidèles (ex. Guia BSN). */
+  applyDarkInvert?: boolean
 }
 
 export default function ManualPdfCanvasViewer({
   pdfUrl,
   page,
   onPageChange,
+  applyDarkInvert = true,
 }: ManualPdfCanvasViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -238,7 +242,7 @@ export default function ManualPdfCanvasViewer({
             className="mx-auto block shadow-sm"
             style={{
               backgroundColor: '#ffffff',
-              filter: document.documentElement.classList.contains('dark')
+              filter: applyDarkInvert && document.documentElement.classList.contains('dark')
                 ? 'invert(1) hue-rotate(180deg)'
                 : 'none',
             }}

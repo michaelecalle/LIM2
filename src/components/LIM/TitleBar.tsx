@@ -29,6 +29,8 @@ import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { APP_VERSION } from '../version'
 import { LIGNE_FT_NORMALIZED } from '../../data/normalized/ligneFT.normalized'
 import ManualPdfCanvasViewer from './ManualPdfCanvasViewer'
+import ManualViewer from './ManualViewer'
+import GuiaViewer from './GuiaViewer'
 import {
   type LIMFields,
   type ManualTrainOption,
@@ -278,7 +280,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
 
   const FIGUERES_ARM_TTL_MS = 10 * 60 * 1000 // 10 minutes
 
-  // ✅ ref miroir pour lire l'état GPS courant dans d'autres handlers
+  // ✅ ref miroir pour lire l’état GPS courant dans d’autres handlers
   const gpsStateRef = useRef<0 | 1 | 2>(0)
 
   // ✅ Dernier fix GPS reçu (pour logique Figueres : zone + stabilité)
@@ -523,11 +525,11 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const [simulationEnabled, setSimulationEnabled] = useState(false)
 
   // Vrai si un replay a été lancé pendant cette session.
-  // Bloque l'export local et l'upload GitHub : le log de session replay
+  // Bloque l’export local et l’upload GitHub : le log de session replay
   // ne contient que des reflets du replay, pas de données réelles.
   const wasReplaySessionRef = useRef(false)
 
-  // État de l'upload au moment du Stop ('idle' | 'uploading' | 'success' | 'failed')
+  // État de l’upload au moment du Stop ('idle' | 'uploading' | 'success' | 'failed')
   const [stopUploadStatus, setStopUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'failed'>('idle')
 
   useEffect(() => {
@@ -902,7 +904,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     }
   }
 
-  // Construit le ZIP (log + PDF) sans l'exporter ni l'uploader.
+  // Construit le ZIP (log + PDF) sans l’exporter ni l’uploader.
   const buildCurrentZipBundle = async (): Promise<{ blob: Blob; filename: string } | null> => {
     const builtLog = buildTestLogFile()
     if (!builtLog.ok || !builtLog.blob) return null
@@ -927,7 +929,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     return { blob: zipBlob, filename: zipFilename }
   }
 
-  // Lance l'export local (share sheet iPad ou téléchargement fallback).
+  // Lance l’export local (share sheet iPad ou téléchargement fallback).
   const doLocalExport = async (blob: Blob, filename: string): Promise<void> => {
     try {
       const navAny = typeof navigator !== 'undefined' ? (navigator as any) : null
@@ -1394,7 +1396,7 @@ ${coords}
     logTestEvent('ui:pdf:mode-change', { mode: pdfMode })
   }, [pdfMode])
 
-  // Quand un replay démarre : arrêter l'enregistrement de session (inutile,
+  // Quand un replay démarre : arrêter l’enregistrement de session (inutile,
   // le log ne contiendrait que le reflet du replay) et poser le flag.
   useEffect(() => {
     const handler = () => {
@@ -1984,215 +1986,25 @@ ${coords}
   // ----- INFOS (à afficher depuis la roue dentée) -----
   const [aboutOpen, setAboutOpen] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
-  const [manualPage, setManualPage] = useState(1)
-  const [manualActiveTocId, setManualActiveTocId] = useState('cover')
-  const [manualPdfObjectUrl, setManualPdfObjectUrl] = useState<string | null>(null)
+  const [manualInitialPage, setManualInitialPage] = useState(1)
+  const [manualInitialTocId, setManualInitialTocId] = useState('cover')
+  const [guiaOpen, setGuiaOpen] = useState(false)
   const settingsDetailsRef = useRef<HTMLDetailsElement | null>(null)
 
-  const MANUAL_PDF_PUBLIC_URL = '/manuel-utilisateur-lim.pdf?limManual=1'
-
-  type ManualTocItem = {
-    id: string
-    level: 0 | 1 | 2
-    title: string
-    page: number
-  }
-
-  const MANUAL_TOC_ITEMS = useMemo<ManualTocItem[]>(
-    () => [
-      { id: 'cover', level: 0, title: 'Couverture', page: 1 },
-      { id: 'toc', level: 0, title: 'Table des matières', page: 2 },
-
-      { id: 'presentation-generale', level: 1, title: '1. Présentation générale de l’application', page: 4 },
-
-      { id: 'prerequis-ipad', level: 1, title: '2. Prérequis et préparation de l’iPad', page: 5 },
-      { id: 'veille-ecran', level: 2, title: '2.1. Éviter la mise en veille de l’écran', page: 5 },
-      { id: 'dossier-fichiers', level: 2, title: '2.2. Créer un dossier dédié dans l’application Fichiers', page: 5 },
-
-      { id: 'installation-ipad', level: 1, title: '3. Installation de l’application sur l’iPad', page: 6 },
-      { id: 'ouvrir-safari', level: 2, title: '3.1. Ouvrir le lien avec Safari', page: 6 },
-      { id: 'ajouter-ecran-accueil', level: 2, title: '3.2. Ajouter LIM à l’écran d’accueil', page: 6 },
-      { id: 'utilisation-ensuite', level: 2, title: '3.3. Utilisation ensuite', page: 6 },
-
-      { id: 'prise-main-rapide', level: 1, title: '4. Prise en main rapide', page: 7 },
-
-      { id: 'description-interface', level: 1, title: '5. Description détaillée de l’interface', page: 8 },
-      { id: 'horloge', level: 2, title: '5.1. Horloge', page: 8 },
-      { id: 'jour-nuit', level: 2, title: '5.2. Mode jour / nuit', page: 8 },
-      { id: 'luminosite', level: 2, title: '5.3. Réglage de la luminosité', page: 8 },
-      { id: 'bouton-demarrer', level: 2, title: '5.4. Bouton « Démarrer »', page: 8 },
-      { id: 'parametres', level: 2, title: '5.5. Paramètres (roue dentée)', page: 9 },
-      { id: 'organisation-ecran', level: 2, title: '5.6. Organisation de l’écran après démarrage d’un parcours', page: 10 },
-
-      { id: 'utilisation-normale', level: 1, title: '6. Utilisation normale en situation', page: 12 },
-      { id: 'preparation-document-train', level: 2, title: '6.1. Préparation du document du train', page: 12 },
-      { id: 'demarrage-parcours', level: 2, title: '6.2. Démarrage d’un parcours', page: 12 },
-      { id: 'mode-mixte', level: 2, title: '6.2.1. Mode mixte', page: 13 },
-      { id: 'mode-manuel', level: 2, title: '6.2.2. Mode manuel', page: 13 },
-      { id: 'mode-pdf-historique', level: 2, title: '6.2.3. Mode PDF historique', page: 13 },
-      { id: 'modification-mode-demarrage', level: 2, title: '6.2.4. Modification du mode de démarrage', page: 14 },
-      { id: 'affichage-apres-demarrage', level: 2, title: '6.3. Affichage après démarrage du parcours', page: 14 },
-      { id: 'zone-infos', level: 2, title: '6.3.1. Zone Infos', page: 14 },
-      { id: 'zone-ltv', level: 2, title: '6.3.2. Zone LTV', page: 16 },
-      { id: 'zone-ft', level: 2, title: '6.3.3. Zone fiche train (FT)', page: 17 },
-      { id: 'utilisation-conduite', level: 2, title: '6.4. Utilisation en situation (mode conduite)', page: 18 },
-      { id: 'indicateurs-etat', level: 2, title: '6.4.1. Indicateurs d’état', page: 18 },
-      { id: 'indicateur-gps', level: 2, title: '6.4.1.1. Indicateur GPS', page: 18 },
-      { id: 'indicateur-mode-horaire', level: 2, title: '6.4.1.2. Indicateur du mode horaire', page: 18 },
-      { id: 'activation-mode-conduite', level: 2, title: '6.4.2. Activation et effets du mode conduite', page: 19 },
-      { id: 'fonctionnement-mode-gps', level: 2, title: '6.4.3. Fonctionnement en mode GPS', page: 20 },
-      { id: 'fonctionnement-mode-horaire', level: 2, title: '6.4.4. Fonctionnement en mode horaire', page: 20 },
-      { id: 'recalage-mode-horaire', level: 2, title: '6.4.5. Recalage en mode horaire', page: 21 },
-
-      { id: 'cas-particuliers', level: 1, title: '7. Cas particuliers', page: 22 },
-      { id: 'arrets-en-gare', level: 2, title: '7.1. Arrêts en gare', page: 22 },
-      { id: 'mode-secours', level: 2, title: '7.2. Mode secours', page: 23 },
-
-      { id: 'mode-test', level: 1, title: '8. Mode test', page: 24 },
-      { id: 'infos-supplementaires-test', level: 2, title: '8.1. Informations supplémentaires affichées', page: 24 },
-      { id: 'enregistrement-diagnostic', level: 2, title: '8.2. Enregistrement des informations de diagnostic', page: 25 },
-      { id: 'export-logs', level: 2, title: '8.3. Export des logs', page: 25 },
-
-      { id: 'evolutions-prevues', level: 1, title: '9. Évolutions prévues', page: 26 },
-    ],
-    []
-  )
-
+  // Listener externe : ouvrir le manuel sur une page précise depuis l’app
   useEffect(() => {
-    if (!manualOpen) {
-      setManualPdfObjectUrl(null)
-      return
-    }
-
-    let cancelled = false
-    let objectUrl: string | null = null
-
-    ;(async () => {
-      try {
-        const response = await fetch(MANUAL_PDF_PUBLIC_URL, {
-          cache: 'no-store',
-          headers: {
-            Accept: 'application/pdf',
-          },
-        })
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`)
-        }
-
-        const contentType =
-          response.headers.get('content-type')?.toLowerCase() ?? ''
-
-        if (contentType.includes('text/html')) {
-          throw new Error(`Le fichier PDF demandé renvoie du HTML (${contentType})`)
-        }
-
-        const blob = await response.blob()
-        const pdfBlob =
-          blob.type === 'application/pdf'
-            ? blob
-            : new Blob([blob], { type: 'application/pdf' })
-
-        objectUrl = URL.createObjectURL(pdfBlob)
-
-        if (!cancelled) {
-          setManualPdfObjectUrl(objectUrl)
-        }
-      } catch (err) {
-        console.warn(
-          '[TitleBar] Chargement blob du manuel impossible, utilisation de l’URL directe',
-          err
-        )
-
-        if (!cancelled) {
-          setManualPdfObjectUrl(null)
-        }
-      }
-    })()
-
-    return () => {
-      cancelled = true
-
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl)
-      }
-    }
-  }, [manualOpen, MANUAL_PDF_PUBLIC_URL])
-
-  const buildManualPdfSrc = (page: number): string => {
-    const safePage =
-      Number.isFinite(page) && page > 0 ? Math.trunc(page) : 1
-
-    const baseUrl = manualPdfObjectUrl ?? MANUAL_PDF_PUBLIC_URL
-
-    return `${baseUrl}#page=${safePage}&toolbar=1&navpanes=0`
-  }
-
-  const openManualPageFromToc = (item: ManualTocItem) => {
-    setManualPage(item.page)
-    setManualActiveTocId(item.id)
-
-    logTestEvent('ui:manual:toc-click', {
-      source: 'manual_viewer',
-      id: item.id,
-      title: item.title,
-      page: item.page,
-    })
-  }
-
-  const setManualPageFromViewer = (nextPage: number) => {
-    const safePage =
-      Number.isFinite(nextPage) && nextPage > 0 ? Math.trunc(nextPage) : 1
-
-    setManualPage(safePage)
-
-    const activeItem = [...MANUAL_TOC_ITEMS]
-      .filter((item) => item.page <= safePage)
-      .sort((a, b) => b.page - a.page)[0]
-
-    if (activeItem) {
-      setManualActiveTocId(activeItem.id)
-    }
-  }
-
-    useEffect(() => {
     const handler = (event: Event) => {
-      const ce = event as CustomEvent<{
-        page?: number
-        tocId?: string
-        source?: string
-      }>
-
-      const requestedPage =
-        typeof ce.detail?.page === 'number' && Number.isFinite(ce.detail.page)
-          ? Math.trunc(ce.detail.page)
-          : 5
-
-      const requestedTocId =
-        typeof ce.detail?.tocId === 'string' && ce.detail.tocId.trim().length > 0
-          ? ce.detail.tocId
-          : 'prerequis-ipad'
-
-      setManualPage(requestedPage)
-      setManualActiveTocId(requestedTocId)
+      const ce = event as CustomEvent<{ page?: number; tocId?: string; source?: string }>
+      const p = typeof ce.detail?.page === 'number' && Number.isFinite(ce.detail.page) ? Math.trunc(ce.detail.page) : 5
+      const t = typeof ce.detail?.tocId === 'string' && ce.detail.tocId.trim().length > 0 ? ce.detail.tocId : 'prerequis-ipad'
+      setManualInitialPage(p)
+      setManualInitialTocId(t)
       setManualOpen(true)
-
-      if (settingsDetailsRef.current?.hasAttribute('open')) {
-        settingsDetailsRef.current.removeAttribute('open')
-      }
-
-      logTestEvent('ui:manual:open-page', {
-        source: ce.detail?.source ?? 'external_event',
-        page: requestedPage,
-        tocId: requestedTocId,
-      })
+      if (settingsDetailsRef.current?.hasAttribute('open')) settingsDetailsRef.current.removeAttribute('open')
+      logTestEvent('ui:manual:open-page', { source: ce.detail?.source ?? 'external_event', page: p, tocId: t })
     }
-
     window.addEventListener('lim:manual-open-page', handler as EventListener)
-
-    return () => {
-      window.removeEventListener('lim:manual-open-page', handler as EventListener)
-    }
+    return () => window.removeEventListener('lim:manual-open-page', handler as EventListener)
   }, [])
 
   useEffect(() => {
@@ -2224,14 +2036,14 @@ ${coords}
 - Recadrage LTV en mode mixte (bouton "Utiliser le PDF").
 - Flèches sources LTV aux extrémités de la barre de légende.
 - Bouton Play : entrée automatique en stand-by sur la première ligne au premier clic.
-- Bouton Play verrouillé une fois le parcours lancé (indicateur d'état visible).
+- Bouton Play verrouillé une fois le parcours lancé (indicateur d’état visible).
 - Correction clignotement du numéro de train en mode plié.
 - Correction stand-by : la sortie revenait à la première station au lieu de la ligne sélectionnée.
 - Correction delta horaire au premier Play et à la sortie manuelle du stand-by.
-- Correction GPS : protection contre l'écrasement de la ligne active lors d'un recalage manuel.
+- Correction GPS : protection contre l’écrasement de la ligne active lors d’un recalage manuel.
 - Correction "ressort" : la fiche train ne revient plus à sa position initiale pendant le stand-by.
 - Correction scroll : la fiche train reste bien sur la ligne de recalage après sortie du stand-by.
-- Remarques LTV en sens sud-nord : les PK s'affichent dans le sens de circulation.
+- Remarques LTV en sens sud-nord : les PK s’affichent dans le sens de circulation.
 - Mode plié : affichage du nombre de LTV normalisées.
 - Bouton "Forcer la mise à jour" (ex "Vider le cache").
 - Corrections de bugs divers.
@@ -2464,9 +2276,9 @@ ${coords}
     const main = getMainEl()
     // NE PAS appliquer filter sur les éléments racine.
     // filter crée un stacking context qui piège les modales (position:fixed
-    // z-[99999]) dans un sous-contexte — résultat : l'en-tête de la fiche
-    // train (Infos, z=auto) s'affiche par-dessus les modales.
-    // La luminosité est désormais gérée par l'overlay #lim-dim-overlay
+    // z-[99999]) dans un sous-contexte — résultat : l’en-tête de la fiche
+    // train (Infos, z=auto) s’affiche par-dessus les modales.
+    // La luminosité est désormais gérée par l’overlay #lim-dim-overlay
     // (z=1, pointer-events:none) ajouté dans le JSX ci-dessous.
     ;[html, body, root, main].forEach((el) => {
       if (el) (el as HTMLElement).style.filter = ''
@@ -4023,7 +3835,7 @@ if (enabled || standby) {
         setStationArretActive(false)
 
 // ✅ Au retour réel en GPS, on réaligne l’état visuel du bouton Play
-// uniquement si l'autoscroll a déjà été engagé.
+// uniquement si l’autoscroll a déjà été engagé.
 // Le GPS passif au chargement du parcours ne doit pas activer visuellement Play.
 if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
   setAutoScrollStartedOnce(true)
@@ -4584,11 +4396,11 @@ const IconFile = () => null
       {/* ── Overlay de luminosité ──────────────────────────────────────────────
           Remplace filter:brightness() sur html/body/root/main.
           • z-index:1  → au-dessus du contenu (z=auto) mais SOUS toutes les
-            modales (z=9999–99999), ce qui corrige le bug d'empilement.
+            modales (z=9999–99999), ce qui corrige le bug d’empilement.
           • pointer-events:none → les interactions passent à travers.
           • Aucun filter sur les éléments racine → aucun stacking context
-            parasite → les modales (fixed z-[99999]) s'affichent correctement
-            par-dessus tout le contenu, y compris l'en-tête de la fiche train.
+            parasite → les modales (fixed z-[99999]) s’affichent correctement
+            par-dessus tout le contenu, y compris l’en-tête de la fiche train.
           ──────────────────────────────────────────────────────────────────── */}
       <div
         aria-hidden="true"
@@ -5358,10 +5170,10 @@ setAutoScrollStartedOnce(next)
             </button>
           )}
 
-          {/* STOP — visible dès qu'un trajet est en cours, mode test ou non */}
+          {/* STOP — visible dès qu’un trajet est en cours, mode test ou non */}
           {pdfMode !== 'blue' && (
             stopUploadStatus !== 'idle' ? (
-              /* Indicateur de statut pendant / après l'upload */
+              /* Indicateur de statut pendant / après l’upload */
               <div
                 className={`h-8 px-3 text-xs rounded-md font-semibold flex items-center gap-1.5 ${
                   stopUploadStatus === 'success'
@@ -5432,7 +5244,7 @@ setAutoScrollStartedOnce(next)
 
                   setStopUploadStatus('idle')
 
-                  // Reset complet de l'app
+                  // Reset complet de l’app
                   setPdfMode('blue')
                   setPdfLoading(false)
                   stopPdfLoadingGuard()
@@ -5717,8 +5529,8 @@ setAutoScrollStartedOnce(next)
                     settingsDetailsRef.current.removeAttribute('open')
                   }
 
-                  setManualPage(1)
-                  setManualActiveTocId('cover')
+                  setManualInitialPage(1)
+                  setManualInitialTocId('cover')
                   setManualOpen(true)
                 }}
                 className="w-full flex items-start justify-between gap-3 py-1 cursor-pointer select-none rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition px-0"
@@ -5728,6 +5540,20 @@ setAutoScrollStartedOnce(next)
                   <div className="text-[11px] opacity-70">
                     Consulter l’aide au format PDF
                   </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (settingsDetailsRef.current) settingsDetailsRef.current.open = false
+                  setGuiaOpen(true)
+                }}
+                className="w-full flex items-start justify-between gap-3 py-1 cursor-pointer select-none rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition px-0"
+              >
+                <div className="text-left">
+                  <div className="font-semibold">Guia BSN</div>
+                  <div className="text-[11px] opacity-70">Livret d’aide à la conduite</div>
                 </div>
               </button>
 
@@ -5754,148 +5580,9 @@ setAutoScrollStartedOnce(next)
             </div>
           </details>
 
-          {manualOpen && (
-            <div
-              className="fixed left-0 right-0 z-[9998] border-t overflow-hidden"
-              style={{
-                top: '4rem',
-                height: 'calc(100vh - 4rem)',
-                maxHeight: 'calc(100dvh - 4rem)',
-                backgroundColor: dark ? 'rgba(9, 9, 11, 0.96)' : 'rgba(244, 244, 245, 0.95)',
-                borderColor: dark ? '#3f3f46' : '#e4e4e7',
-                color: dark ? '#f4f4f5' : '#18181b',
-              }}
-            >
-              <div className="h-full flex flex-col gap-2 p-3">
-                <div
-                  className="shrink-0 flex items-center justify-between gap-3 rounded-xl border shadow-sm px-3 py-2"
-                  style={{
-                    backgroundColor: dark ? '#18181b' : '#ffffff',
-                    color: dark ? '#f4f4f5' : '#18181b',
-                    borderColor: dark ? '#3f3f46' : '#e4e4e7',
-                  }}
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold">
-                      Manuel utilisateur
-                    </div>
-                    <div className="text-[11px] opacity-70 truncate">
-                      Consultation intégrée du manuel LIM
-                    </div>
-                  </div>
+          <ManualViewer open={manualOpen} dark={dark} onClose={() => setManualOpen(false)} initialPage={manualInitialPage} initialTocId={manualInitialTocId} />
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        logTestEvent('ui:manual:open-external', {
-                          source: 'manual_viewer',
-                          page: manualPage,
-                        })
-
-                        const manualUrl = buildManualPdfSrc(manualPage)
-                        const opened = window.open(
-                          manualUrl,
-                          '_blank',
-                          'noopener,noreferrer'
-                        )
-
-                        if (!opened) {
-                          window.location.href = manualUrl
-                        }
-                      }}
-                      className="h-8 px-3 text-xs rounded-md bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100 font-semibold"
-                    >
-                      Ouvrir à part
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        logTestEvent('ui:manual:close', {
-                          source: 'manual_viewer',
-                        })
-
-                        setManualOpen(false)
-                      }}
-                      className="h-8 px-3 text-xs rounded-md bg-blue-600 text-white font-semibold"
-                    >
-                      Fermer
-                    </button>
-                  </div>
-                </div>
-
-                <div
-                  className="min-h-0 flex-1 grid gap-2"
-                  style={{ gridTemplateColumns: '280px minmax(0, 1fr)' }}
-                >
-                  <aside
-                    className="min-h-0 rounded-xl overflow-hidden border shadow-sm flex flex-col"
-                    style={{
-                      backgroundColor: dark ? '#18181b' : '#ffffff',
-                      color: dark ? '#f4f4f5' : '#18181b',
-                      borderColor: dark ? '#3f3f46' : '#e4e4e7',
-                    }}
-                  >
-                    <div className="shrink-0 px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
-                      <div className="text-xs font-semibold">Sommaire</div>
-                      <div className="text-[11px] opacity-60">
-                        Navigation dans le manuel
-                      </div>
-                    </div>
-
-                    <div className="min-h-0 flex-1 overflow-auto p-2 space-y-1">
-                      {MANUAL_TOC_ITEMS.map((item) => {
-                        const active = manualActiveTocId === item.id
-
-                        const levelClass =
-                          item.level === 0
-                            ? 'font-semibold'
-                            : item.level === 1
-                              ? 'font-semibold'
-                              : 'pl-5 text-[11px] opacity-85'
-
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => openManualPageFromToc(item)}
-                            className={
-                              active
-                                ? `w-full rounded-lg px-2 py-1.5 text-left bg-blue-600 text-white flex items-center gap-2 ${levelClass}`
-                                : `w-full rounded-lg px-2 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-2 ${levelClass}`
-                            }
-                            title={`Page ${item.page} — ${item.title}`}
-                          >
-                            <span className="min-w-0 flex-1 truncate">
-                              {item.title}
-                            </span>
-                            <span
-                              className={
-                                active
-                                  ? 'shrink-0 text-[10px] opacity-90 tabular-nums'
-                                  : 'shrink-0 text-[10px] opacity-50 tabular-nums'
-                              }
-                            >
-                              {item.page}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </aside>
-
-                  <div className="min-h-0 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-white shadow-sm">
-                    <ManualPdfCanvasViewer
-                      pdfUrl={manualPdfObjectUrl ?? MANUAL_PDF_PUBLIC_URL}
-                      page={manualPage}
-                      onPageChange={setManualPageFromViewer}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+                    <GuiaViewer open={guiaOpen} dark={dark} onClose={() => setGuiaOpen(false)} />
 
           {aboutOpen && createPortal(
             <div
