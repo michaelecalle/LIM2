@@ -960,6 +960,9 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
         // startNormalizedJourneyFromTrain remet wasReplaySessionRef a false en interne
         // → on le re-pose ici pour que le Stop ne genere pas de log
         wasReplaySessionRef.current = true
+        // Sur iPad, simulationEnabled peut etre lu depuis une closure perimee (false)
+        // et startGpsWatch() peut avoir ete appele. On arrete le GPS reel par securite.
+        stopGpsWatch()
       } else {
         openMixedFallbackTrainSelection()
       }
