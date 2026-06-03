@@ -923,6 +923,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     demoT0MsRef.current = t0  // memoriser pour l’horloge virtuelle
     demoWallStartMsRef.current = null
     wasReplaySessionRef.current = true // bloquer export/upload au Stop (meme logique que replay)
+    demoActiveRef.current = true       // bloquer startGpsWatch avant meme le premier Play
     const events = parsed
       .filter(e => typeof e.kind === 'string' && typeof e.t === 'string')
       .map(e => ({ tMs: Math.max(0, Date.parse(e.t) - t0), kind: e.kind, payload: e.payload ?? {} }))
@@ -2063,6 +2064,7 @@ ${coords}
   const [demoRunning, setDemoRunning] = useState(false)
   // Lance l’injection GPS quand autoScroll devient actif pour la premiere fois en mode demo
   const demoStartedRef = useRef(false)
+  const demoActiveRef = useRef(false)  // ref synchrone pour bloquer startGpsWatch en mode demo
   const demoT0MsRef = useRef<number | null>(null)       // timestamp epoch du 1er event du log
   const demoWallStartMsRef = useRef<number | null>(null) // instant mur au demarrage de la demo
   const origDateRef = useRef<typeof Date | null>(null)   // Date original avant patch global
@@ -4113,6 +4115,7 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
   }, [])
 
   function startGpsWatch() {
+    if (demoActiveRef.current) return  // mode demo : GPS reel jamais demarre
     if (gpsWatchIdRef.current != null) return
     if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
       console.warn('[TitleBar] Geolocation non disponible')
@@ -5389,6 +5392,7 @@ setAutoScrollStartedOnce(next)
                     setDemoRunning(false)
                     setDemoEvents([])
                     demoStartedRef.current = false
+                    demoActiveRef.current = false
                     demoT0MsRef.current = null
                     demoWallStartMsRef.current = null
                     // Restaurer le Date original avant de supprimer __limgptDemo
