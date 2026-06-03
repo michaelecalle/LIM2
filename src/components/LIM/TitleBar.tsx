@@ -34,6 +34,10 @@ import GuiaViewer from './GuiaViewer'
 import DemoLoader, { type DemoData } from './DemoLoader'
 import DemoRunner from './DemoRunner'
 import DemoTouchIndicator from './DemoTouchIndicator'
+import Mode2026Modal from './Mode2026Modal'
+import { loadPdfLtvRows } from './titleBarLtvUtils'
+import type { NormalizedLtvFile } from './titleBarLtvUtils'
+import { parseLtvPdf2026 as _parseLtvPdf2026 } from '../../lib/ltvPdfParser'
 import {
   type LIMFields,
   type ManualTrainOption,
@@ -118,7 +122,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const [standbyMode, setStandbyMode] = useState(false)
   const [pdfMode, setPdfMode] = useState<'blue' | 'green' | 'red'>('blue')
 
-  type StartupMode = 'mixed' | 'manual' | 'pdf'
+  type StartupMode = 'mixed' | 'manual' | 'pdf' | '2026'
 
   const STARTUP_MODE_STORAGE_KEY = 'lim:startup-mode-default'
 
@@ -141,7 +145,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const [activeStartupMode, setActiveStartupMode] = useState<StartupMode | null>(null)
   const startupLaunchModeRef = useRef<StartupMode | null>(null)
 
-  type LtvRuntimeSource = 'normalized' | 'adif' | 'pdf'
+  type LtvRuntimeSource = 'normalized' | 'adif' | 'pdf' | 'pdf-ltv'
   type LtvSourceSwitchDirection = 'previous' | 'next'
 
   const currentLtvSourceRef = useRef<LtvRuntimeSource>('normalized')
@@ -154,6 +158,8 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     if (mode === 'manual') return ['normalized', 'adif']
 
     if (mode === 'mixed') return ['normalized', 'adif', 'pdf']
+
+    if (mode === '2026') return ['pdf-ltv', 'pdf']
 
     return []
   }
@@ -977,6 +983,28 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     } catch {
       openMixedFallbackTrainSelection()
     }
+  }
+
+  const handleMode2026Confirm = (
+    train: ManualTrainOption,
+    ltvData: NormalizedLtvFile,
+    pdfFile: File
+  ) => {
+    setMode2026Open(false)
+    ltvPdfDataRef.current = ltvData
+
+    // PDF pour mode secours (recadrage)
+    currentPdfFileRef.current = pdfFile
+    window.dispatchEvent(new CustomEvent('lim:pdf-raw', {
+      detail: { file: pdfFile, storage: 'local' },
+    }))
+
+    startNormalizedJourneyFromTrain(train, {
+      source: 'mode2026_import',
+      activeMode: '2026',
+      keepPdf: true,
+      closeManualImport: false,
+    })
   }
 
   const buildCurrentZipBundle = async (): Promise<{ blob: Blob; filename: string } | null> => {
@@ -2064,6 +2092,10 @@ ${coords}
   const [manualInitialTocId, setManualInitialTocId] = useState('cover')
   const [guiaOpen, setGuiaOpen] = useState(false)
 
+  // ----- MODE 2026 -----
+  const [mode2026Open, setMode2026Open] = useState(false)
+  const ltvPdfDataRef = useRef<NormalizedLtvFile | null>(null)
+
   // ----- MODE DEMO -----
   const [demoLoaderOpen, setDemoLoaderOpen] = useState(false)
   const [demoActive, setDemoActive] = useState(false)
@@ -2543,6 +2575,8 @@ ${coords}
     const result =
       params.ltvSource === 'adif'
         ? await fetchManualLtvRows(routePkRange)
+        : params.ltvSource === 'pdf-ltv'
+        ? loadPdfLtvRows(ltvPdfDataRef.current ?? {}, routePkRange)
         : loadNormalizedLtvRows(routePkRange)
 
     const ltvMeta = {
@@ -2603,7 +2637,7 @@ ${coords}
   const startNormalizedJourneyFromTrain = (
     train: ManualTrainOption,
     options: {
-      source: 'manual_import' | 'mixed_import' | 'mixed_import_manual_fallback'
+      source: 'manual_import' | 'mixed_import' | 'mixed_import_manual_fallback' | 'mode2026_import'
       activeMode: StartupMode
       keepPdf: boolean
       closeManualImport: boolean
@@ -5727,12 +5761,26 @@ setAutoScrollStartedOnce(next)
                 type="button"
                 onClick={() => {
                   if (settingsDetailsRef.current) settingsDetailsRef.current.open = false
+                  setMode2026Open(true)
+                }}
+                className="w-full flex items-start justify-between gap-3 py-1 cursor-pointer select-none rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition px-0"
+              >
+                <div className="text-left">
+                  <div className="font-semibold">Mode 2026</div>
+                  <div className="text-[11px] opacity-70">Nouveau format LTV (PDF tableau)</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (settingsDetailsRef.current) settingsDetailsRef.current.open = false
                   setDemoLoaderOpen(true)
                 }}
                 className="w-full flex items-start justify-between gap-3 py-1 cursor-pointer select-none rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition px-0"
               >
                 <div className="text-left">
-                  <div className="font-semibold">Mode demo</div>
+                <div className="font-semibold">Mode demo</div>
                   <div className="text-[11px] opacity-70">Lancer une demonstration GPS</div>
                 </div>
               </button>
@@ -5763,6 +5811,15 @@ setAutoScrollStartedOnce(next)
           <ManualViewer open={manualOpen} dark={dark} onClose={() => setManualOpen(false)} initialPage={manualInitialPage} initialTocId={manualInitialTocId} />
 
                     <GuiaViewer open={guiaOpen} dark={dark} onClose={() => setGuiaOpen(false)} />
+
+          {mode2026Open && (
+            <Mode2026Modal
+              dark={dark}
+              trainOptions={manualImportTrainOptions}
+              onClose={() => setMode2026Open(false)}
+              onConfirm={handleMode2026Confirm}
+            />
+          )}
 
           {demoLoaderOpen && (
             <DemoLoader
