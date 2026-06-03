@@ -331,6 +331,31 @@ function mapNormalizedLtvRowToDisplayRow(
   }
 }
 
+// Charge les LTV depuis un NormalizedLtvFile en memoire (mode 2026 : données issues du PDF LTV).
+// Meme pipeline que loadNormalizedLtvRows mais source injectable.
+export function loadPdfLtvRows(
+  data: NormalizedLtvFile,
+  routePkRange: ManualFtRoutePkRange | null
+): ManualLtvRowsResult {
+  const rawRows = Array.isArray(data.rows) ? data.rows : []
+  const mappedRows = rawRows.map(mapNormalizedLtvRowToDisplayRow)
+  const rows = mappedRows.filter((row) => normalizedLtvOverlapsRoute(row, routePkRange))
+  const publishedAt =
+    typeof data.meta?.publishedAt === 'string' && data.meta.publishedAt.trim().length > 0
+      ? data.meta.publishedAt
+      : undefined
+  return {
+    rows,
+    meta: {
+      fetchedAt: publishedAt,
+      sourceUpdatedAt: publishedAt,
+      source: 'pdf-ltv',
+      total: mappedRows.length,
+      displayedCount: rows.length,
+    },
+  }
+}
+
 export function loadNormalizedLtvRows(
   routePkRange: ManualFtRoutePkRange | null
 ): ManualLtvRowsResult {
