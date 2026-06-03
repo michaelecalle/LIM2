@@ -2077,7 +2077,18 @@ ${coords}
         const wallNow = window.Date.now()
         demoWallStartMsRef.current = wallNow
         const t0 = demoT0MsRef.current ?? wallNow
-        const offsetMs = t0 - wallNow  // positif si t0 > wallNow (train part "dans le futur")
+
+        // Offset = difference d’heure dans la journee uniquement (pas de decalage de date).
+        // Le log peut dater d’un autre jour, mais la demo reste aujourd’hui.
+        // Ex: log 16h23, demo demarre 18h20 → offset = -1h57 (meme date conservee).
+        const t0D = new window.Date(t0)
+        const wallD = new window.Date(wallNow)
+        const t0TodMs = (t0D.getHours() * 3600 + t0D.getMinutes() * 60 + t0D.getSeconds()) * 1000 + t0D.getMilliseconds()
+        const wallTodMs = (wallD.getHours() * 3600 + wallD.getMinutes() * 60 + wallD.getSeconds()) * 1000 + wallD.getMilliseconds()
+        let offsetMs = t0TodMs - wallTodMs
+        // Gerer le passage a minuit (fenetre ±12h)
+        if (offsetMs > 12 * 3600000) offsetMs -= 24 * 3600000
+        if (offsetMs < -12 * 3600000) offsetMs += 24 * 3600000
 
         // 2. Sauvegarder le Date original
         const origDate = window.Date
