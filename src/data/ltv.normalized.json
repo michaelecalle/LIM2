@@ -1,12 +1,12 @@
 {
   "meta": {
     "line": "050",
-    "publishedAt": "2026-05-29T12:04:42.397Z",
+    "publishedAt": "2026-06-03T15:33:20.973Z",
     "adif": {
-      "source": "arcgis",
-      "fetchedAt": "2026-05-29T12:04:08.971Z",
-      "sourceUpdatedAt": "2026-05-25T00:00:00.000Z",
-      "sourceUpdatedFile": "20260525_DSLTV.xml"
+      "source": "cache",
+      "fetchedAt": "2026-06-03T15:32:38.722Z",
+      "sourceUpdatedAt": "2026-06-01T00:00:00.000Z",
+      "sourceUpdatedFile": "20260601_DSLTV.xml"
     }
   },
   "rows": [
@@ -203,30 +203,6 @@
       }
     },
     {
-      "id": "ltv-adif-55",
-      "origin": "adif",
-      "status": "unchanged",
-      "code": "000172020",
-      "section": "RIELLS-A. V.",
-      "via": "l",
-      "kmIni": "678.500",
-      "kmFin": "678.000",
-      "speed": "160",
-      "motivo": "",
-      "fecha1": "",
-      "hora1": "",
-      "fecha2": "",
-      "hora2": "",
-      "viaCheck": true,
-      "sistema": false,
-      "soloCabeza": false,
-      "csv": false,
-      "observaciones": "",
-      "editedFields": {
-        "viaCheck": true
-      }
-    },
-    {
       "id": "ltv-adif-56",
       "origin": "adif",
       "status": "unchanged",
@@ -309,5 +285,7 @@
       }
     }
   ],
-  "warnings": []
+  "warnings": [
+    "Le tableau normalisé contient 10 LTV, alors que le tableau ADIF Barcelona/Figueras en contient 11."
+  ]
 }
