@@ -2062,6 +2062,7 @@ ${coords}
   const demoStartedRef = useRef(false)
   const demoT0MsRef = useRef<number | null>(null)       // timestamp epoch du 1er event du log
   const demoWallStartMsRef = useRef<number | null>(null) // instant mur au demarrage de la demo
+  const origDateRef = useRef<typeof Date | null>(null)   // Date original avant patch global
   const settingsDetailsRef = useRef<HTMLDetailsElement | null>(null)
 
   // Demo : demarrer l’injection GPS quand l’autoscroll devient actif (sortie du stand-by initial)
@@ -2071,18 +2072,35 @@ ${coords}
       const ce = e as CustomEvent
       if (!!ce.detail?.enabled && !ce.detail?.standby) {
         demoStartedRef.current = true
-        demoWallStartMsRef.current = Date.now()
-        // Exposer l’horloge demo : FT.tsx l’utilise pour le delta horaire
-        // nowIso() retourne t0_du_log + elapsed → delta = 0 au depart
-        const t0 = demoT0MsRef.current
-        if (t0 !== null) {
-          ;(window as any).__limgptDemo = {
-            nowIso: () => {
-              if (demoWallStartMsRef.current === null) return null
-              return new Date(t0 + (Date.now() - demoWallStartMsRef.current)).toISOString()
-            },
-          }
-        }
+
+        // 1. Enregistrer l’heure reelle AVANT tout patch
+        const wallNow = window.Date.now()
+        demoWallStartMsRef.current = wallNow
+        const t0 = demoT0MsRef.current ?? wallNow
+        const offsetMs = t0 - wallNow  // positif si t0 > wallNow (train part "dans le futur")
+
+        // 2. Sauvegarder le Date original
+        const origDate = window.Date
+        origDateRef.current = origDate
+
+        // 3. Remplacer window.Date par un Proxy qui ajoute l’offset a tous les appels d’heure
+        window.Date = new Proxy(origDate, {
+          construct(target, args) {
+            // new Date() sans argument → heure virtuelle
+            if (args.length === 0) return Reflect.construct(target, [origDate.now() + offsetMs])
+            return Reflect.construct(target, args)
+          },
+          get(target, prop, receiver) {
+            // Date.now() → heure virtuelle
+            if (prop === 'now') return () => origDate.now() + offsetMs
+            const val = Reflect.get(target, prop, receiver)
+            return typeof val === 'function' ? val.bind(target) : val
+          },
+        }) as unknown as typeof Date
+
+        // 4. __limgptDemo.nowIso() tire maintenant de new Date() (deja virtuel)
+        ;(window as any).__limgptDemo = { nowIso: () => new Date().toISOString() }
+
         setDemoRunning(true)
       }
     }
@@ -5359,6 +5377,11 @@ setAutoScrollStartedOnce(next)
                     demoStartedRef.current = false
                     demoT0MsRef.current = null
                     demoWallStartMsRef.current = null
+                    // Restaurer le Date original avant de supprimer __limgptDemo
+                    if (origDateRef.current) {
+                      window.Date = origDateRef.current
+                      origDateRef.current = null
+                    }
                     delete (window as any).__limgptDemo
                     window.dispatchEvent(new CustomEvent('sim:enable', { detail: { enabled: false } }))
                   }
