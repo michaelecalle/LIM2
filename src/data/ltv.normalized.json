@@ -1,10 +1,10 @@
 {
   "meta": {
     "line": "050",
-    "publishedAt": "2026-06-03T15:33:20.973Z",
+    "publishedAt": "2026-06-03T20:37:37.234Z",
     "adif": {
       "source": "cache",
-      "fetchedAt": "2026-06-03T15:32:38.722Z",
+      "fetchedAt": "2026-06-03T20:36:49.122Z",
       "sourceUpdatedAt": "2026-06-01T00:00:00.000Z",
       "sourceUpdatedFile": "20260601_DSLTV.xml"
     }
@@ -283,9 +283,28 @@
         "motivo": true,
         "observaciones": true
       }
+    },
+    {
+      "id": "ltv-adif-55",
+      "origin": "adif",
+      "status": "unchanged",
+      "code": "000172020",
+      "section": "RIELLS-A. V.",
+      "via": "l",
+      "kmIni": "678.500",
+      "kmFin": "678.000",
+      "speed": "160",
+      "motivo": "",
+      "fecha1": "",
+      "hora1": "",
+      "fecha2": "",
+      "hora2": "",
+      "viaCheck": false,
+      "sistema": false,
+      "soloCabeza": false,
+      "csv": false,
+      "observaciones": ""
     }
   ],
-  "warnings": [
-    "Le tableau normalisé contient 10 LTV, alors que le tableau ADIF Barcelona/Figueras en contient 11."
-  ]
+  "warnings": []
 }
