@@ -2077,12 +2077,28 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
           );
 
           if (matchingArrival) {
-            console.log(
-              "[FT][auto] Arrêt automatique sur arrivée calculée, rowIndex =",
-              matchingArrival.rowIndex,
-              "arrivalMin =",
-              matchingArrival.arrivalMin
-            );
+            // Garde-fou PK : si le dernier PK GPS connu est a plus de 10 km du PK de la gare,
+            // ne pas declencher le standby (delta faux ou position incoherente).
+            const frozenPk = lastGpsPositionRef.current?.pk
+            const stationPkRaw = rawEntries[matchingArrival.rowIndex]?.pk
+            const stationPk = stationPkRaw != null ? Number(stationPkRaw) : NaN
+            const HORAIRE_STANDBY_MAX_PK_DIST_KM = 10
+
+            if (
+              frozenPk != null &&
+              Number.isFinite(frozenPk) &&
+              Number.isFinite(stationPk) &&
+              Math.abs(frozenPk - stationPk) > HORAIRE_STANDBY_MAX_PK_DIST_KM
+            ) {
+              logTestEvent("ft:auto:arrival-stop:rejected-pk-too-far", {
+                rowIndex: matchingArrival.rowIndex,
+                frozenPk,
+                stationPk,
+                distKm: Math.abs(frozenPk - stationPk),
+                threshold: HORAIRE_STANDBY_MAX_PK_DIST_KM,
+              });
+              // Trop loin de la gare : pas de standby automatique
+            } else {
 
             logTestEvent("ft:auto:arrival-stop", {
               rowIndex: matchingArrival.rowIndex,
@@ -2143,6 +2159,7 @@ window.dispatchEvent(
 );
             // On s’arrête là pour cette minute : plus de recalage auto
             return;
+            } // fin else (garde-fou PK OK)
           }
         }
       }
@@ -3882,7 +3899,9 @@ const isRelock = acceptedMode === "relock";
             : null;
 
         if (currentSKm != null) {
-          const delta = currentSKm - arret.frozenSKm;
+          // Valeur absolue : le départ peut être dans les deux sens
+          // (s_km croît vers Perpignan, décroît vers Barcelone)
+          const delta = Math.abs(currentSKm - arret.frozenSKm);
 
           if (delta > 0.010) {
             if (arret.firstMovementTime === null) {
@@ -3894,7 +3913,7 @@ const isRelock = acceptedMode === "relock";
                 frozenSKm: arret.frozenSKm,
                 delta,
               });
-            } else if (currentSKm > arret.prevSKm + 0.005) {
+            } else if (Math.abs(currentSKm - arret.prevSKm) > 0.005) {
               arret.consecutiveSteps++;
               arret.prevSKm = currentSKm;
 

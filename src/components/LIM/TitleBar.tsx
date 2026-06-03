@@ -36,8 +36,6 @@ import DemoRunner from './DemoRunner'
 import DemoTouchIndicator from './DemoTouchIndicator'
 import Mode2026Modal from './Mode2026Modal'
 import { loadPdfLtvRows } from './titleBarLtvUtils'
-import type { NormalizedLtvFile } from './titleBarLtvUtils'
-import { parseLtvPdf2026 as _parseLtvPdf2026 } from '../../lib/ltvPdfParser'
 import {
   type LIMFields,
   type ManualTrainOption,
@@ -2511,6 +2509,11 @@ ${coords}
       return
     }
 
+    if (mode === '2026') {
+      setMode2026Open(true)
+      return
+    }
+
     // Mode PDF historique et mode mixte ouvrent tous les deux
     // le sélecteur PDF. Le traitement spécifique du mode mixte
     // sera branché dans une étape suivante.
@@ -2746,7 +2749,7 @@ ${coords}
     }
 
     void dispatchLtvRowsForSource({
-      ltvSource: 'normalized',
+      ltvSource: options.activeMode === '2026' ? 'pdf-ltv' : 'normalized',
       trainNumber,
       journeySource: options.source,
       activeMode: options.activeMode,
@@ -4739,6 +4742,35 @@ style={{
                   </div>
                 </div>
               </label>
+
+              <label className="block rounded-xl border p-3 cursor-pointer"
+style={{
+  backgroundColor: dark ? "#27272a" : "#fafafa",
+  color: dark ? "#f4f4f5" : "#18181b",
+  borderColor: dark ? "#52525b" : "#e4e4e7",
+}}>
+                <div className="flex items-start gap-3">
+                  <input
+                    type="radio"
+                    name="startup-mode"
+                    checked={startupModeChoice === '2026'}
+                    onChange={() => setStartupModeChoice('2026')}
+                    className="mt-1 h-4 w-4 cursor-pointer accent-blue-600"
+                  />
+                  <div>
+                    <div className="text-sm font-semibold">
+                      Mode 2026 <span className="opacity-70">(nouveau format LTV)</span>
+                    </div>
+<div className="text-xs opacity-75 mt-1">
+  Le conducteur importe un PDF contenant uniquement le tableau LTV.
+  <br />
+  Le train est selectionne manuellement dans la liste normalisee.
+  <br />
+  Le mode SECOURS est <strong>DISPONIBLE</strong> (PDF LTV).
+</div>
+                  </div>
+                </div>
+              </label>
             </div>
 
             <div className="flex justify-end gap-2 pt-4">
@@ -5754,20 +5786,6 @@ setAutoScrollStartedOnce(next)
                 <div className="text-left">
                   <div className="font-semibold">Guia BSN</div>
                   <div className="text-[11px] opacity-70">Livret d’aide a la conduite</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (settingsDetailsRef.current) settingsDetailsRef.current.open = false
-                  setMode2026Open(true)
-                }}
-                className="w-full flex items-start justify-between gap-3 py-1 cursor-pointer select-none rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition px-0"
-              >
-                <div className="text-left">
-                  <div className="font-semibold">Mode 2026</div>
-                  <div className="text-[11px] opacity-70">Nouveau format LTV (PDF tableau)</div>
                 </div>
               </button>
 

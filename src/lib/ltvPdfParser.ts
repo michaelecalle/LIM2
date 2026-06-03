@@ -5,9 +5,8 @@
 import * as pdfjsLib from 'pdfjs-dist'
 import type { NormalizedLtvFile, ManualLtvDisplayRow } from '../components/LIM/titleBarLtvUtils'
 
-// @ts-ignore
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-;(pdfjsLib as any).GlobalWorkerOptions.workerSrc = workerUrl
+// Le worker pdf.js est configure globalement par ltvParser.ts au demarrage de l'app.
+// Ne pas le reconfigurer ici pour eviter les conflits.
 
 // ── Limites x0 des colonnes (coordonnées PDF, page A4 paysage 842pt) ────────
 const COL = {
@@ -86,22 +85,20 @@ function groupByRow(items: RawItem[], yTolerance = 4): RawItem[][] {
 }
 
 function isSectionHeader(row: RawItem[]): boolean {
-  // Ligne entete de section = ligne large qui ne commence pas par un code LTV
-  // Contient "050" ou "L?NEA" / "LINEA" / "LÍNEA" dans les premiers items
+  // En-tete de section = une seule entree (ou tres peu) qui commence
+  // a gauche (x < 30) et contient le pattern "LINEA NNN" ou "L?NEA NNN".
+  // Ex. pdfjs extrait: "LÍNEA 010 PTA. DE ATOCHA-..." comme token unique.
+  const isDataRow = row.some(i => /^\(\d{6,12}\)$/.test(i.str.trim()))
+  if (isDataRow) return false
   const text = row.map(i => i.str).join(' ')
-  if (row.length === 0) return false
-  const firstX = row[0].x
-  if (firstX > 20) return false  // doit commencer a gauche
-  return (
-    /\b050\b/.test(text) ||
-    /L.NEA\s+050/i.test(text) ||
-    /LINEA\s+050/i.test(text)
-  )
+  // Pattern "LÍNEA NNN" avec le N pouvant etre 3 chiffres (050, 010, etc.)
+  return /L.{0,4}NEA\s+\d{3}/i.test(text)
 }
 
 function isLinea050Header(row: RawItem[]): boolean {
+  if (!isSectionHeader(row)) return false
   const text = row.map(i => i.str).join(' ')
-  return isSectionHeader(row) && /\b050\b/.test(text)
+  return /L.{0,4}NEA\s+050\b/i.test(text) || /\b050\b/.test(text)
 }
 
 function isTableHeader(row: RawItem[]): boolean {
@@ -227,61 +224,95 @@ export async function parseLtvPdf2026(file: File): Promise<NormalizedLtvFile> {
   const doc = await loadingTask.promise
   const numPages = doc.numPages
 
-  const allRows: ManualLtvDisplayRow[] = []
+  // Collecter toutes les lignes LINEA 050 en un seul passage
+  const allLinea050Rows: RawItem[][] = []
   let inLinea050 = false
-  const now = new Date().toISOString()
+  let pdfPublishedAt: string | null = null  // date extraite du PDF (ex. "03/06/2026 15:00")
 
   for (let p = 1; p <= numPages; p++) {
     const page = await doc.getPage(p)
     const content = await page.getTextContent()
 
+    // Appliquer la rotation de page pour obtenir les coordonnees visuelles
+    // (identiques a celles de pdfplumber). Sans cette transformation,
+    // pdfjs retourne les coordonnees pre-rotation : les colonnes paysage
+    // deviennent des lignes portrait, ce qui casse le parsing.
+    const rotate: number = (page as any).rotate ?? 0
+    const view: number[] = (page as any).view ?? [0, 0, 595, 842]
+    const pw = view[2] - view[0]  // largeur MediaBox (595 pour portrait)
+    const ph = view[3] - view[1]  // hauteur MediaBox (842 pour portrait)
+
+    const toVisual = (xPdf: number, yPdf: number) => {
+      if (rotate === 90)  return { x: yPdf,       y: pw - xPdf }
+      if (rotate === 270) return { x: ph - yPdf,  y: xPdf      }
+      if (rotate === 180) return { x: pw - xPdf,  y: ph - yPdf }
+      return { x: xPdf, y: yPdf }
+    }
+
+    console.log(`[ltvPdf] page ${p} rotate=${rotate} view=${view}`)
+
     const items: RawItem[] = (content.items as any[])
       .filter(i => typeof i.str === 'string' && i.str.trim())
-      .map(i => ({
-        str: i.str as string,
-        x: (i.transform as number[])[4],
-        y: (i.transform as number[])[5],
-      }))
+      .map(i => {
+        const xPdf = (i.transform as number[])[4]
+        const yPdf = (i.transform as number[])[5]
+        const { x, y } = toVisual(xPdf, yPdf)
+        return { str: i.str as string, x, y }
+      })
+
+    // Extraire la date de vigueur du PDF depuis la page 1 (ex. "03/06/2026 15:00" a x≈768)
+    if (p === 1 && !pdfPublishedAt) {
+      const dateItem = items.find(i => /^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}$/.test(i.str.trim()))
+      if (dateItem) pdfPublishedAt = dateItem.str.trim()
+    }
+
+    console.log(`[ltvPdf] page ${p}: ${items.length} items`)
 
     const rows = groupByRow(items)
+    console.log(`[ltvPdf] page ${p}: ${rows.length} rows`)
+
+    // Log des 10 premieres lignes pour diagnostic
+    rows.slice(0, 10).forEach((row, ri) => {
+      const tokens = row.map(i => `"${i.str}"@${Math.round(i.x)}`)
+      console.log(`[ltvPdf] p${p} row${ri}: ${tokens.join(', ')}`)
+      console.log(`  → isSectionHeader=${isSectionHeader(row)} isLinea050=${isLinea050Header(row)} isData=${isPrimaryDataRow(row)}`)
+    })
 
     for (const row of rows) {
       if (isSectionHeader(row)) {
+        const was = inLinea050
         inLinea050 = isLinea050Header(row)
+        console.log(`[ltvPdf] p${p} section header: "${row.map(i=>i.str).join(' ')}" → inLinea050: ${was} → ${inLinea050}`)
         continue
       }
-      if (!inLinea050) continue
-      // On accumule les lignes de données LÍNEA 050 pour ce parsing batch
-      // (on appelle parseDataRows sur l'ensemble a la fin, par page)
+      if (isTableHeader(row)) continue
+      if (inLinea050) allLinea050Rows.push(row)
     }
 
-    if (inLinea050 || p > 1) {
-      // Filtrer uniquement les lignes de la section 050 sur cette page
-      const linea050Rows: RawItem[][] = []
-      let capturing = inLinea050  // si on etait deja dans 050 en debut de page
-
-      for (const row of rows) {
-        if (isSectionHeader(row)) {
-          capturing = isLinea050Header(row)
-          continue
-        }
-        if (capturing) linea050Rows.push(row)
-      }
-
-      allRows.push(...parseDataRows(linea050Rows))
-    }
+    console.log(`[ltvPdf] page ${p} done, inLinea050=${inLinea050}, allLinea050Rows=${allLinea050Rows.length}`)
   }
 
+  const allRows = parseDataRows(allLinea050Rows)
+
   doc.destroy()
+
+  const now = new Date().toISOString()
+  // Formater la date PDF (dd/mm/yyyy hh:mm) en ISO si disponible
+  const publishedAtIso = (() => {
+    if (!pdfPublishedAt) return now
+    const m = pdfPublishedAt.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/)
+    if (!m) return now
+    return `${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:00`
+  })()
 
   return {
     meta: {
       line: '050',
-      publishedAt: now,
+      publishedAt: publishedAtIso,
       adif: {
         source: 'pdf-2026',
         fetchedAt: now,
-        sourceUpdatedAt: now,
+        sourceUpdatedAt: publishedAtIso,
         sourceUpdatedFile: file.name,
       },
     },
