@@ -689,7 +689,11 @@ if (referenceMode === "GPS") {
     if (selectedRowIndex !== null) {
       setSelectedRowIndex(null);
     }
-    recalibrateFromRowRef.current = null;
+    // Ne pas effacer si un recalage de départ ARRET GPS est en attente :
+    // le useEffect [recalibrateTrigger] doit lire recalibrateFromRowRef avant de le vider.
+    if (recalibrateAtTimeRef.current === null) {
+      recalibrateFromRowRef.current = null;
+    }
   }, [referenceMode, selectedRowIndex]);
 
   // Référence vers le conteneur scrollable de FTScrolling

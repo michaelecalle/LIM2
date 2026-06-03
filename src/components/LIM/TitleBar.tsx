@@ -2083,6 +2083,7 @@ ${coords}
     const handler = (e: Event) => {
       const ce = e as CustomEvent
       if (!!ce.detail?.enabled && !ce.detail?.standby) {
+        if (demoStartedRef.current) return  // deja demarre → ignorer les sorties de stand-by suivantes
         demoStartedRef.current = true
 
         // 1. Enregistrer l’heure reelle AVANT tout patch
@@ -4533,22 +4534,20 @@ const autoScrollButtonActive = autoScroll || autoScrollStartedOnce
   )
 const IconFile = () => null
   return (
-    <header id="lim-titlebar-root" className="surface-header rounded-2xl px-3 py-2 shadow-sm">
+    <header id="lim-titlebar-root" className="surface-header rounded-2xl px-3 py-2 shadow-sm" style={{ position: 'relative', zIndex: 2000 }}>
       {/* ── Overlay de luminosité ──────────────────────────────────────────────
-          Remplace filter:brightness() sur html/body/root/main.
-          • z-index:1  → au-dessus du contenu (z=auto) mais SOUS toutes les
-            modales (z=9999–99999), ce qui corrige le bug d’empilement.
+          • z-index:1000 → au-dessus de tout le contenu FT (header sticky z-10,
+            flèche GPS z-999) pour que la luminosité s’applique partout.
+          • TitleBar root (z-2000) est AU-DESSUS de l’overlay → TitleBar
+            n’est jamais atténué ; modales/viewers (fixed z-9998+) aussi.
           • pointer-events:none → les interactions passent à travers.
-          • Aucun filter sur les éléments racine → aucun stacking context
-            parasite → les modales (fixed z-[99999]) s’affichent correctement
-            par-dessus tout le contenu, y compris l’en-tête de la fiche train.
           ──────────────────────────────────────────────────────────────────── */}
       <div
         aria-hidden="true"
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 1,
+          zIndex: 1000,
           pointerEvents: 'none',
           backgroundColor: `rgba(0,0,0,${Math.max(0, 1 - brightness).toFixed(3)})`,
           transition: 'background-color 0.28s ease',
