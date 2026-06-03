@@ -66,7 +66,10 @@ function applyEvent(ev: DemoEvent) {
   const { kind, payload } = ev
   switch (kind) {
     case 'gps:position':
-      dispatch('gps:position', payload)
+      // Remplacer le timestamp du payload (date du log original, ex. avril 2026)
+      // par Date.now() qui retourne l'heure virtuelle en mode demo.
+      // Sans ca, FT.tsx calcule un age de ~40 jours et marque la position comme perimee.
+      dispatch('gps:position', { ...(payload ?? {}), timestamp: Date.now() })
       return
     case 'gps:state-change': {
       const state = payload?.nextState
