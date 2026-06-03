@@ -31,6 +31,9 @@ import { LIGNE_FT_NORMALIZED } from '../../data/normalized/ligneFT.normalized'
 import ManualPdfCanvasViewer from './ManualPdfCanvasViewer'
 import ManualViewer from './ManualViewer'
 import GuiaViewer from './GuiaViewer'
+import DemoLoader, { type DemoData } from './DemoLoader'
+import DemoRunner from './DemoRunner'
+import DemoTouchIndicator from './DemoTouchIndicator'
 import {
   type LIMFields,
   type ManualTrainOption,
@@ -905,6 +908,66 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   }
 
   // Construit le ZIP (log + PDF) sans l’exporter ni l’uploader.
+  // Traitement du ZIP de demo : parse le log, demarre le mode mixte sans GPS reel
+  const handleDemoLoaded = async (data: DemoData) => {
+    setDemoLoaderOpen(false)
+
+    // Parser le log : normaliser en evenements relatifs
+    const lines = data.logText.split(/\r?\n/).filter(l => l.trim())
+    const parsed: Array<{ t: string; kind: string; payload: any }> = []
+    for (const line of lines) {
+      try { parsed.push(JSON.parse(line)) } catch {}
+    }
+    if (!parsed.length) return
+    const t0 = Date.parse(parsed[0].t)
+    demoT0MsRef.current = t0  // memoriser pour l’horloge virtuelle
+    demoWallStartMsRef.current = null
+    wasReplaySessionRef.current = true // bloquer export/upload au Stop (meme logique que replay)
+    const events = parsed
+      .filter(e => typeof e.kind === 'string' && typeof e.t === 'string')
+      .map(e => ({ tMs: Math.max(0, Date.parse(e.t) - t0), kind: e.kind, payload: e.payload ?? {} }))
+      .sort((a, b) => a.tMs - b.tMs)
+
+    setDemoEvents(events)
+    demoStartedRef.current = false
+    setDemoRunning(false)
+    setDemoActive(true)
+
+    // Simulation ON → empeche le demarrage du GPS reel
+    // (les boutons Play et Stop contournent ce blocage quand demoActive)
+    window.dispatchEvent(new CustomEvent('sim:enable', { detail: { enabled: true } }))
+
+    currentPdfFileRef.current = data.pdfFile
+    startupLaunchModeRef.current = 'mixed'
+
+    // lim:pdf-raw → selecteur LTV
+    window.dispatchEvent(new CustomEvent('lim:pdf-raw', {
+      detail: { file: data.pdfFile, storage: 'demo' },
+    }))
+
+    setPdfMode('green')
+
+    // Identification du train depuis le PDF (meme logique que mode mixte normal)
+    try {
+      const identified = await identifyMixedTrainFromPdf(data.pdfFile)
+      if (identified) {
+        startNormalizedJourneyFromTrain(identified.train, {
+          source: 'demo',
+          activeMode: 'mixed',
+          keepPdf: true,
+          closeManualImport: false,
+        })
+        // startNormalizedJourneyFromTrain remet wasReplaySessionRef a false en interne
+        // → on le re-pose ici pour que le Stop ne genere pas de log
+        wasReplaySessionRef.current = true
+      } else {
+        openMixedFallbackTrainSelection()
+      }
+    } catch {
+      openMixedFallbackTrainSelection()
+    }
+  }
+
   const buildCurrentZipBundle = async (): Promise<{ blob: Blob; filename: string } | null> => {
     const builtLog = buildTestLogFile()
     if (!builtLog.ok || !builtLog.blob) return null
@@ -1989,7 +2052,43 @@ ${coords}
   const [manualInitialPage, setManualInitialPage] = useState(1)
   const [manualInitialTocId, setManualInitialTocId] = useState('cover')
   const [guiaOpen, setGuiaOpen] = useState(false)
+
+  // ----- MODE DEMO -----
+  const [demoLoaderOpen, setDemoLoaderOpen] = useState(false)
+  const [demoActive, setDemoActive] = useState(false)
+  const [demoEvents, setDemoEvents] = useState<Array<{ tMs: number; kind: string; payload: any }>>([])
+  const [demoRunning, setDemoRunning] = useState(false)
+  // Lance l’injection GPS quand autoScroll devient actif pour la premiere fois en mode demo
+  const demoStartedRef = useRef(false)
+  const demoT0MsRef = useRef<number | null>(null)       // timestamp epoch du 1er event du log
+  const demoWallStartMsRef = useRef<number | null>(null) // instant mur au demarrage de la demo
   const settingsDetailsRef = useRef<HTMLDetailsElement | null>(null)
+
+  // Demo : demarrer l’injection GPS quand l’autoscroll devient actif (sortie du stand-by initial)
+  useEffect(() => {
+    if (!demoActive || demoStartedRef.current) return
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent
+      if (!!ce.detail?.enabled && !ce.detail?.standby) {
+        demoStartedRef.current = true
+        demoWallStartMsRef.current = Date.now()
+        // Exposer l’horloge demo : FT.tsx l’utilise pour le delta horaire
+        // nowIso() retourne t0_du_log + elapsed → delta = 0 au depart
+        const t0 = demoT0MsRef.current
+        if (t0 !== null) {
+          ;(window as any).__limgptDemo = {
+            nowIso: () => {
+              if (demoWallStartMsRef.current === null) return null
+              return new Date(t0 + (Date.now() - demoWallStartMsRef.current)).toISOString()
+            },
+          }
+        }
+        setDemoRunning(true)
+      }
+    }
+    window.addEventListener('ft:auto-scroll-change', handler as EventListener)
+    return () => window.removeEventListener('ft:auto-scroll-change', handler as EventListener)
+  }, [demoActive])
 
   // Listener externe : ouvrir le manuel sur une page précise depuis l’app
   useEffect(() => {
@@ -4726,6 +4825,12 @@ style={{
             {clock}
           </div>
 
+          {demoActive && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-900 tracking-widest">
+              DEMO
+            </span>
+          )}
+
           {scheduleDelta && (
             <span
               className={
@@ -4758,7 +4863,7 @@ style={{
                 onClick={() => {
                   if (autoScrollStartedOnce) return
 
-                  if (simulationEnabled) {
+                  if (simulationEnabled && !demoActive) {
                     logTestEvent('ui:blocked', { control: 'autoScroll', source: 'titlebar' })
                     return
                   }
@@ -5197,12 +5302,14 @@ setAutoScrollStartedOnce(next)
               <button
                 type="button"
                 onClick={async () => {
-                  if (simulationEnabled) {
+                  if (simulationEnabled && !demoActive) {
                     logTestEvent('ui:blocked', { control: 'stopButton', source: 'titlebar' })
                     return
                   }
 
-                  const ok = window.confirm('Terminer le trajet et exporter les logs ?')
+                  const ok = window.confirm(
+                    demoActive ? 'Quitter le mode demo ?' : 'Terminer le trajet et exporter les logs ?'
+                  )
                   if (!ok) return
 
                   // Arrêt immédiat des automatismes
@@ -5227,7 +5334,7 @@ setAutoScrollStartedOnce(next)
                     setTestRecording(false)
                   }
 
-                  if (!wasReplaySessionRef.current) {
+                  if (!wasReplaySessionRef.current && !demoActive) {
                     const zipData = await buildCurrentZipBundle()
                     if (zipData) {
                       setStopUploadStatus('uploading')
@@ -5243,6 +5350,18 @@ setAutoScrollStartedOnce(next)
                   }
 
                   setStopUploadStatus('idle')
+
+                  // Reset mode demo
+                  if (demoActive) {
+                    setDemoActive(false)
+                    setDemoRunning(false)
+                    setDemoEvents([])
+                    demoStartedRef.current = false
+                    demoT0MsRef.current = null
+                    demoWallStartMsRef.current = null
+                    delete (window as any).__limgptDemo
+                    window.dispatchEvent(new CustomEvent('sim:enable', { detail: { enabled: false } }))
+                  }
 
                   // Reset complet de l’app
                   setPdfMode('blue')
@@ -5553,7 +5672,21 @@ setAutoScrollStartedOnce(next)
               >
                 <div className="text-left">
                   <div className="font-semibold">Guia BSN</div>
-                  <div className="text-[11px] opacity-70">Livret d’aide à la conduite</div>
+                  <div className="text-[11px] opacity-70">Livret d’aide a la conduite</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (settingsDetailsRef.current) settingsDetailsRef.current.open = false
+                  setDemoLoaderOpen(true)
+                }}
+                className="w-full flex items-start justify-between gap-3 py-1 cursor-pointer select-none rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition px-0"
+              >
+                <div className="text-left">
+                  <div className="font-semibold">Mode demo</div>
+                  <div className="text-[11px] opacity-70">Lancer une demonstration GPS</div>
                 </div>
               </button>
 
@@ -5583,6 +5716,17 @@ setAutoScrollStartedOnce(next)
           <ManualViewer open={manualOpen} dark={dark} onClose={() => setManualOpen(false)} initialPage={manualInitialPage} initialTocId={manualInitialTocId} />
 
                     <GuiaViewer open={guiaOpen} dark={dark} onClose={() => setGuiaOpen(false)} />
+
+          {demoLoaderOpen && (
+            <DemoLoader
+              dark={dark}
+              onLoaded={handleDemoLoaded}
+              onClose={() => setDemoLoaderOpen(false)}
+            />
+          )}
+
+          <DemoRunner events={demoEvents} running={demoRunning} />
+          <DemoTouchIndicator active={demoActive} />
 
           {aboutOpen && createPortal(
             <div

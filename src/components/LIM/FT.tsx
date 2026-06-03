@@ -940,7 +940,7 @@ if (referenceMode === "GPS") {
         const base = autoScrollBaseRef.current;
         if (base) {
           // heure "effective" à la seconde (minutes float) — heure replay si disponible
-          const replayIsoTick = (() => { try { return (window as any).__limgptReplay?.nowIso?.() ?? null; } catch { return null; } })();
+          const replayIsoTick = (() => { try { return (window as any).__limgptDemo?.nowIso?.() ?? (window as any).__limgptReplay?.nowIso?.() ?? null; } catch { return null; } })();
           const now = replayIsoTick ? new Date(replayIsoTick) : new Date();
           const nowMinFloat =
             now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
@@ -1751,7 +1751,7 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
     // Base "classique" : à partir de la première heure FT dispo
     // ✅ Robuste : on lit la première heure réellement affichée dans le DOM (priorité réel, sinon théorique)
     const captureBaseFromFirstRow = () => {
-      const replayIso = (() => { try { return (window as any).__limgptReplay?.nowIso?.() ?? null; } catch { return null; } })();
+      const replayIso = (() => { try { return (window as any).__limgptDemo?.nowIso?.() ?? (window as any).__limgptReplay?.nowIso?.() ?? null; } catch { return null; } })();
       const now = replayIso ? new Date(replayIso) : new Date();
       const nowMin = now.getHours() * 60 + now.getMinutes();
       const nowMinFloat = nowMin + now.getSeconds() / 60;
@@ -1803,7 +1803,7 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
 
   // Base "mode Standby" : à partir de la ligne sélectionnée
   const captureBaseFromRowIndex = (rowIndex: number) => {
-    const replayIso = (() => { try { return (window as any).__limgptReplay?.nowIso?.() ?? null; } catch { return null; } })();
+    const replayIso = (() => { try { return (window as any).__limgptDemo?.nowIso?.() ?? (window as any).__limgptReplay?.nowIso?.() ?? null; } catch { return null; } })();
     const now = recalibrateAtTimeRef.current ?? (replayIso ? new Date(replayIso) : new Date());
     recalibrateAtTimeRef.current = null;
     const nowMin = now.getHours() * 60 + now.getMinutes();
@@ -2013,7 +2013,7 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
 
       // heure courante : heure replay si disponible, sinon heure réelle
       const replayNowIso = (() => {
-        try { return (window as any).__limgptReplay?.nowIso?.() ?? null; } catch { return null; }
+        try { return (window as any).__limgptDemo?.nowIso?.() ?? (window as any).__limgptReplay?.nowIso?.() ?? null; } catch { return null; }
       })();
       const now = replayNowIso ? new Date(replayNowIso) : new Date();
       const nowMin = now.getHours() * 60 + now.getMinutes();
