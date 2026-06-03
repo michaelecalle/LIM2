@@ -213,6 +213,13 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const [ftViewMode, setFtViewMode] = useState<'AUTO' | 'ES' | 'FR'>('ES')
   // ✅ Indique que le mode AUTO est engagé (même après bascule vers ES/FR)
   const [autoEngaged, setAutoEngaged] = useState(false)
+
+  // autoEngaged passe a true quand le conducteur conduit activement (autoScroll actif, hors standby)
+  // Necessaire pour que la detection d’arret en gare GPS (Figueres) s’active
+  useEffect(() => {
+    if (autoScroll && !standbyMode) setAutoEngaged(true)
+  }, [autoScroll, standbyMode])
+
   // ✅ Verrou : après le 1er clic AUTO, on ne refait plus de "sélection auto" (hors Figueres)
   const autoLockedRef = useRef(false)
   const autoInitialTargetRef = useRef<'ES' | 'FR' | null>(null)
