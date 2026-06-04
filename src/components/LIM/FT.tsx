@@ -2157,6 +2157,12 @@ window.dispatchEvent(
     detail: { enabled: true, standby: true },
   })
 );
+// Afficher le badge ARRÊT (même comportement visuel que le GPS ARRET)
+window.dispatchEvent(
+  new CustomEvent("lim:station-arret", {
+    detail: { active: true, source: "horaire" },
+  })
+);
             // On s’arrête là pour cette minute : plus de recalage auto
             return;
             } // fin else (garde-fou PK OK)
