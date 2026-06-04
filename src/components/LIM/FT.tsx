@@ -1207,6 +1207,12 @@ if (referenceMode === "GPS") {
   const lastPkRef = React.useRef<number | null>(null);
   const lastPkChangeAtRef = React.useRef<number>(0);
 
+  // Garde "une seule évaluation ARRÊT par épisode de figeage".
+  // Évite la race watchdog/gps:position : peu importe quel chemin bascule en RED
+  // en premier, l'évaluation ARRÊT se fait une fois quand le PK est figé-rouge,
+  // puis se réarme dès que le PK rebouge.
+  const freezeArretEvaluatedRef = React.useRef<boolean>(false);
+
   // ===== Watchdog GPS : re-évalue l'état même s'il n'y a plus d'events gps:position =====
   useEffect(() => {
     const WATCHDOG_INTERVAL_MS = 1000;
@@ -2069,7 +2075,9 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
       }
 
       // 🔁 PAUSE AUTOMATIQUE SUR HEURE D’ARRIVÉE
-      if (referenceModeRef.current === "HORAIRE") {
+      // Garde : si un ARRÊT GPS est déjà actif, on ne double-déclenche pas
+      // via le fallback horaire (la détection GPS gère déjà l’arrêt + le départ).
+      if (referenceModeRef.current === "HORAIRE" && stationArretRef.current === null) {
         const arrivalList = arrivalEventsRef.current || [];
         if (Array.isArray(arrivalList) && arrivalList.length > 0) {
           const matchingArrival = arrivalList.find(
@@ -3482,10 +3490,13 @@ const isRelock = acceptedMode === "relock";
           if (dPk >= GPS_FREEZE_PK_DELTA_KM) {
             lastPkChangeAtRef.current = nowTs;
             lastPkRef.current = pk;
+            // Le PK rebouge : on réarme l'évaluation ARRÊT pour le prochain figeage.
+            freezeArretEvaluatedRef.current = false;
           }
         } else {
           lastPkRef.current = pk;
           lastPkChangeAtRef.current = nowTs;
+          freezeArretEvaluatedRef.current = false;
         }
       }
 
@@ -3552,10 +3563,16 @@ const isRelock = acceptedMode === "relock";
         nextState = "GREEN";
       }
 
-      // ✅ vrai uniquement AU MOMENT où on bascule en RED à cause du figeage
+      // ✅ ARRÊT figé-rouge : level-triggered (pas edge-triggered).
+      // On NE dépend PLUS de prevGpsState !== "RED" : sur iPad le watchdog
+      // (setInterval 1s) peut basculer gpsStateRef en RED avant le prochain
+      // gps:position, ce qui "volait" l'edge et empêchait l'activation ARRÊT.
+      // Désormais on déclenche dès que le PK est figé-rouge, une seule fois
+      // par épisode (freezeArretEvaluatedRef), tant qu'aucun ARRÊT n'est actif.
       const enteredRedFromFreeze =
-        prevGpsState !== "RED" && nextState === "RED" && pkFrozenRed === true &&
-        stationArretRef.current === null; // guard : évite le re-déclenchement pendant ARRÊT
+        pkFrozenRed === true &&
+        stationArretRef.current === null &&
+        freezeArretEvaluatedRef.current === false;
 
       // ✅ utile pour log : entrée ORANGE provoquée par PK incohérent
       const enteredOrangeFromPkIncoherent =
@@ -3771,6 +3788,10 @@ const isRelock = acceptedMode === "relock";
       // Si on ENTRE en RED suite à PK figé >= 30s, et si le PK figé est proche d'une gare commerciale,
       // alors on passe automatiquement en Standby horaire avec cette gare sélectionnée.
       if (enteredRedFromFreeze && typeof pk === "number" && Number.isFinite(pk)) {
+        // On marque l'épisode comme évalué : une seule évaluation ARRÊT
+        // par figeage (réarmé quand le PK rebouge).
+        freezeArretEvaluatedRef.current = true;
+
         // ✅ Log "entrée en RED depuis freeze" (avant décision proximité gare)
         logTestEvent("gps:freeze-red:entered", {
           pk,
