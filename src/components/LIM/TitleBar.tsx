@@ -5458,8 +5458,24 @@ setAutoScrollStartedOnce(next)
 
                   setStopUploadStatus('idle')
 
-                  // Reset mode demo
+                  // Reset mode demo : exporter le log de debug localement (diagnostic iPad)
                   if (demoActive) {
+                    try {
+                      const built = buildTestLogFile()
+                      if (built.ok && built.blob) {
+                        const url = URL.createObjectURL(built.blob)
+                        const a = document.createElement('a')
+                        a.href = url
+                        a.download = `demo-debug-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.log`
+                        document.body.appendChild(a)
+                        a.click()
+                        document.body.removeChild(a)
+                        setTimeout(() => URL.revokeObjectURL(url), 2000)
+                      }
+                    } catch (e) {
+                      console.warn('[TitleBar] Export log demo impossible', e)
+                    }
+
                     setDemoActive(false)
                     setDemoRunning(false)
                     setDemoEvents([])
