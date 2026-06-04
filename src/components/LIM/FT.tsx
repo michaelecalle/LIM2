@@ -1621,15 +1621,17 @@ detail: { enabled: true, standby: true },
           standbyLockedRowRef.current = null;
         }
 
-        // Sortie de standby horaire : annuler aussi le marqueur ARRÊT si présent
-        if (stationArretRef.current != null) {
-          stationArretRef.current = null;
-          window.dispatchEvent(
-            new CustomEvent("lim:station-arret", {
-              detail: { active: false, source: "horaire_resume" },
-            })
-          );
-        }
+        // Sortie de standby : toujours effacer le marqueur ARRÊT.
+        // Le badge ARRÊT peut avoir été affiché soit par le mode GPS ARRET
+        // (stationArretRef posé), soit par le fallback HORAIRE (stationArretRef
+        // null mais badge affiché via lim:station-arret). On efface dans les
+        // deux cas pour éviter que le mot ARRÊT reste figé après la reprise.
+        stationArretRef.current = null;
+        window.dispatchEvent(
+          new CustomEvent("lim:station-arret", {
+            detail: { active: false, source: "horaire_resume" },
+          })
+        );
       }
 
       console.log(
