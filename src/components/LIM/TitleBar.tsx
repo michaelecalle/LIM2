@@ -128,7 +128,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     try {
       const value = localStorage.getItem(STARTUP_MODE_STORAGE_KEY)
 
-      return value === 'mixed' || value === 'manual' || value === 'pdf'
+      return value === 'mixed' || value === 'manual' || value === 'pdf' || value === '2026'
         ? value
         : null
     } catch {
@@ -568,6 +568,46 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     setOcrOnlineEnabled(ocrOnlineEnabled)
   }, [ocrOnlineEnabled])
 
+  // TEMPORAIRE (présentation vidéo) : afficher les appuis (cercle orange) dans
+  // toute l’application, dès l’ouverture. Persisté en localStorage.
+  const [touchIndicatorEnabled, setTouchIndicatorEnabled] = useState(() => {
+    try { return localStorage.getItem('lim:touch-indicator') === '1' } catch { return false }
+  })
+
+  useEffect(() => {
+    try { localStorage.setItem('lim:touch-indicator', touchIndicatorEnabled ? '1' : '0') } catch {}
+  }, [touchIndicatorEnabled])
+
+  // Menu caché (dev / présentation) : appui LONG sur la roue dentée.
+  // Appui court = vrai menu paramètres ; appui long = ce menu caché.
+  const [hiddenMenuOpen, setHiddenMenuOpen] = useState(false)
+  const settingsLongPressTimerRef = useRef<number | null>(null)
+  const settingsLongPressTriggeredRef = useRef(false)
+  const SETTINGS_LONG_PRESS_MS = 500
+
+  const clearSettingsLongPress = () => {
+    if (settingsLongPressTimerRef.current != null) {
+      window.clearTimeout(settingsLongPressTimerRef.current)
+      settingsLongPressTimerRef.current = null
+    }
+  }
+
+  const startSettingsLongPress = () => {
+    settingsLongPressTriggeredRef.current = false
+    clearSettingsLongPress()
+    settingsLongPressTimerRef.current = window.setTimeout(() => {
+      settingsLongPressTimerRef.current = null
+      settingsLongPressTriggeredRef.current = true
+      // Fermer le vrai menu s’il était ouvert, ouvrir le menu caché
+      if (settingsDetailsRef.current?.hasAttribute('open')) {
+        settingsDetailsRef.current.removeAttribute('open')
+      }
+      setHiddenMenuOpen(true)
+    }, SETTINGS_LONG_PRESS_MS)
+  }
+
+  useEffect(() => () => clearSettingsLongPress(), [])
+
   const [pdfLoading, setPdfLoading] = useState(false)
 
     const [pdfLoadingErrorMessage, setPdfLoadingErrorMessage] = useState<string | null>(null)
@@ -920,7 +960,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
 
   // Construit le ZIP (log + PDF) sans l’exporter ni l’uploader.
   // Traitement du ZIP de demo : parse le log, demarre le mode mixte sans GPS reel
-  const handleDemoLoaded = async (data: DemoData) => {
+  const handleDemoLoaded = (data: DemoData) => {
     setDemoLoaderOpen(false)
 
     // Parser le log : normaliser en evenements relatifs
@@ -931,71 +971,65 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     }
     if (!parsed.length) return
     const t0 = Date.parse(parsed[0].t)
-    demoT0MsRef.current = t0  // memoriser pour l’horloge virtuelle
-    demoWallStartMsRef.current = null
-    wasReplaySessionRef.current = true // bloquer export/upload au Stop (meme logique que replay)
-    demoActiveRef.current = true       // bloquer startGpsWatch avant meme le premier Play
     const events = parsed
       .filter(e => typeof e.kind === 'string' && typeof e.t === 'string')
       .map(e => ({ tMs: Math.max(0, Date.parse(e.t) - t0), kind: e.kind, payload: e.payload ?? {} }))
       .sort((a, b) => a.tMs - b.tMs)
 
-    setDemoEvents(events)
-    demoStartedRef.current = false
-    setDemoRunning(false)
-    setDemoActive(true)
+    // Mémoriser le contexte démo : injecté au démarrage du parcours (confirm modale)
+    demoCtxRef.current = { events, t0 }
 
-    // Simulation ON → empeche le demarrage du GPS reel
-    // (les boutons Play et Stop contournent ce blocage quand demoActive)
-    window.dispatchEvent(new CustomEvent('sim:enable', { detail: { enabled: true } }))
+    // Dériver le numéro de train (espagnol) depuis le nom du ZIP : 1ère suite de 3-5 chiffres
+    const m = data.zipName.match(/\d{3,5}/)
+    const rawNum = m ? m[0] : null
+    // Faire correspondre à une option exacte (comparaison numérique = tolère un padding)
+    const matched = rawNum
+      ? (manualImportTrainOptions.find(t => t.trainNumber === rawNum)
+         ?? manualImportTrainOptions.find(t => Number(t.trainNumber) === Number(rawNum)))
+      : null
+    const trainNum = matched ? matched.trainNumber : rawNum
 
-    currentPdfFileRef.current = data.pdfFile
-    startupLaunchModeRef.current = 'mixed'
-
-    // lim:pdf-raw → selecteur LTV
-    window.dispatchEvent(new CustomEvent('lim:pdf-raw', {
-      detail: { file: data.pdfFile, storage: 'demo' },
-    }))
-
-    setPdfMode('green')
-
-    // Identification du train depuis le PDF (meme logique que mode mixte normal)
-    try {
-      const identified = await identifyMixedTrainFromPdf(data.pdfFile)
-      if (identified) {
-        startNormalizedJourneyFromTrain(identified.train, {
-          source: 'demo',
-          activeMode: 'mixed',
-          keepPdf: true,
-          closeManualImport: false,
-        })
-        // startNormalizedJourneyFromTrain remet wasReplaySessionRef a false en interne
-        // → on le re-pose ici pour que le Stop ne genere pas de log
-        wasReplaySessionRef.current = true
-        // Sur iPad, simulationEnabled peut etre lu depuis une closure perimee (false)
-        // et startGpsWatch() peut avoir ete appele. On arrete le GPS reel par securite.
-        stopGpsWatch()
-      } else {
-        openMixedFallbackTrainSelection()
-      }
-    } catch {
-      openMixedFallbackTrainSelection()
-    }
+    // Armer la démo : on n’ouvre PAS la modale tout de suite.
+    // Elle s’ouvrira au clic sur Démarrer (comme en utilisation normale).
+    setMode2026DemoPdfs(data.pdfFiles)
+    setMode2026LockedTrain(trainNum)
+    setDemoArmed(true)
   }
 
   const handleMode2026Confirm = (
     train: ManualTrainOption,
     ltvData: NormalizedLtvFile,
-    pdfFile: File
+    _ltvPdfFile: File,
+    ftPdfFile: File | null
   ) => {
     setMode2026Open(false)
     ltvPdfDataRef.current = ltvData
 
-    // PDF pour mode secours (recadrage)
-    currentPdfFileRef.current = pdfFile
-    window.dispatchEvent(new CustomEvent('lim:pdf-raw', {
-      detail: { file: pdfFile, storage: 'local' },
-    }))
+    const demoCtx = demoCtxRef.current  // non-null si on démarre depuis le mode démo
+
+    // Activation DÉMO (avant le démarrage du parcours, pour bloquer le GPS réel)
+    if (demoCtx) {
+      demoT0MsRef.current = demoCtx.t0
+      demoWallStartMsRef.current = null
+      demoStartedRef.current = false
+      demoActiveRef.current = true        // bloque startGpsWatch
+      setDemoEvents(demoCtx.events)
+      setDemoRunning(false)
+      setDemoActive(true)
+      wasReplaySessionRef.current = true  // bloque export/upload au Stop
+      window.dispatchEvent(new CustomEvent('sim:enable', { detail: { enabled: true } }))
+    }
+
+    // Le PDF fiche train (s’il est fourni) est le document affiché en mode SECOURS.
+    // Le PDF LTV, lui, sert uniquement à l’extraction des données LTV (déjà parsé).
+    if (ftPdfFile) {
+      currentPdfFileRef.current = ftPdfFile
+      window.dispatchEvent(new CustomEvent('lim:pdf-raw', {
+        detail: { file: ftPdfFile, storage: demoCtx ? 'demo' : 'local' },
+      }))
+    } else {
+      currentPdfFileRef.current = null
+    }
 
     startNormalizedJourneyFromTrain(train, {
       source: 'mode2026_import',
@@ -1003,6 +1037,16 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       keepPdf: true,
       closeManualImport: false,
     })
+
+    if (demoCtx) {
+      // startNormalizedJourneyFromTrain remet wasReplaySessionRef à false en interne → re-poser
+      wasReplaySessionRef.current = true
+      stopGpsWatch()  // sécurité iPad (closure simulationEnabled périmée)
+      demoCtxRef.current = null
+      setDemoArmed(false)
+      setMode2026LockedTrain(null)
+      setMode2026DemoPdfs([])
+    }
   }
 
   const buildCurrentZipBundle = async (): Promise<{ blob: Blob; filename: string } | null> => {
@@ -2093,6 +2137,13 @@ ${coords}
   // ----- MODE 2026 -----
   const [mode2026Open, setMode2026Open] = useState(false)
   const ltvPdfDataRef = useRef<NormalizedLtvFile | null>(null)
+  // Mode 2026 en contexte DÉMO : train verrouillé + PDF issus du ZIP
+  const [mode2026LockedTrain, setMode2026LockedTrain] = useState<string | null>(null)
+  const [mode2026DemoPdfs, setMode2026DemoPdfs] = useState<File[]>([])
+  // Démo "armée" : ZIP chargé, en attente du clic Démarrer pour ouvrir la modale guidée
+  const [demoArmed, setDemoArmed] = useState(false)
+  // Évènements GPS du log de démo en attente (injectés au démarrage du parcours)
+  const demoCtxRef = useRef<{ events: Array<{ tMs: number; kind: string; payload: any }>; t0: number } | null>(null)
 
   // ----- MODE DEMO -----
   const [demoLoaderOpen, setDemoLoaderOpen] = useState(false)
@@ -2521,6 +2572,12 @@ ${coords}
   }
 
   const handleStartClick = () => {
+    // Démo armée : le bouton Démarrer ouvre la modale Mode 2026 guidée.
+    if (demoArmed) {
+      setMode2026Open(true)
+      return
+    }
+
     if (simulationEnabled) {
       logTestEvent('ui:blocked', { control: 'startButton', source: 'titlebar' })
       return
@@ -4932,7 +4989,7 @@ style={{
             {clock}
           </div>
 
-          {demoActive && (
+          {(demoActive || demoArmed) && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-900 tracking-widest">
               DEMO
             </span>
@@ -5296,7 +5353,9 @@ setAutoScrollStartedOnce(next)
                     ? 'PDF'
                     : storedStartupMode === 'mixed'
                       ? '🧩'
-                      : null
+                      : storedStartupMode === '2026'
+                        ? '📋'
+                        : null
 
               const startupModeTitle =
                 storedStartupMode === 'manual'
@@ -5305,12 +5364,30 @@ setAutoScrollStartedOnce(next)
                     ? 'Mode de démarrage sélectionné : PDF historique'
                     : storedStartupMode === 'mixed'
                       ? 'Mode de démarrage sélectionné : mixte'
-                      : 'Aucun mode de démarrage enregistré'
+                      : storedStartupMode === '2026'
+                        ? 'Mode de démarrage sélectionné : 2026'
+                        : 'Aucun mode de démarrage enregistré'
 
               const startupModeIconClassName =
                 storedStartupMode === 'pdf'
-                  ? 'h-8 w-8 rounded-md bg-red-600 text-white flex items-center justify-center text-[10px] font-bold select-none'
-                  : 'h-8 w-8 rounded-md bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100 flex items-center justify-center text-sm select-none'
+                  ? 'h-8 w-8 rounded-md bg-red-600 text-white flex items-center justify-center text-[10px] font-bold select-none cursor-pointer'
+                  : 'h-8 w-8 rounded-md bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100 flex items-center justify-center text-sm select-none cursor-pointer'
+
+              const openStartupModeChoice = () => {
+                if (simulationEnabled) {
+                  logTestEvent('ui:blocked', { control: 'startupModeIndicator', source: 'titlebar' })
+                  return
+                }
+                const mode = readStoredStartupMode()
+                setStartupModeChoice(mode ?? 'mixed')
+                setStartupModeChoiceIntent('settings')
+                setStartupModeChoiceOpen(true)
+                logTestEvent('ui:startup-mode-choice:open', {
+                  source: 'startup_mode_indicator',
+                  reason: mode ? 'edit_stored_mode' : 'no_stored_mode',
+                  storedMode: mode,
+                })
+              }
 
               return (
                 <div className="flex items-center gap-1">
@@ -5324,13 +5401,15 @@ setAutoScrollStartedOnce(next)
                   </button>
 
                   {startupModeIcon && (
-                    <span
+                    <button
+                      type="button"
+                      onClick={openStartupModeChoice}
                       className={startupModeIconClassName}
-                      title={startupModeTitle}
-                      aria-label={startupModeTitle}
+                      title={`${startupModeTitle} — appuyer pour changer`}
+                      aria-label={`${startupModeTitle}. Appuyer pour changer le mode de démarrage.`}
                     >
                       {startupModeIcon}
-                    </span>
+                    </button>
                   )}
                 </div>
               )
@@ -5477,6 +5556,7 @@ setAutoScrollStartedOnce(next)
                     }
 
                     setDemoActive(false)
+                    setDemoArmed(false)
                     setDemoRunning(false)
                     setDemoEvents([])
                     demoStartedRef.current = false
@@ -5515,8 +5595,21 @@ setAutoScrollStartedOnce(next)
           <details ref={settingsDetailsRef} className="relative">
             <summary
               className="list-none h-8 w-10 rounded-md bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100 flex items-center justify-center cursor-pointer select-none"
-              title="Paramètres"
+              title="Paramètres (appui long : menu avancé)"
               aria-label="Paramètres"
+              style={{ WebkitTouchCallout: 'none', touchAction: 'manipulation' }}
+              onPointerDown={startSettingsLongPress}
+              onPointerUp={clearSettingsLongPress}
+              onPointerLeave={clearSettingsLongPress}
+              onPointerCancel={clearSettingsLongPress}
+              onClick={(e) => {
+                // Si l’appui long a déclenché le menu caché, on bloque l’ouverture
+                // du menu natif <details>.
+                if (settingsLongPressTriggeredRef.current) {
+                  e.preventDefault()
+                  settingsLongPressTriggeredRef.current = false
+                }
+              }}
             >
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
                 <path
@@ -5633,129 +5726,7 @@ setAutoScrollStartedOnce(next)
                 </div>
               </button>
 
-              <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
 
-              <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
-                <span className="font-semibold">Mode test</span>
-                <input
-                  type="checkbox"
-                  checked={testModeEnabled}
-                  onChange={() => {
-                    if (simulationEnabled) {
-                      logTestEvent('ui:blocked', { control: 'testModeToggle', source: 'settings' })
-                      return
-                    }
-
-                    if (testModeEnabled) {
-                      const wantDisable = window.confirm(
-                        'Désactiver le mode test ?\n\n(Cela masque les fonctions de test, sans arrêter la session en cours ni décharger le PDF.)'
-                      )
-                      if (!wantDisable) return
-
-                      logTestEvent('ui:test:manual-disable', {
-                        source: 'settings_toggle',
-                        train: trainDisplay ?? null,
-                      })
-
-                      setTestModeEnabled(false)
-                      return
-                    }
-
-                    const wantEnable = window.confirm(
-                      'Activer le mode test ?\n\n(Cela réaffiche les fonctions de test sans démarrer un nouvel enregistrement.)'
-                    )
-                    if (!wantEnable) return
-
-                    logTestEvent('ui:test:manual-enable', {
-                      source: 'settings_toggle',
-                      train: trainDisplay ?? null,
-                      testRecording,
-                    })
-
-                    setTestModeEnabled(true)
-                  }}
-                  className="h-4 w-4 cursor-pointer accent-blue-600"
-                />
-              </label>
-
-              <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
-
-              <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
-                <span>OCR online</span>
-                <input
-                  type="checkbox"
-                  checked={ocrOnlineEnabled}
-                  onChange={() => {
-                    if (simulationEnabled) {
-                      logTestEvent('ui:blocked', { control: 'ocrOnlineToggle', source: 'settings' })
-                      return
-                    }
-
-                    const next = !ocrOnlineEnabled
-                    setOcrOnlineEnabledState(next)
-                    logTestEvent('settings:ocrOnline:set', { enabled: next, source: 'settings' })
-                  }}
-                  className="h-4 w-4 cursor-pointer accent-blue-600"
-                />
-              </label>
-
-              <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
-              {!testModeEnabled && (
-                <>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (simulationEnabled) {
-                        logTestEvent('ui:blocked', { control: 'exportLogs', source: 'settings' })
-                        return
-                      }
-
-                      logTestEvent('testlog:manual-export:click', {
-                        source: 'settings',
-                        mode: 'silent',
-                        train: trainDisplay ?? null,
-                      })
-
-                      try {
-                        const exported = await exportCurrentTestBundleLocal()
-                        if (!exported) {
-                          window.alert('Aucun élément de test à exporter.')
-                          logTestEvent('testlog:export:failed', {
-                            reason: 'no_events',
-                            source: 'settings_manual_export',
-                          })
-                        } else {
-                          logTestEvent('testlog:exported', {
-                            source: 'settings_manual_export',
-                          })
-                        }
-                      } catch (err: any) {
-                        window.alert('Export local du paquet de test impossible.')
-                        logTestEvent('testlog:export:failed', {
-                          reason: err?.message ?? String(err),
-                          source: 'settings_manual_export',
-                        })
-                      }
-                    }}
-                    className="w-full h-8 px-3 text-xs rounded-md bg-sky-600 text-white font-semibold flex items-center justify-center"
-                    title="Exporter manuellement le paquet de test de la session en cours"
-                  >
-                    Exporter log + PDF
-                  </button>
-
-                  <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
-                </>
-              )}
-              {testModeEnabled && (
-                <button
-                  type="button"
-                  onClick={() => window.dispatchEvent(new CustomEvent('replay:show'))}
-                  className="w-full h-8 px-3 text-xs rounded-md bg-amber-500 text-white font-semibold flex items-center justify-center"
-                  title="Ouvrir la barre de navigation replay"
-                >
-                  Replay
-                </button>
-              )}
 
 
               <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
@@ -5805,20 +5776,6 @@ setAutoScrollStartedOnce(next)
                 </div>
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (settingsDetailsRef.current) settingsDetailsRef.current.open = false
-                  setDemoLoaderOpen(true)
-                }}
-                className="w-full flex items-start justify-between gap-3 py-1 cursor-pointer select-none rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition px-0"
-              >
-                <div className="text-left">
-                <div className="font-semibold">Mode demo</div>
-                  <div className="text-[11px] opacity-70">Lancer une demonstration GPS</div>
-                </div>
-              </button>
-
               <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
 
               <button
@@ -5842,6 +5799,163 @@ setAutoScrollStartedOnce(next)
             </div>
           </details>
 
+          {/* ===== MENU CACHÉ (dev / présentation) — appui long sur la roue ===== */}
+          {hiddenMenuOpen && createPortal(
+            <div
+              className="fixed inset-0 z-[99999] flex items-start justify-end p-3"
+              onClick={() => setHiddenMenuOpen(false)}
+            >
+              <div
+                className="w-72 rounded-xl border shadow-lg p-3 text-xs mt-14"
+                style={{
+                  backgroundColor: dark ? '#18181b' : '#ffffff',
+                  color: dark ? '#f4f4f5' : '#18181b',
+                  borderColor: dark ? '#3f3f46' : '#e4e4e7',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[11px] font-semibold opacity-70">Menu avancé (dev)</div>
+                  <button
+                    type="button"
+                    onClick={() => setHiddenMenuOpen(false)}
+                    className="h-6 px-2 text-[11px] rounded-md bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100 font-semibold"
+                  >
+                    Fermer
+                  </button>
+                </div>
+
+                {/* Mode test */}
+                <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
+                  <span className="font-semibold">Mode test</span>
+                  <input
+                    type="checkbox"
+                    checked={testModeEnabled}
+                    onChange={() => {
+                      if (simulationEnabled) {
+                        logTestEvent('ui:blocked', { control: 'testModeToggle', source: 'hidden_menu' })
+                        return
+                      }
+                      if (testModeEnabled) {
+                        const wantDisable = window.confirm(
+                          'Désactiver le mode test ?\n\n(Cela masque les fonctions de test, sans arrêter la session en cours ni décharger le PDF.)'
+                        )
+                        if (!wantDisable) return
+                        logTestEvent('ui:test:manual-disable', { source: 'hidden_menu', train: trainDisplay ?? null })
+                        setTestModeEnabled(false)
+                        return
+                      }
+                      const wantEnable = window.confirm(
+                        'Activer le mode test ?\n\n(Cela réaffiche les fonctions de test sans démarrer un nouvel enregistrement.)'
+                      )
+                      if (!wantEnable) return
+                      logTestEvent('ui:test:manual-enable', { source: 'hidden_menu', train: trainDisplay ?? null, testRecording })
+                      setTestModeEnabled(true)
+                    }}
+                    className="h-4 w-4 cursor-pointer accent-blue-600"
+                  />
+                </label>
+
+                <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
+
+                {/* OCR online */}
+                <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
+                  <span>OCR online</span>
+                  <input
+                    type="checkbox"
+                    checked={ocrOnlineEnabled}
+                    onChange={() => {
+                      if (simulationEnabled) {
+                        logTestEvent('ui:blocked', { control: 'ocrOnlineToggle', source: 'hidden_menu' })
+                        return
+                      }
+                      const next = !ocrOnlineEnabled
+                      setOcrOnlineEnabledState(next)
+                      logTestEvent('settings:ocrOnline:set', { enabled: next, source: 'hidden_menu' })
+                    }}
+                    className="h-4 w-4 cursor-pointer accent-blue-600"
+                  />
+                </label>
+
+                <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
+
+                {/* Afficher les appuis */}
+                <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
+                  <span>Afficher les appuis (présentation)</span>
+                  <input
+                    type="checkbox"
+                    checked={touchIndicatorEnabled}
+                    onChange={() => setTouchIndicatorEnabled(v => !v)}
+                    className="h-4 w-4 cursor-pointer accent-blue-600"
+                  />
+                </label>
+
+                <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
+
+                {/* Mode démo */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHiddenMenuOpen(false)
+                    setDemoLoaderOpen(true)
+                  }}
+                  className="w-full flex items-start justify-between gap-3 py-1 cursor-pointer select-none rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition px-0"
+                >
+                  <div className="text-left">
+                    <div className="font-semibold">Mode demo</div>
+                    <div className="text-[11px] opacity-70">Lancer une demonstration GPS</div>
+                  </div>
+                </button>
+
+                <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
+
+                {/* Exporter log + PDF */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (simulationEnabled) {
+                      logTestEvent('ui:blocked', { control: 'exportLogs', source: 'hidden_menu' })
+                      return
+                    }
+                    logTestEvent('testlog:manual-export:click', { source: 'hidden_menu', mode: 'silent', train: trainDisplay ?? null })
+                    try {
+                      const exported = await exportCurrentTestBundleLocal()
+                      if (!exported) {
+                        window.alert('Aucun élément de test à exporter.')
+                        logTestEvent('testlog:export:failed', { reason: 'no_events', source: 'hidden_menu' })
+                      } else {
+                        logTestEvent('testlog:exported', { source: 'hidden_menu' })
+                      }
+                    } catch (err: any) {
+                      window.alert('Export local du paquet de test impossible.')
+                      logTestEvent('testlog:export:failed', { reason: err?.message ?? String(err), source: 'hidden_menu' })
+                    }
+                  }}
+                  className="w-full h-8 px-3 text-xs rounded-md bg-sky-600 text-white font-semibold flex items-center justify-center"
+                  title="Exporter manuellement le paquet de test de la session en cours"
+                >
+                  Exporter log + PDF
+                </button>
+
+                <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
+
+                {/* Replay */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHiddenMenuOpen(false)
+                    window.dispatchEvent(new CustomEvent('replay:show'))
+                  }}
+                  className="w-full h-8 px-3 text-xs rounded-md bg-amber-500 text-white font-semibold flex items-center justify-center"
+                  title="Ouvrir la barre de navigation replay"
+                >
+                  Replay
+                </button>
+              </div>
+            </div>,
+            document.body
+          )}
+
           <ManualViewer open={manualOpen} dark={dark} onClose={() => setManualOpen(false)} initialPage={manualInitialPage} initialTocId={manualInitialTocId} />
 
                     <GuiaViewer open={guiaOpen} dark={dark} onClose={() => setGuiaOpen(false)} />
@@ -5850,8 +5964,17 @@ setAutoScrollStartedOnce(next)
             <Mode2026Modal
               dark={dark}
               trainOptions={manualImportTrainOptions}
-              onClose={() => setMode2026Open(false)}
+              onClose={() => {
+                setMode2026Open(false)
+                // Fermer sans démarrer = annuler la démo armée (retour état normal)
+                demoCtxRef.current = null
+                setDemoArmed(false)
+                setMode2026LockedTrain(null)
+                setMode2026DemoPdfs([])
+              }}
               onConfirm={handleMode2026Confirm}
+              lockedTrainNumber={mode2026LockedTrain}
+              demoPdfFiles={mode2026DemoPdfs.length > 0 ? mode2026DemoPdfs : undefined}
             />
           )}
 
@@ -5864,7 +5987,7 @@ setAutoScrollStartedOnce(next)
           )}
 
           <DemoRunner events={demoEvents} running={demoRunning} />
-          <DemoTouchIndicator active={demoActive} />
+          <DemoTouchIndicator active={demoActive || touchIndicatorEnabled} />
 
           {aboutOpen && createPortal(
             <div

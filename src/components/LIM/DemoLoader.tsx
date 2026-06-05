@@ -1,4 +1,4 @@
-// src/components/LIM/DemoLoader.tsx
+﻿// src/components/LIM/DemoLoader.tsx
 // Modale de chargement du ZIP de demo (liste en ligne + chargement local).
 
 import { useEffect, useRef, useState } from 'react'
@@ -11,7 +11,7 @@ const DEMO_SUBFOLDER = 'demo'
 
 export type DemoData = {
   logText: string
-  pdfFile: File
+  pdfFiles: File[]   // tous les PDF du ZIP (LTV + fiche train), choix par l’utilisateur
   zipName: string
 }
 
@@ -60,12 +60,14 @@ export default function DemoLoader({ dark, onLoaded, onClose }: Props) {
     const buffer = await file.arrayBuffer()
     const entries = unzipSync(new Uint8Array(buffer))
     const logKey = Object.keys(entries).find(k => k.toLowerCase().endsWith('.log'))
-    const pdfKey = Object.keys(entries).find(k => k.toLowerCase().endsWith('.pdf'))
+    const pdfKeys = Object.keys(entries).filter(k => k.toLowerCase().endsWith('.pdf'))
     if (!logKey) throw new Error('Aucun fichier .log dans ce ZIP.')
-    if (!pdfKey) throw new Error('Aucun fichier .pdf dans ce ZIP.')
+    if (pdfKeys.length === 0) throw new Error('Aucun fichier .pdf dans ce ZIP.')
     const logText = new TextDecoder().decode(entries[logKey])
-    const pdfBlob = new File([entries[pdfKey]], pdfKey, { type: 'application/pdf' })
-    return { logText, pdfFile: pdfBlob, zipName: file.name }
+    const pdfFiles = pdfKeys
+      .sort((a, b) => a.localeCompare(b))
+      .map(k => new File([entries[k]], k, { type: 'application/pdf' }))
+    return { logText, pdfFiles, zipName: file.name }
   }
 
   const handleOnlineSelect = async (filename: string) => {

@@ -32,6 +32,7 @@ interface RawItem {
 }
 
 interface ParsedRow {
+  linea: string            // ligne ferroviaire d'origine (050 / 066)
   code: string
   sectionParts: string[]   // peut s'etaler sur 2 lignes
   via: string
@@ -95,10 +96,21 @@ function isSectionHeader(row: RawItem[]): boolean {
   return /L.{0,4}NEA\s+\d{3}/i.test(text)
 }
 
-function isLinea050Header(row: RawItem[]): boolean {
-  if (!isSectionHeader(row)) return false
+// Lignes ferroviaires dont on extrait les LTV.
+// 050 = ligne principale ; 066 = portion très courte (100 m à 10 km/h) où une
+// LTV est quasi impossible, mais la fonctionnalité doit exister au cas où.
+const TARGET_LINEAS = ['050', '066']
+
+// Retourne le numéro de ligne cible si la row est un en-tête de section cible,
+// sinon null.
+function targetLineaOf(row: RawItem[]): string | null {
+  if (!isSectionHeader(row)) return null
   const text = row.map(i => i.str).join(' ')
-  return /L.{0,4}NEA\s+050\b/i.test(text) || /\b050\b/.test(text)
+  for (const ln of TARGET_LINEAS) {
+    const re = new RegExp('L.{0,4}NEA\\s+' + ln + '\\b', 'i')
+    if (re.test(text) || row.some(i => i.str.trim() === ln)) return ln
+  }
+  return null
 }
 
 function isTableHeader(row: RawItem[]): boolean {
@@ -141,8 +153,11 @@ function normalizePk(raw: string): string {
   return raw.replace(',', '.')
 }
 
-function buildDisplayRow(parsed: ParsedRow): ManualLtvDisplayRow {
+type DisplayRowWithLinea = ManualLtvDisplayRow & { _linea: string }
+
+function buildDisplayRow(parsed: ParsedRow): DisplayRowWithLinea {
   return {
+    _linea:       parsed.linea,
     code:         parsed.code,
     section:      parsed.sectionParts.filter(Boolean).join(' / '),
     via:          parsed.via,
@@ -162,8 +177,8 @@ function buildDisplayRow(parsed: ParsedRow): ManualLtvDisplayRow {
   }
 }
 
-function parseDataRows(rows: RawItem[][]): ManualLtvDisplayRow[] {
-  const result: ManualLtvDisplayRow[] = []
+function parseDataRows(taggedRows: Array<{ row: RawItem[]; linea: string }>): DisplayRowWithLinea[] {
+  const result: DisplayRowWithLinea[] = []
   let current: ParsedRow | null = null
 
   const flush = () => {
@@ -173,7 +188,7 @@ function parseDataRows(rows: RawItem[][]): ManualLtvDisplayRow[] {
     current = null
   }
 
-  for (const row of rows) {
+  for (const { row, linea } of taggedRows) {
     if (!row.length) continue
     if (isTableHeader(row) || isSectionHeader(row)) {
       flush()
@@ -188,6 +203,7 @@ function parseDataRows(rows: RawItem[][]): ManualLtvDisplayRow[] {
       const fecha2Raw = itemsInRange(row, COL.FECHA2_MAX - 77, COL.FECHA2_MAX).split(/\s+/)
 
       current = {
+        linea,
         code:      extractCode(row),
         sectionParts: [itemsInRange(row, COL.CODE_MAX, COL.SECTION_MAX)],
         via:       itemsInRange(row, COL.SECTION_MAX, COL.VIA_MAX),
@@ -224,9 +240,9 @@ export async function parseLtvPdf2026(file: File): Promise<NormalizedLtvFile> {
   const doc = await loadingTask.promise
   const numPages = doc.numPages
 
-  // Collecter toutes les lignes LINEA 050 en un seul passage
-  const allLinea050Rows: RawItem[][] = []
-  let inLinea050 = false
+  // Collecter toutes les lignes des sections cibles (050 + 066) en un passage
+  const allTargetRows: Array<{ row: RawItem[]; linea: string }> = []
+  let currentLinea: string | null = null
   let pdfPublishedAt: string | null = null  // date extraite du PDF (ex. "03/06/2026 15:00")
 
   for (let p = 1; p <= numPages; p++) {
@@ -249,8 +265,6 @@ export async function parseLtvPdf2026(file: File): Promise<NormalizedLtvFile> {
       return { x: xPdf, y: yPdf }
     }
 
-    console.log(`[ltvPdf] page ${p} rotate=${rotate} view=${view}`)
-
     const items: RawItem[] = (content.items as any[])
       .filter(i => typeof i.str === 'string' && i.str.trim())
       .map(i => {
@@ -266,33 +280,23 @@ export async function parseLtvPdf2026(file: File): Promise<NormalizedLtvFile> {
       if (dateItem) pdfPublishedAt = dateItem.str.trim()
     }
 
-    console.log(`[ltvPdf] page ${p}: ${items.length} items`)
-
     const rows = groupByRow(items)
-    console.log(`[ltvPdf] page ${p}: ${rows.length} rows`)
-
-    // Log des 10 premieres lignes pour diagnostic
-    rows.slice(0, 10).forEach((row, ri) => {
-      const tokens = row.map(i => `"${i.str}"@${Math.round(i.x)}`)
-      console.log(`[ltvPdf] p${p} row${ri}: ${tokens.join(', ')}`)
-      console.log(`  → isSectionHeader=${isSectionHeader(row)} isLinea050=${isLinea050Header(row)} isData=${isPrimaryDataRow(row)}`)
-    })
 
     for (const row of rows) {
       if (isSectionHeader(row)) {
-        const was = inLinea050
-        inLinea050 = isLinea050Header(row)
-        console.log(`[ltvPdf] p${p} section header: "${row.map(i=>i.str).join(' ')}" → inLinea050: ${was} → ${inLinea050}`)
+        // En-tête de section : on capture si c'est une ligne cible (050/066),
+        // on arrête la capture pour toute autre ligne.
+        currentLinea = targetLineaOf(row)
         continue
       }
       if (isTableHeader(row)) continue
-      if (inLinea050) allLinea050Rows.push(row)
+      if (currentLinea) allTargetRows.push({ row, linea: currentLinea })
     }
-
-    console.log(`[ltvPdf] page ${p} done, inLinea050=${inLinea050}, allLinea050Rows=${allLinea050Rows.length}`)
   }
 
-  const allRows = parseDataRows(allLinea050Rows)
+  const allRows = parseDataRows(allTargetRows)
+  const counts = TARGET_LINEAS.map(ln => `${ln}: ${allRows.filter(r => r._linea === ln).length}`).join(', ')
+  console.log(`[ltvPdf] extraction terminée : ${allRows.length} LTV (${counts})`)
 
   doc.destroy()
 
@@ -307,7 +311,7 @@ export async function parseLtvPdf2026(file: File): Promise<NormalizedLtvFile> {
 
   return {
     meta: {
-      line: '050',
+      line: TARGET_LINEAS.join('+'),
       publishedAt: publishedAtIso,
       adif: {
         source: 'pdf-2026',
