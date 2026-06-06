@@ -157,7 +157,8 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
 
     if (mode === 'mixed') return ['normalized', 'adif', 'pdf']
 
-    if (mode === '2026') return ['pdf-ltv', 'pdf']
+    // Mode 2026 : une seule source LTV → pas de bascule, pas de flèches dans le bandeau.
+    if (mode === '2026') return ['pdf-ltv']
 
     return []
   }
@@ -958,6 +959,70 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     }
   }
 
+  // Upload (arrière-plan, silencieux, NON bloquant) du normalisé LTV vers GitHub
+  // pour que l’éditeur puisse y accéder. Garde seulement le plus récent
+  // (comparaison meta.publishedAt). Jamais appelé en mode démo.
+  const uploadNormalizedLtvToGitHub = async (ltvData: NormalizedLtvFile): Promise<void> => {
+    const token = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined
+    if (!token) return
+    const owner = (import.meta.env.VITE_GITHUB_LOG_OWNER as string | undefined) ?? 'michaelecalle'
+    const repo = (import.meta.env.VITE_GITHUB_LOG_REPO as string | undefined) ?? 'lim-logs'
+    const path = 'ltv-normalized/current.json'
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`
+
+    // Base64 UTF-8 safe (les LTV contiennent des accents)
+    const utf8ToBase64 = (s: string) => {
+      const bytes = new TextEncoder().encode(s)
+      let bin = ''
+      bytes.forEach(b => (bin += String.fromCharCode(b)))
+      return btoa(bin)
+    }
+    const base64ToUtf8 = (b64: string) => {
+      const bin = atob(b64.replace(/\n/g, ''))
+      return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)))
+    }
+
+    try {
+      const newDate = Date.parse(ltvData.meta?.publishedAt ?? '') || 0
+
+      // Récupérer l’existant (sha + date) pour appliquer "le plus récent gagne"
+      let sha: string | undefined
+      try {
+        const getRes = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+        if (getRes.ok) {
+          const existing = await getRes.json()
+          sha = existing.sha
+          try {
+            const decoded = JSON.parse(base64ToUtf8(existing.content ?? ''))
+            const existingDate = Date.parse(decoded?.meta?.publishedAt ?? '') || 0
+            // On n’uploade que si STRICTEMENT plus récent : évite de ré-écrire
+            // des données identiques (ex. démarrage sur le normalisé de secours).
+            if (newDate > 0 && existingDate > 0 && newDate <= existingDate) {
+              console.log('[ltv-upload] normalisé en ligne à jour → upload ignoré')
+              return
+            }
+          } catch {}
+        }
+      } catch {}
+
+      const body: Record<string, unknown> = {
+        message: `ltv-normalized: ${ltvData.meta?.publishedAt ?? 'update'}`,
+        content: utf8ToBase64(JSON.stringify(ltvData, null, 2)),
+      }
+      if (sha) body.sha = sha
+
+      const putRes = await fetch(url, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (putRes.ok) console.log('[ltv-upload] normalisé LTV partagé avec l\'éditeur')
+      else console.warn('[ltv-upload] échec upload', putRes.status)
+    } catch (e) {
+      console.warn('[ltv-upload] erreur (non bloquant)', e)
+    }
+  }
+
   // Construit le ZIP (log + PDF) sans l’exporter ni l’uploader.
   // Traitement du ZIP de demo : parse le log, demarre le mode mixte sans GPS reel
   const handleDemoLoaded = (data: DemoData) => {
@@ -998,8 +1063,8 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
 
   const handleMode2026Confirm = (
     train: ManualTrainOption,
-    ltvData: NormalizedLtvFile,
-    _ltvPdfFile: File,
+    ltvData: NormalizedLtvFile | null,
+    _ltvPdfFile: File | null,
     ftPdfFile: File | null
   ) => {
     setMode2026Open(false)
@@ -1046,6 +1111,10 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       setDemoArmed(false)
       setMode2026LockedTrain(null)
       setMode2026DemoPdfs([])
+    } else if (ltvData) {
+      // Usage réel uniquement (PAS en démo) et seulement s’il y a un normalisé LTV :
+      // partager avec l’éditeur. Fire-and-forget, non bloquant.
+      void uploadNormalizedLtvToGitHub(ltvData)
     }
   }
 

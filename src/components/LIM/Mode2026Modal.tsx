@@ -1,20 +1,32 @@
 ﻿// src/components/LIM/Mode2026Modal.tsx
 // Modale de demarrage mode 2026 : selection du train + import du PDF LTV.
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ManualTrainOption } from './titleBarTrainUtils'
 import type { NormalizedLtvFile } from './titleBarLtvUtils'
+import { fetchStoredLtvNormalized } from './titleBarLtvUtils'
 import { parseLtvPdf2026 } from '../../lib/ltvPdfParser'
+
+// Format dédié : "3 juin 2026 à 15h00"
+function formatStoredLtvDate(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const mois = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${d.getDate()} ${mois[d.getMonth()]} ${d.getFullYear()} à ${hh}h${mm}`
+}
 
 type Props = {
   dark: boolean
   trainOptions: ManualTrainOption[]
   onClose: () => void
-  // ftPdfFile = PDF fiche train (pour le mode SECOURS). Optionnel.
+  // ltvData/ltvPdfFile optionnels (train sans LTV). ftPdfFile = PDF fiche train (secours), optionnel.
   onConfirm: (
     train: ManualTrainOption,
-    ltvData: NormalizedLtvFile,
-    ltvPdfFile: File,
+    ltvData: NormalizedLtvFile | null,
+    ltvPdfFile: File | null,
     ftPdfFile: File | null
   ) => void
   // ----- Mode démo guidé -----
@@ -47,13 +59,26 @@ export default function Mode2026Modal({
   const [ltvChooserOpen, setLtvChooserOpen] = useState(false)
   const [ftChooserOpen, setFtChooserOpen] = useState(false)
 
+  // SECOURS (#18) : dernier normalisé LTV connu, chargé en silence (hors démo).
+  // Utilisé si le conducteur démarre sans importer de PDF LTV.
+  const [storedLtv, setStoredLtv] = useState<NormalizedLtvFile | null>(null)
+  useEffect(() => {
+    if (isDemo) return
+    let cancelled = false
+    void fetchStoredLtvNormalized().then((data) => {
+      if (!cancelled) setStoredLtv(data)
+    })
+    return () => { cancelled = true }
+  }, [isDemo])
+
   const bg = dark ? '#18181b' : '#ffffff'
   const border = dark ? '#3f3f46' : '#e4e4e7'
   const fg = dark ? '#f4f4f5' : '#18181b'
 
   const selectedTrain = trainOptions.find(t => t.trainNumber === selectedTrainNumber) ?? null
 
-  const canConfirm = selectedTrain !== null && ltvData !== null && !parsing
+  // LTV optionnelle : il suffit d’un train sélectionné (et de ne pas être en cours de parsing).
+  const canConfirm = selectedTrain !== null && !parsing
 
   const handlePdfSelect = async (file: File) => {
     setPdfFile(file)
@@ -68,7 +93,7 @@ export default function Mode2026Modal({
       const l66 = rows.filter(r => (r as any)._linea === '066').length
       setLtvData(data)
       setCounts({ total: rows.length, l50, l66 })
-      if (rows.length === 0) setParseError('Aucune LTV extraite — verifiez que le PDF contient bien la LINEA 050.')
+      // 0 LTV n’est PAS une erreur (cas "PDF importé mais aucune LTV") : géré à l’affichage.
     } catch (err: any) {
       setParseError(err?.message ?? 'Erreur lors de la lecture du PDF.')
     } finally {
@@ -78,7 +103,9 @@ export default function Mode2026Modal({
 
   const handleConfirm = () => {
     if (!canConfirm) return
-    onConfirm(selectedTrain!, ltvData!, pdfFile!, ftPdfFile)
+    // Secours : aucun PDF importé (hors démo) → utiliser le dernier normalisé connu.
+    const effectiveLtv = ltvData ?? (!isDemo ? storedLtv : null)
+    onConfirm(selectedTrain!, effectiveLtv, pdfFile, ftPdfFile)
   }
 
   return (
@@ -96,7 +123,7 @@ export default function Mode2026Modal({
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-base font-semibold">Mode 2026</div>
-            <div className="text-[11px] opacity-60 mt-0.5">Train, PDF des LTV, et PDF fiche train (secours)</div>
+            <div className="text-[11px] opacity-60 mt-0.5">Train requis ; PDF LTV et fiche train optionnels</div>
           </div>
           <button type="button" onClick={onClose}
             className="h-8 px-3 text-xs rounded-md bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100 font-semibold">
@@ -135,7 +162,9 @@ export default function Mode2026Modal({
 
         {/* Etape 2 : import du PDF LTV */}
         <div>
-          <div className="text-xs font-semibold opacity-70 mb-1">2 — PDF tableau LTV</div>
+          <div className="text-xs font-semibold opacity-70 mb-1">
+            2 — PDF tableau LTV <span className="opacity-60 font-normal">(optionnel)</span>
+          </div>
           <button type="button"
             onClick={() => { if (isDemo) setLtvChooserOpen(o => !o); else fileInputRef.current?.click() }}
             disabled={parsing}
@@ -162,16 +191,32 @@ export default function Mode2026Modal({
             </div>
           )}
 
-          {/* Resultat du parsing */}
-          {!parsing && counts !== null && counts.total > 0 && !parseError && (
+          {/* Resultat du parsing — 3 cas distingués */}
+          {!parsing && parseError && (
+            <div className="mt-2 text-[11px] text-red-500">{parseError}</div>
+          )}
+          {!parsing && !parseError && pdfFile === null && (
+            <div className="mt-2 text-[11px] opacity-70 italic">
+              {!isDemo && storedLtv
+                ? `Aucun PDF importé — le parcours démarrera avec les dernières LTV connues${
+                    storedLtv.meta?.publishedAt
+                      ? `, actualisées le ${formatStoredLtvDate(storedLtv.meta.publishedAt)}`
+                      : ''
+                  }.`
+                : 'Aucun PDF LTV importé — le parcours démarrera sans LTV.'}
+            </div>
+          )}
+          {!parsing && !parseError && pdfFile !== null && counts !== null && counts.total === 0 && (
+            <div className="mt-2 text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+              PDF importé, mais 0 LTV extraite (ni ligne 050 ni 066).
+            </div>
+          )}
+          {!parsing && !parseError && counts !== null && counts.total > 0 && (
             <div className="mt-2 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium leading-relaxed">
               {counts.l50} LTV extraites depuis la LINEA 050
               <br />
               {counts.l66} LTV extraites depuis la LINEA 066
             </div>
-          )}
-          {!parsing && parseError && (
-            <div className="mt-2 text-[11px] text-red-500">{parseError}</div>
           )}
         </div>
 

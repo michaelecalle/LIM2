@@ -1,5 +1,5 @@
-// src/components/LIM/titleBarLtvUtils.ts
-// Fonctions utilitaires d'accès et de mapping des données LTV,
+﻿// src/components/LIM/titleBarLtvUtils.ts
+// Fonctions utilitaires d’accès et de mapping des données LTV,
 // extraites de TitleBar.tsx pour alléger ce fichier.
 
 import LTV_NORMALIZED from '../../data/ltv.normalized.json'
@@ -301,7 +301,7 @@ function normalizedLtvOverlapsRoute(
   if (!routePkRange) return true
   const pkIni = parseNormalizedLtvPk(row.kmIni)
   const pkFin = parseNormalizedLtvPk(row.kmFin)
-  // Si une LTV normalisée a un PK illisible, on préfère l'afficher plutôt que la masquer.
+  // Si une LTV normalisée a un PK illisible, on préfère l’afficher plutôt que la masquer.
   if (pkIni === null || pkFin === null) return true
   const minPk = Math.min(pkIni, pkFin)
   const maxPk = Math.max(pkIni, pkFin)
@@ -353,6 +353,29 @@ export function loadPdfLtvRows(
       total: mappedRows.length,
       displayedCount: rows.length,
     },
+  }
+}
+
+// Lit le dernier normalisé LTV connu (uploadé par l’app à chaque mission réelle)
+// depuis lim-logs (privé). Sert de SECOURS si le conducteur n’a pas son PDF LTV.
+// Retourne null si indisponible (pas de token, réseau, fichier absent…).
+export async function fetchStoredLtvNormalized(): Promise<NormalizedLtvFile | null> {
+  const token = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined
+  if (!token) return null
+  const owner = (import.meta.env.VITE_GITHUB_LOG_OWNER as string | undefined) ?? 'michaelecalle'
+  const repo = (import.meta.env.VITE_GITHUB_LOG_REPO as string | undefined) ?? 'lim-logs'
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/contents/ltv-normalized/current.json?t=${Date.now()}`,
+      {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.raw' },
+        cache: 'no-store',
+      }
+    )
+    if (!res.ok) return null
+    return (await res.json()) as NormalizedLtvFile
+  } catch {
+    return null
   }
 }
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react"
+﻿import React, { useEffect, useState, useRef } from "react"
 import { logTestEvent } from "../../lib/testLogger"
 
 
@@ -11,8 +11,8 @@ import { logTestEvent } from "../../lib/testLogger"
  * - Zoom temporaire + auto-pan pendant drag
  * - Réinitialiser
  * - Validation du recadrage → image finale insérée visuellement dans le tableau
- * - Clic sur l'image finale → retour en édition
- * - Mode sombre : inversion de l'image finale
+ * - Clic sur l’image finale → retour en édition
+ * - Mode sombre : inversion de l’image finale
  * - En-têtes verticaux compatibles iPad
  * - Largeurs de colonnes alignées
  */
@@ -72,7 +72,7 @@ type LTVEventDetail = {
   ltvSource?: string
 }
 
-type LtvDisplaySource = "normalized" | "adif" | "pdf" | "unknown"
+type LtvDisplaySource = "normalized" | "adif" | "pdf" | "pdf-ltv" | "unknown"
 
 type LtvDisplayMeta = {
   fetchedAt?: string
@@ -107,6 +107,10 @@ function normalizeLtvDisplaySource(value?: unknown): LtvDisplaySource {
     text === "historical_pdf"
   ) {
     return "pdf"
+  }
+
+  if (text === "pdf-ltv") {
+    return "pdf-ltv"
   }
 
   return "unknown"
@@ -208,7 +212,7 @@ const LTV: React.FC = () => {
   // --- état venant du parseur LTV (ltvParser.ts)
   const [ltvMode, setLtvMode] = useState<LTVMode | "">("")
 
-    // ✅ Mode simulation (replay) : LTV suit l'état global via sim:enable
+    // ✅ Mode simulation (replay) : LTV suit l’état global via sim:enable
   const [simulationEnabled, setSimulationEnabled] = useState(false)
 
   useEffect(() => {
@@ -237,17 +241,17 @@ const LTV: React.FC = () => {
   // "main" = previewImageDataUrl, "alt" = altPreviewImageDataUrl
   const [selectedImage, setSelectedImage] = useState<"main" | "alt">("main")
 
-  // 🔢 Nouvelle API : liste d'images candidates (toutes les bitmaps utiles côté PDF)
+  // 🔢 Nouvelle API : liste d’images candidates (toutes les bitmaps utiles côté PDF)
   const [candidateImages, setCandidateImages] = useState<string[]>([])
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
 
-  // Indices des images candidates sélectionnées (dans l'ordre de sélection)
+  // Indices des images candidates sélectionnées (dans l’ordre de sélection)
   const [selectedImageIndices, setSelectedImageIndices] = useState<number[]>([])
 
   // Position verticale de la bande dans la page (0.0–1.0) pour le recadrage manuel
   const [bandTopPct, setBandTopPct] = useState<number | null>(null)
 
-  // Une fois validé par l'utilisateur → plus de bascule possible
+  // Une fois validé par l’utilisateur → plus de bascule possible
   const [lockedDisplayDirect, setLockedDisplayDirect] =
     useState<boolean>(false)
 
@@ -259,8 +263,8 @@ const LTV: React.FC = () => {
     availableSources: [],
   })
 
-    // Acquittement manuel de l'alerte date source ADIF périmée.
-  // Si la date ADIF n'est pas celle du jour, la légende clignote.
+    // Acquittement manuel de l’alerte date source ADIF périmée.
+  // Si la date ADIF n’est pas celle du jour, la légende clignote.
   // Après appui conducteur, elle reste rouge fixe.
   const [ltvSourceDateAlertAcknowledged, setLtvSourceDateAlertAcknowledged] =
     useState(false)
@@ -280,10 +284,10 @@ const LTV: React.FC = () => {
   // dataURL PNG finale après validation
   // Sert pour :
   //  - le résultat du recadrage manuel (NEEDS_CROP)
-  //  - l'image choisie en DISPLAY_DIRECT (sans recadrage)
+  //  - l’image choisie en DISPLAY_DIRECT (sans recadrage)
   const [finalCroppedUrl, setFinalCroppedUrl] = useState<string | null>(null)
 
-  // Cadre de recadrage en pourcentages (par rapport à l'image affichée)
+  // Cadre de recadrage en pourcentages (par rapport à l’image affichée)
   const [cropBox, setCropBox] = useState({
     top: 20,
     bottom: 80,
@@ -291,19 +295,19 @@ const LTV: React.FC = () => {
     right: 90,
   })
 
-  // quelle barre rouge est en train d'être déplacée
+  // quelle barre rouge est en train d’être déplacée
   const [draggingEdge, setDraggingEdge] = useState<
     null | "top" | "bottom" | "left" | "right"
   >(null)
 
-  // zoom visuel pendant l'édition
+  // zoom visuel pendant l’édition
   const [zoom, setZoom] = useState(1)
 
   // translation (pan) pendant le zoom
   const [panX, setPanX] = useState(0)
   const [panY, setPanY] = useState(0)
 
-  // point d'ancrage du début du drag (en px écran)
+  // point d’ancrage du début du drag (en px écran)
   const [anchorX, setAnchorX] = useState<number | null>(null)
   const [anchorY, setAnchorY] = useState<number | null>(null)
 
@@ -446,7 +450,7 @@ const LTV: React.FC = () => {
         setSelectedImage("main")
         setFinalCroppedUrl(imgMain || null)
 
-        // tant que l'utilisateur n'a pas validé manuellement :
+        // tant que l’utilisateur n’a pas validé manuellement :
         setLockedDisplayDirect(false)
 
         // pas de recadrage manuel dans ce mode
@@ -535,10 +539,10 @@ const LTV: React.FC = () => {
 
       console.log("[LTV] ltv:band-update reçu", ce.detail)
 
-      // On n'exploite ces bandes que dans le recadrage manuel
+      // On n’exploite ces bandes que dans le recadrage manuel
       if (ltvMode !== "NEEDS_CROP") return
 
-      // On remplace simplement l'image de base, on garde le cadre en %.
+      // On remplace simplement l’image de base, on garde le cadre en %.
       setPreviewImage(url)
       setFinalCroppedUrl(null)
       setIsCropping(true)
@@ -733,7 +737,7 @@ const LTV: React.FC = () => {
 
   // --- Réinitialisation manuelle (NEEDS_CROP)
   const resetView = () => {
-    // ✅ Simulation : on bloque les commandes de l'app (seul le player agit)
+    // ✅ Simulation : on bloque les commandes de l’app (seul le player agit)
     if (simulationEnabled) {
       logTestEvent("ui:blocked", {
         control: "ltvResetCrop",
@@ -766,7 +770,7 @@ const LTV: React.FC = () => {
 
   // --- retour en édition après validation (NEEDS_CROP)
   const reopenCrop = () => {
-    // ✅ Simulation : on bloque les commandes de l'app (seul le player agit)
+    // ✅ Simulation : on bloque les commandes de l’app (seul le player agit)
     if (simulationEnabled) {
       logTestEvent("ui:blocked", {
         control: "ltvReopenCrop",
@@ -787,7 +791,7 @@ const LTV: React.FC = () => {
 
   // --- Validation du recadrage manuel (NEEDS_CROP)
   const confirmCrop = () => {
-    // ✅ Simulation : on bloque les commandes de l'app (seul le player agit)
+    // ✅ Simulation : on bloque les commandes de l’app (seul le player agit)
     if (simulationEnabled) {
       logTestEvent("ui:blocked", {
         control: "ltvConfirmCrop",
@@ -800,7 +804,7 @@ const LTV: React.FC = () => {
 
     const imgEl = previewImgRef.current
 
-    // dimensions d'affichage
+    // dimensions d’affichage
     const displayRect = imgEl.getBoundingClientRect()
     const displayW = displayRect.width
     const displayH = displayRect.height
@@ -887,9 +891,9 @@ const LTV: React.FC = () => {
     })
   }
 
-  // --- Validation du choix en DISPLAY_DIRECT (fige l'image affichée)
+  // --- Validation du choix en DISPLAY_DIRECT (fige l’image affichée)
   const confirmDisplayDirectChoice = () => {
-    // ✅ Simulation : on bloque les commandes de l'app (seul le player agit)
+    // ✅ Simulation : on bloque les commandes de l’app (seul le player agit)
     if (simulationEnabled) {
       logTestEvent("ui:blocked", {
         control: "ltvDisplayLock",
@@ -908,9 +912,9 @@ const LTV: React.FC = () => {
   }
 
 
-  // Sélection / désélection d'une image candidate par son index
+  // Sélection / désélection d’une image candidate par son index
   const toggleCandidateSelection = (index: number) => {
-    // ✅ Simulation : on bloque les commandes de l'app (seul le player agit)
+    // ✅ Simulation : on bloque les commandes de l’app (seul le player agit)
     if (simulationEnabled) {
       logTestEvent("ui:blocked", {
         control: "ltvSelectCandidate",
@@ -926,7 +930,7 @@ const LTV: React.FC = () => {
       ? selectedImageIndices.filter((i) => i !== index)
       : [...selectedImageIndices, index]
 
-    // ✅ log rejouable : sélection/désélection d'une candidate
+    // ✅ log rejouable : sélection/désélection d’une candidate
     logTestEvent("ltv:candidate:set", {
       index,
       selected: !wasSelected,
@@ -941,7 +945,7 @@ const LTV: React.FC = () => {
 
   // --- Basculer manuellement depuis DISPLAY_DIRECT vers NEEDS_CROP
   const switchToManualCropFromDisplayDirect = () => {
-    // ✅ Simulation : on bloque les commandes de l'app (seul le player agit)
+    // ✅ Simulation : on bloque les commandes de l’app (seul le player agit)
     if (simulationEnabled) {
       logTestEvent("ui:blocked", {
         control: "ltvSwitchToManualCrop",
@@ -991,7 +995,7 @@ const LTV: React.FC = () => {
 
   // Demande au parseur de déplacer la bande LTV vers le haut ou le bas
   const requestBandShift = (direction: "up" | "down") => {
-    // ✅ Simulation : on bloque les commandes de l'app (seul le player agit)
+    // ✅ Simulation : on bloque les commandes de l’app (seul le player agit)
     if (simulationEnabled) {
       logTestEvent("ui:blocked", {
         control: "ltvRequestBandShift",
@@ -1149,7 +1153,7 @@ const LTV: React.FC = () => {
 
     // 3. NEEDS_CROP
     if (ltvMode === "NEEDS_CROP") {
-      // Cas 3a : pas d'image fournie par le parseur → fallback lisible
+      // Cas 3a : pas d’image fournie par le parseur → fallback lisible
       if (!previewImage) {
         return (
           <tbody className="ltv-body-crop">
@@ -1198,7 +1202,7 @@ const LTV: React.FC = () => {
       if (isCropping && previewImage) {
         return (
           <tbody className="ltv-body-crop">
-            {/* bandeau d'info */}
+            {/* bandeau d’info */}
             <tr>
               <td
                 className="ltv-td"
@@ -1500,7 +1504,7 @@ const LTV: React.FC = () => {
       )
     }
 
-    // 4. Affichage direct d'une image fournie (DISPLAY_DIRECT)
+    // 4. Affichage direct d’une image fournie (DISPLAY_DIRECT)
     if (ltvMode === "DISPLAY_DIRECT" && finalCroppedUrl) {
       const totalCandidates = candidateImages.length
       const hasCandidates = totalCandidates > 0
@@ -1511,11 +1515,11 @@ const LTV: React.FC = () => {
 
       const currentUrl = finalCroppedUrl
 
-      // Liste finale d'URL à afficher :
+      // Liste finale d’URL à afficher :
       // - avant validation → toujours 1 seule image : currentUrl
       // - après validation :
       //      * si aucune image sélectionnée → currentUrl
-      //      * sinon → toutes les candidates sélectionnées, empilées dans l'ordre de selectedImageIndices
+      //      * sinon → toutes les candidates sélectionnées, empilées dans l’ordre de selectedImageIndices
       const effectiveImageUrls =
         lockedDisplayDirect &&
         selectedImageIndices.length > 0 &&
@@ -1565,8 +1569,8 @@ const LTV: React.FC = () => {
 
               </div>
 
-              {/* Barre d'actions :
-                 - affichée SEULEMENT tant que l'image n'est pas verrouillée
+              {/* Barre d’actions :
+                 - affichée SEULEMENT tant que l’image n’est pas verrouillée
                  - disparaît totalement après validation */}
 
                                {ltvDisplayMeta.source === "pdf" && (
@@ -1726,7 +1730,7 @@ const LTV: React.FC = () => {
                         }}
                         disabled={safeIndex <= 0}
                         onClick={() => {
-                          // ✅ Simulation : on bloque les commandes de l'app (seul le player agit)
+                          // ✅ Simulation : on bloque les commandes de l’app (seul le player agit)
                           if (simulationEnabled) {
                             logTestEvent("ui:blocked", {
                               control: "ltvPrevImage",
@@ -1781,7 +1785,7 @@ const LTV: React.FC = () => {
                         }}
                         disabled={safeIndex >= totalCandidates - 1}
                         onClick={() => {
-                          // ✅ Simulation : on bloque les commandes de l'app (seul le player agit)
+                          // ✅ Simulation : on bloque les commandes de l’app (seul le player agit)
                           if (simulationEnabled) {
                             logTestEvent("ui:blocked", {
                               control: "ltvNextImage",
@@ -1825,7 +1829,7 @@ const LTV: React.FC = () => {
                     </span>
                   )}
 
-                  {/* Bouton sélectionner / désélectionner l'image courante */}
+                  {/* Bouton sélectionner / désélectionner l’image courante */}
                   <button
                     style={{
                       backgroundColor: "#2563eb",
@@ -1928,36 +1932,61 @@ const LTV: React.FC = () => {
 
   const ltvSourceLabel = getLtvSourceCaptionLabel(ltvDisplayMeta.source)
 
-  const ltvCaptionParts = ["LTV"]
-
-  if (
-    ltvDisplayMeta.source !== "pdf" &&
-    typeof ltvDisplayMeta.displayedCount === "number"
-  ) {
-    ltvCaptionParts.push(String(ltvDisplayMeta.displayedCount))
+  // Format dédié mode 2026 (source pdf-ltv) : "3 juin 2026 à 15h00"
+  const formatLtv2026Date = (iso: string | null | undefined): string => {
+    if (!iso) return ""
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return ""
+    const mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"]
+    const hh = String(d.getHours()).padStart(2, "0")
+    const mm = String(d.getMinutes()).padStart(2, "0")
+    return `${d.getDate()} ${mois[d.getMonth()]} ${d.getFullYear()} à ${hh}h${mm}`
   }
 
-  if (ltvSourceLabel) {
-    ltvCaptionParts.push(`Source : ${ltvSourceLabel}`)
-  }
+  let ltvCaptionText: string
 
-  if (ltvFormattedSourceUpdatedAt) {
-    if (ltvDisplayMeta.source === "normalized") {
-      ltvCaptionParts.push(`Publié le ${ltvFormattedSourceUpdatedAt}`)
-    } else if (ltvDisplayMeta.source === "adif") {
-      ltvCaptionParts.push(`Données source ADIF du ${ltvFormattedSourceUpdatedAt}`)
-    } else if (ltvDisplayMeta.source === "pdf") {
-      ltvCaptionParts.push(`PDF du ${ltvFormattedSourceUpdatedAt}`)
-    } else {
-      ltvCaptionParts.push(`Données du ${ltvFormattedSourceUpdatedAt}`)
+  if (ltvDisplayMeta.source === "pdf-ltv") {
+    // Mode 2026 : "{N} LTV - Actualisées le {date}"
+    const count =
+      typeof ltvDisplayMeta.displayedCount === "number"
+        ? ltvDisplayMeta.displayedCount
+        : 0
+    const parts2026 = [`${count} LTV`]
+    const date2026 = formatLtv2026Date(ltvDisplayMeta.sourceUpdatedAt)
+    if (date2026) parts2026.push(`Actualisées le ${date2026}`)
+    ltvCaptionText = parts2026.join(" - ")
+  } else {
+    const ltvCaptionParts = ["LTV"]
+
+    if (
+      ltvDisplayMeta.source !== "pdf" &&
+      typeof ltvDisplayMeta.displayedCount === "number"
+    ) {
+      ltvCaptionParts.push(String(ltvDisplayMeta.displayedCount))
     }
-  }
 
-  if (ltvFormattedFetchedAt && ltvDisplayMeta.source === "adif") {
-    ltvCaptionParts.push(`Téléchargées le ${ltvFormattedFetchedAt}`)
-  }
+    if (ltvSourceLabel) {
+      ltvCaptionParts.push(`Source : ${ltvSourceLabel}`)
+    }
 
-  const ltvCaptionText = ltvCaptionParts.join(" - ")
+    if (ltvFormattedSourceUpdatedAt) {
+      if (ltvDisplayMeta.source === "normalized") {
+        ltvCaptionParts.push(`Publié le ${ltvFormattedSourceUpdatedAt}`)
+      } else if (ltvDisplayMeta.source === "adif") {
+        ltvCaptionParts.push(`Données source ADIF du ${ltvFormattedSourceUpdatedAt}`)
+      } else if (ltvDisplayMeta.source === "pdf") {
+        ltvCaptionParts.push(`PDF du ${ltvFormattedSourceUpdatedAt}`)
+      } else {
+        ltvCaptionParts.push(`Données du ${ltvFormattedSourceUpdatedAt}`)
+      }
+    }
+
+    if (ltvFormattedFetchedAt && ltvDisplayMeta.source === "adif") {
+      ltvCaptionParts.push(`Téléchargées le ${ltvFormattedFetchedAt}`)
+    }
+
+    ltvCaptionText = ltvCaptionParts.join(" - ")
+  }
 
   const canSwitchLtvSource =
     ltvDisplayMeta.availableSources.length > 1 &&
@@ -2279,7 +2308,7 @@ const LTV: React.FC = () => {
           color: #fff;
         }
 
-        /* inversion visuelle de l'image finale en mode sombre */
+        /* inversion visuelle de l’image finale en mode sombre */
         .dark .ltv-body-final img {
           filter: invert(1) brightness(1.1);
           transition: filter 0.3s ease;
