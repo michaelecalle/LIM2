@@ -9,6 +9,7 @@ import {
 import type { FTEntry, CsvSens } from "../../data/ligneFT";
 import { logTestEvent } from "../../lib/testLogger";
 import { getFtFranceHhmm } from "../../data/ftFranceTimes"
+import { tunnelZoneAt } from "../../data/tunnelZones"
 
 type GpsPosition = {
   lat: number;
@@ -24,11 +25,15 @@ type GpsPosition = {
 type ReferenceMode = "HORAIRE" | "GPS";
 
 type StationArretState = {
+  kind: "station" | "pleine-ligne"; // gare = recalage au départ ; pleine ligne = pas de recalage
   frozenSKm: number;
-  frozenRowIndex: number;
+  frozenRowIndex: number | null; // null en pleine ligne (aucune heure de référence)
   frozenAccuracy: number;
   departureThresholdKm: number;
   firstMovementTime: number | null;
+  // Heure d'HORLOGE (virtuelle en replay/démo, réelle en prod) du 1er mouvement,
+  // utilisée pour recaler le delta au départ (≠ firstMovementTime qui sert au chrono interne).
+  firstMovementClockMs?: number | null;
   prevSKm: number;
   consecutiveSteps: number;
 };
@@ -80,8 +85,10 @@ export default function FT({ variant = "classic" }: FTProps) {
         // ✅ GPS passif : l'indicateur peut passer GREEN avant Play,
         // mais la FT ne doit utiliser la référence GPS que lorsque l'autoscroll est engagé.
         const gpsModeAllowed = autoScrollEnabledRef.current;
+        // ARRET = arrêt GPS détecté (position connue) → on reste en GPS, comme le watchdog.
+        // (Évite l'oscillation HORAIRE↔GPS pendant un arrêt — #20 Bug A.)
         const nextMode: ReferenceMode =
-          s === "GREEN" && gpsModeAllowed ? "GPS" : "HORAIRE";
+          (s === "GREEN" || s === "ARRET") && gpsModeAllowed ? "GPS" : "HORAIRE";
 
         if (referenceModeRef.current !== nextMode) {
           referenceModeRef.current = nextMode;
@@ -1207,6 +1214,19 @@ if (referenceMode === "GPS") {
   const lastPkRef = React.useRef<number | null>(null);
   const lastPkChangeAtRef = React.useRef<number>(0);
 
+  // Pour détecter un lat/lon figé = immobilité RÉELLE du train (#20).
+  // Permet de distinguer "arrêt" (lat/lon figés) de "PK coincé train roulant" (lat/lon qui bougent).
+  const lastLatRef = React.useRef<number | null>(null);
+  const lastLonRef = React.useRef<number | null>(null);
+  const lastLatLonChangeAtRef = React.useRef<number>(0);
+  // Garde "une seule évaluation d'arrêt GPS par épisode d'immobilité" (réarmé quand le train rebouge).
+  const gpsArretEvaluatedRef = React.useRef<boolean>(false);
+  // s_km du dernier arrêt armé : garde-fou anti double-détection "au même endroit" (#20)
+  // (sortie lente de gare / micro-arrêts sur aiguilles).
+  const lastArretSKmRef = React.useRef<number | null>(null);
+  // Historique court des fix (≤16 s) pour évaluer l'APPROCHE (vitesse + précision) avant un gel (#20).
+  const recentFixesRef = React.useRef<Array<{ ms: number; lat: number; lon: number; acc: number | null }>>([]);
+
   // Garde "une seule évaluation ARRÊT par épisode de figeage".
   // Évite la race watchdog/gps:position : peu importe quel chemin bascule en RED
   // en premier, l'évaluation ARRÊT se fait une fois quand le PK est figé-rouge,
@@ -1271,6 +1291,18 @@ if (referenceMode === "GPS") {
 
       const hasUsablePk = pkFinite != null;
 
+      // --- Arrêt (#20) : immobilité réelle (lat/lon figés) + bon GPS ---
+      // Un PK figé ne doit PAS dégrader si le train est juste à l'arrêt sous bon GPS.
+      const latLonFreezeElapsedMs =
+        hasGpsFix && lastLatLonChangeAtRef.current > 0
+          ? nowTs - lastLatLonChangeAtRef.current
+          : 0;
+      const latLonFrozen = latLonFreezeElapsedMs >= GPS_STOP_CONFIRM_MS;
+      const gpsQualityGood =
+        hasGpsFix && onLine && !isStale && hasUsablePk && hasAcceptableAccuracy && !pkIncoherentNow;
+      const accGoodForStop = accuracyM != null && accuracyM <= GPS_ARRET_MAX_ACCURACY_M;
+      const isStop = gpsQualityGood && accGoodForStop && latLonFrozen;
+
       const reasonCodes: string[] = [];
       if (!hasGpsFix) reasonCodes.push("no_fix");
       if (hasGpsFix && !onLine) reasonCodes.push("off_line");
@@ -1293,13 +1325,13 @@ if (referenceMode === "GPS") {
 
       if (!hasGpsFix) {
         nextState = "RED";
-      } else if (pkFrozenRed) {
+      } else if (pkFrozenRed && !isStop) {
         nextState = "RED";
       } else if (
         pkIncoherentNow ||
         !onLine ||
         isStale ||
-        pkFrozenOrange ||
+        (pkFrozenOrange && !isStop) ||
         !hasUsablePk ||
         !hasAcceptableAccuracy
       ) {
@@ -1478,6 +1510,14 @@ if (referenceMode === "GPS") {
   const GPS_MAX_ACCURACY_M = 300; // précision > 300 m => ORANGE
   const GPS_FREEZE_WINDOW_MS = 10_000; // PK inchangé trop longtemps -> ORANGE
   const GPS_FREEZE_PK_DELTA_KM = 0.02; // 0.02 km = 20 m
+  const GPS_LATLON_MOVE_M = 15; // déplacement lat/lon < 15 m => immobile (détection arrêt #20)
+  // Confirmation d'arrêt (#20) : DOIT être < GPS_FREEZE_WINDOW_MS pour que "rester vert"
+  // s'établisse AVANT le moindre passage orange du PK figé (évite un flash orange à l'arrêt).
+  const GPS_STOP_CONFIRM_MS = 8_000;
+  const GPS_ARRET_REARM_MIN_KM = 0.3; // ne pas réarmer un arrêt à moins de 300 m du précédent (#20)
+  const GPS_STOP_DECEL_MAX_KMH = 12; // approche: vitesse max (décél vers ~0) pour valider un arrêt (#20)
+  const GPS_STOP_APPROACH_ACC_MAX_M = 18; // approche: précision max (rejette la dégradation type tunnel) (#20)
+  const GPS_ARRET_DEPARTURE_MAX_KM = 0.5; // reprise au-delà => c'était un tunnel, pas un arrêt → annuler sans recalage (#20)
 
   const ORANGE_TIMEOUT_MS = 20_000; // 20s après ORANGE
   // PK figé : ORANGE à 10s, puis RED à 30s (10s + 20s)
@@ -3502,6 +3542,46 @@ const isRelock = acceptedMode === "relock";
         }
       }
 
+      // --- Détection "lat/lon figé" = immobilité RÉELLE du train (#20) ---
+      // Sert à distinguer un vrai arrêt (lat/lon figés) d'un "PK coincé train roulant"
+      // (lat/lon qui bougent mais PK bloqué) : seul le 1er cas doit rester vert.
+      {
+        const curLat =
+          typeof (detail as any).lat === "number" && Number.isFinite((detail as any).lat)
+            ? ((detail as any).lat as number)
+            : null;
+        const curLon =
+          typeof (detail as any).lon === "number" && Number.isFinite((detail as any).lon)
+            ? ((detail as any).lon as number)
+            : null;
+        if (curLat != null && curLon != null) {
+          // Historique court pour évaluer l'approche (vitesse + précision) avant un éventuel gel.
+          recentFixesRef.current.push({ ms: nowTs, lat: curLat, lon: curLon, acc: accuracyM });
+          const histCutoff = nowTs - 16000;
+          while (recentFixesRef.current.length && recentFixesRef.current[0].ms < histCutoff) {
+            recentFixesRef.current.shift();
+          }
+          const pLat = lastLatRef.current;
+          const pLon = lastLonRef.current;
+          if (pLat != null && pLon != null) {
+            const dLatM = (curLat - pLat) * 111320;
+            const dLonM = (curLon - pLon) * 111320 * Math.cos((pLat * Math.PI) / 180);
+            const movedM = Math.hypot(dLatM, dLonM);
+            if (movedM >= GPS_LATLON_MOVE_M) {
+              lastLatLonChangeAtRef.current = nowTs;
+              lastLatRef.current = curLat;
+              lastLonRef.current = curLon;
+              // Le train bouge réellement -> on réarme l'évaluation d'arrêt GPS.
+              gpsArretEvaluatedRef.current = false;
+            }
+          } else {
+            lastLatRef.current = curLat;
+            lastLonRef.current = curLon;
+            lastLatLonChangeAtRef.current = nowTs;
+          }
+        }
+      }
+
       const pkFreezeElapsedMs =
         hasGpsFix &&
         onLine &&
@@ -3544,18 +3624,31 @@ const isRelock = acceptedMode === "relock";
         }
       }
 
+      // --- Arrêt (#20) : immobilité réelle (lat/lon figés) + bon GPS ---
+      // Un PK figé ne doit PAS dégrader si le train est juste à l'arrêt sous bon GPS.
+      const latLonFreezeElapsedMs =
+        hasGpsFix && lastLatLonChangeAtRef.current > 0
+          ? nowTs - lastLatLonChangeAtRef.current
+          : 0;
+      const latLonFrozen = latLonFreezeElapsedMs >= GPS_STOP_CONFIRM_MS;
+      const gpsQualityGood =
+        hasGpsFix && onLine && !isStale && hasUsablePk && hasAcceptableAccuracy && !pkIncoherentNow;
+      const accGoodForStop = accuracyM != null && accuracyM <= GPS_ARRET_MAX_ACCURACY_M;
+      const isStop = gpsQualityGood && accGoodForStop && latLonFrozen;
+      if (isStop && !reasonCodes.includes("arret_stop")) reasonCodes.push("arret_stop");
+
       let nextState: "RED" | "ORANGE" | "GREEN" = "RED";
 
       if (!hasGpsFix) {
         nextState = "RED";
-      } else if (pkFrozenRed) {
-        // GPS figé trop longtemps => RED
+      } else if (pkFrozenRed && !isStop) {
+        // GPS figé trop longtemps => RED (sauf arrêt confirmé sous bon GPS)
         nextState = "RED";
       } else if (
         pkIncoherentNow ||
         !onLine ||
         isStale ||
-        pkFrozenOrange ||
+        (pkFrozenOrange && !isStop) ||
         !hasUsablePk ||
         !hasAcceptableAccuracy
       ) {
@@ -3573,6 +3666,7 @@ const isRelock = acceptedMode === "relock";
       // par épisode (freezeArretEvaluatedRef), tant qu'aucun ARRÊT n'est actif.
       const enteredRedFromFreeze =
         pkFrozenRed === true &&
+        !isStop &&
         stationArretRef.current === null &&
         freezeArretEvaluatedRef.current === false;
 
@@ -3841,6 +3935,7 @@ const isRelock = acceptedMode === "relock";
             // ✅ Mode ARRÊT GPS : on reste en GPS vert, pas de standby horaire
             const deptThreshKm = Math.max(0.075, (4 * accuracyM!) / 1000);
             stationArretRef.current = {
+              kind: "station",
               frozenSKm: currentSKm!,
               frozenRowIndex: rowIndex,
               frozenAccuracy: accuracyM!,
@@ -3918,6 +4013,119 @@ const isRelock = acceptedMode === "relock";
         }
       }
 
+      // ✅ NOUVEAU (#20) : armer un arrêt sur immobilité confirmée + bon GPS, SANS passer par RED.
+      // (Le cas dégradé tunnel / gare souterraine reste géré par enteredRedFromFreeze ci-dessus.)
+      if (
+        isStop &&
+        stationArretRef.current === null &&
+        gpsArretEvaluatedRef.current === false &&
+        typeof pk === "number" &&
+        Number.isFinite(pk)
+      ) {
+        // une seule évaluation par épisode d'immobilité (réarmé quand le train rebouge)
+        gpsArretEvaluatedRef.current = true;
+
+        const currentSKm =
+          typeof (detail as any).s_km === "number" && Number.isFinite((detail as any).s_km)
+            ? ((detail as any).s_km as number)
+            : null;
+
+        const tooCloseToLastArret =
+          currentSKm != null &&
+          lastArretSKmRef.current != null &&
+          Math.abs(currentSKm - lastArretSKmRef.current) < GPS_ARRET_REARM_MIN_KM;
+
+        // Couche 1 (#20) : ne valider l'arrêt que si l'APPROCHE (8 s avant le gel) montre une vraie
+        // décélération (vitesse basse) ET une précision NON dégradée. Sinon = entrée de tunnel
+        // (gel d'une bonne position alors qu'on roule à vitesse réduite), pas un arrêt.
+        const onsetMs = lastLatLonChangeAtRef.current;
+        const approach = recentFixesRef.current.filter(
+          (f) => f.ms >= onsetMs - 8000 && f.ms <= onsetMs
+        );
+        let approachSpeedKmh: number | null = null;
+        let approachAccMax: number | null = null;
+        if (approach.length >= 2) {
+          const a0 = approach[0];
+          const a1 = approach[approach.length - 1];
+          const dLatM = (a1.lat - a0.lat) * 111320;
+          const dLonM = (a1.lon - a0.lon) * 111320 * Math.cos((a0.lat * Math.PI) / 180);
+          const dtS = (a1.ms - a0.ms) / 1000;
+          if (dtS > 0) approachSpeedKmh = (Math.hypot(dLatM, dLonM) / dtS) * 3.6;
+          const accs = approach
+            .map((f) => f.acc)
+            .filter((x): x is number => typeof x === "number");
+          approachAccMax = accs.length ? Math.max(...accs) : null;
+        }
+        const approachOk =
+          approachSpeedKmh != null &&
+          approachSpeedKmh <= GPS_STOP_DECEL_MAX_KMH &&
+          approachAccMax != null &&
+          approachAccMax <= GPS_STOP_APPROACH_ACC_MAX_M;
+
+        // Garde-fou DÉTERMINISTE (#24) : si on est dans une zone TUNNEL connue, on N'ARME JAMAIS
+        // d'arrêt (en tunnel le GPS peut figer une "bonne" position = case 3, qui trompait l'approche).
+        const tunZone = tunnelZoneAt(currentSKm);
+
+        if (currentSKm != null && tunZone) {
+          logTestEvent("gps:arret:rejected-tunnel-zone", {
+            zone: tunZone.id,
+            currentSKm,
+            pk,
+          });
+        } else if (currentSKm != null && tooCloseToLastArret) {
+          // Garde-fou anti double-détection "au même endroit" : sortie lente de gare / micro-arrêts
+          // sur aiguilles. On ne réarme pas tant qu'on n'est pas reparti d'au moins
+          // GPS_ARRET_REARM_MIN_KM du dernier arrêt (s_km monotone, contrairement au PK).
+          logTestEvent("gps:arret:rearm-blocked", {
+            currentSKm,
+            lastArretSKm: lastArretSKmRef.current,
+            minKm: GPS_ARRET_REARM_MIN_KM,
+          });
+        } else if (currentSKm != null && !approachOk) {
+          // Pas de vraie décélération vers ~0 et/ou précision dégradée => entrée de tunnel, pas un arrêt.
+          logTestEvent("gps:arret:rejected-approach", {
+            approachSpeedKmh,
+            approachAccMax,
+            maxKmh: GPS_STOP_DECEL_MAX_KMH,
+            maxAccM: GPS_STOP_APPROACH_ACC_MAX_M,
+            currentSKm,
+            pk,
+          });
+        } else if (currentSKm != null) {
+          lastArretSKmRef.current = currentSKm;
+          const deptThreshKm = Math.max(0.075, (4 * (accuracyM ?? 0)) / 1000);
+          const nearest = findNearestCommercialStopRowIndex(pk, STATION_PROX_KM);
+          const arretKind: "station" | "pleine-ligne" = nearest ? "station" : "pleine-ligne";
+
+          stationArretRef.current = {
+            kind: arretKind,
+            frozenSKm: currentSKm,
+            frozenRowIndex: nearest ? nearest.rowIndex : null,
+            frozenAccuracy: accuracyM ?? 0,
+            departureThresholdKm: deptThreshKm,
+            firstMovementTime: null,
+            prevSKm: currentSKm,
+            consecutiveSteps: 0,
+          };
+
+          window.dispatchEvent(
+            new CustomEvent("lim:station-arret", {
+              detail: { active: true, source: "gps", kind: arretKind },
+            })
+          );
+
+          logTestEvent("gps:arret:armed", {
+            kind: arretKind,
+            rowIndex: nearest ? nearest.rowIndex : null,
+            deltaKm: nearest ? nearest.deltaKm : null,
+            pk,
+            currentSKm,
+            accuracyM,
+            deptThreshKm,
+          });
+        }
+      }
+
       // ✅ Monitoring départ en mode ARRÊT GPS
       if (stationArretRef.current != null) {
         const arret = stationArretRef.current;
@@ -3935,6 +4143,21 @@ const isRelock = acceptedMode === "relock";
           if (delta > 0.010) {
             if (arret.firstMovementTime === null) {
               arret.firstMovementTime = nowTs;
+              // Heure d'horloge VIRTUELLE (replay/démo) si dispo, sinon réelle, pour le recalage.
+              {
+                let clockMs = nowTs;
+                try {
+                  const iso =
+                    (window as any).__limgptDemo?.nowIso?.() ??
+                    (window as any).__limgptReplay?.nowIso?.() ??
+                    null;
+                  if (iso) {
+                    const t = new Date(iso).getTime();
+                    if (Number.isFinite(t)) clockMs = t;
+                  }
+                } catch {}
+                arret.firstMovementClockMs = clockMs;
+              }
               arret.prevSKm = currentSKm;
               arret.consecutiveSteps = 1;
               logTestEvent("gps:arret:first-movement", {
@@ -3963,6 +4186,7 @@ const isRelock = acceptedMode === "relock";
 
                 const frozenRowIndex = arret.frozenRowIndex;
                 const firstMovementTime = arret.firstMovementTime!;
+                const arretKind = arret.kind;
                 stationArretRef.current = null;
 
                 window.dispatchEvent(
@@ -3971,14 +4195,34 @@ const isRelock = acceptedMode === "relock";
                   })
                 );
 
-                // Recalage delta avec le timestamp du premier mouvement réel
-                recalibrateAtTimeRef.current = new Date(firstMovementTime);
-                recalibrateFromRowRef.current = frozenRowIndex;
-                setRecalibrateTrigger((prev) => prev + 1);
-                setForceRealignTrigger((prev) => prev + 1);
-                setActiveRowIndex(frozenRowIndex);
-                setSelectedRowIndex(null);
-                forceRealignOnResumeRef.current = true;
+                if (delta > GPS_ARRET_DEPARTURE_MAX_KM) {
+                  // Couche 2 (#20) : reprise implausiblement loin du point figé => c'était un TUNNEL
+                  // (perte GPS), pas un arrêt. On annule SANS recalage (filet de sécurité).
+                  logTestEvent("gps:arret:departure-implausible", {
+                    reason: "tunnel_not_stop",
+                    delta,
+                    frozenSKm: arret.frozenSKm,
+                    currentSKm,
+                    maxKm: GPS_ARRET_DEPARTURE_MAX_KM,
+                  });
+                } else if (arretKind === "station" && frozenRowIndex != null) {
+                  // GARE : recalage du delta sur l'heure de réf, ancré sur l'heure d'HORLOGE
+                  // du 1er mouvement (virtuelle en replay/démo, réelle en prod).
+                  const departureClockMs = arret.firstMovementClockMs ?? firstMovementTime;
+                  recalibrateAtTimeRef.current = new Date(departureClockMs);
+                  recalibrateFromRowRef.current = frozenRowIndex;
+                  setRecalibrateTrigger((prev) => prev + 1);
+                  setForceRealignTrigger((prev) => prev + 1);
+                  setActiveRowIndex(frozenRowIndex);
+                  setSelectedRowIndex(null);
+                  forceRealignOnResumeRef.current = true;
+                } else {
+                  // PLEINE LIGNE : aucune heure de référence -> PAS de recalage, reprise GPS sèche.
+                  logTestEvent("gps:arret:departure-no-recal", {
+                    reason: "pleine-ligne",
+                    frozenSKm: arret.frozenSKm,
+                  });
+                }
               }
             }
           }

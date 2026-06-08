@@ -81,6 +81,13 @@ import {
   getTrainRelation,
 } from '../../data/ligneFT.normalized.adapter'
 
+// ⚠️ FT France = fonctionnalité ABANDONNÉE (on a fusionné FR+ES). Neutralisée le 2026-06-08 :
+// l'auto-switch "zone Figueres" réveillait l'overlay FT France quand le train restait vert/stable
+// à l'arrêt de Figueres (révélé par le patch #20 qui garde le vert à l'arrêt).
+// Remettre à true SEULEMENT si on réactive un jour une FT France séparée.
+// Suppression complète de la machinerie FT France = dette technique (fin de dév).
+const FT_FRANCE_AUTOSWITCH_ENABLED = false
+
 type NumberingSide = 'ES' | 'FR'
 
 type DisplayedTrainNumberState = {
@@ -1548,6 +1555,8 @@ ${coords}
   // ✅ Arrêt Figueres => auto switch FT
   useEffect(() => {
     const t = window.setInterval(() => {
+      // ⚠️ FT France abandonnée : auto-switch Figueres NEUTRALISÉ (2026-06-08). Voir flag en haut du fichier.
+      if (!FT_FRANCE_AUTOSWITCH_ENABLED) return
       if (!isFigueresArmed()) {
         figueresStopTriggeredRef.current = false
         return
@@ -1609,14 +1618,48 @@ ${coords}
     logTestEvent('ui:pdf:mode-change', { mode: pdfMode })
   }, [pdfMode])
 
-  // Quand un replay démarre : arrêter l’enregistrement de session (inutile,
-  // le log ne contiendrait que le reflet du replay) et poser le flag.
+  // Quand un replay démarre : on pose le flag (bloque l'UPLOAD GitHub au Stop) ET on
+  // (re)démarre l'ENREGISTREMENT. Indispensable au diagnostic : on veut capturer les
+  // RÉACTIONS de l'app au replay (gps:state-change, gps:mode-change, gps:arret:*,
+  // figueres:*…), pas seulement le reflet des positions. L'export se fait en LOCAL au Stop.
+  // (if !testRecording : ne pas relancer sur un simple resume → pas de perte d'events.)
   useEffect(() => {
     const handler = () => {
       wasReplaySessionRef.current = true
-      if (testRecording) {
-        stopTestSession()
-        setTestRecording(false)
+      if (!testRecording) {
+        startTestSession('replay')
+        setTestRecording(true)
+      }
+      // ✅ HORLOGE VIRTUELLE DE REPLAY (#21) : on remplace window.Date par un Proxy qui renvoie
+      // l'heure du REPLAY (et non l'heure réelle), exactement comme la démo. Sinon les deltas,
+      // les positions horaire et l'heuristique de vitesse sont faussés (calculés sur l'heure réelle).
+      // Source = __limgptReplay.nowIso() (le player calcule nowMs via performance.now(), donc pas de
+      // récursion ; getNowIso construit ses dates avec argument => insensible au proxy).
+      if (!origDateRef.current) {
+        const origDate = window.Date
+        origDateRef.current = origDate
+        const replayNowMs = (): number => {
+          try {
+            const iso = (window as any).__limgptReplay?.nowIso?.()
+            if (iso) {
+              const ms = origDate.parse(iso)
+              if (Number.isFinite(ms)) return ms
+            }
+          } catch {}
+          return origDate.now()
+        }
+        window.Date = new Proxy(origDate, {
+          construct(target, args) {
+            if (args.length === 0) return Reflect.construct(target, [replayNowMs()])
+            return Reflect.construct(target, args as any)
+          },
+          get(target, prop, receiver) {
+            if (prop === 'now') return () => replayNowMs()
+            const val = Reflect.get(target, prop, receiver)
+            return typeof val === 'function' ? val.bind(target) : val
+          },
+        }) as unknown as typeof Date
+        console.log('[TitleBar] Horloge virtuelle REPLAY installée')
       }
     }
     window.addEventListener('replay:play-started', handler)
@@ -4114,9 +4157,9 @@ if (enabled || standby) {
       }
 
       if (state === 'ARRET') {
-        // Mode ARRÊT GPS : icône reste verte, texte "ARRÊT"
+        // Mode ARRÊT GPS : icône sous-jacente verte (le badge arrêt est piloté
+        // par l'événement lim:station-arret, et affiché en BLEU).
         setGpsState(2)
-        setStationArretActive(true)
         return
       }
 
@@ -4136,7 +4179,8 @@ if (enabled || standby) {
 
       if (state === 'GREEN') {
         setGpsState(2)
-        setStationArretActive(false)
+        // ⚠️ Ne PAS forcer stationArretActive=false ici : sous bon GPS un arrêt
+        // reste GREEN (#20). Le badge arrêt est piloté uniquement par lim:station-arret.
 
 // ✅ Au retour réel en GPS, on réaligne l’état visuel du bouton Play
 // uniquement si l’autoscroll a déjà été engagé.
@@ -5181,15 +5225,16 @@ setAutoScrollStartedOnce(next)
                   ${stationArretActive && gpsState === 2 ? 'cursor-pointer' : ''}
                   ${!stationArretActive && !testModeEnabled && gpsState === 2 && gpsPkDisplay ? 'cursor-pointer' : ''}
                   ${stationArretActive || (!stationArretActive && !testModeEnabled && gpsState !== 2) ? '' : ''}
-                  ${gpsState === 0 ? 'border-[3px] border-red-500 text-red-600 dark:text-red-400' : ''}
-                  ${gpsState === 1 ? 'border-[3px] border-orange-400 text-orange-500 dark:text-orange-300' : ''}
-                  ${gpsState === 2 ? 'border-[3px] border-emerald-400 text-emerald-500 dark:text-emerald-300' : ''}
+                  ${stationArretActive ? 'border-[3px] border-sky-500 text-sky-600 dark:text-sky-400' : ''}
+                  ${!stationArretActive && gpsState === 0 ? 'border-[3px] border-red-500 text-red-600 dark:text-red-400' : ''}
+                  ${!stationArretActive && gpsState === 1 ? 'border-[3px] border-orange-400 text-orange-500 dark:text-orange-300' : ''}
+                  ${!stationArretActive && gpsState === 2 ? 'border-[3px] border-emerald-400 text-emerald-500 dark:text-emerald-300' : ''}
                 `}
                 title={
                   stationArretActive && gpsState === 2
-                    ? 'Arrêt en gare détecté — appuyer pour forcer la reprise sans recalage'
+                    ? 'Arrêt détecté (GPS) — appuyer pour forcer la reprise sans recalage'
                     : stationArretActive && gpsState === 0
-                      ? 'Arrêt en gare (mode horaire)'
+                      ? 'Arrêt détecté (mode horaire)'
                       : gpsState === 0
                         ? 'GPS indisponible / non calé'
                         : gpsState === 1
@@ -5587,6 +5632,21 @@ setAutoScrollStartedOnce(next)
                     logTestEvent('ui:test:stop', { source: 'titlebar_stop_button' })
                     stopTestSession()
                     setTestRecording(false)
+                  }
+
+                  // Replay : pas d'upload GitHub, mais on EXPORTE le log en LOCAL (diagnostic).
+                  if (wasReplaySessionRef.current) {
+                    try {
+                      await exportTestLogLocal()
+                    } catch (e) {
+                      console.warn('[TitleBar] Export log replay impossible', e)
+                    }
+                    // Restaurer l'horloge RÉELLE (fin du replay) — cf #21.
+                    if (origDateRef.current) {
+                      window.Date = origDateRef.current
+                      origDateRef.current = null
+                      console.log('[TitleBar] Horloge réelle restaurée (fin replay)')
+                    }
                   }
 
                   if (!wasReplaySessionRef.current && !demoActive) {
