@@ -5621,10 +5621,9 @@ if (hasFranceFtLocal) {
   // ===== Horaires théoriques en SECONDES (pondérés par Vmax) — mode test =====
   // Objectif : progression plus réaliste quand Vmax varie + suppression des doublons HH:MM
   const horaTheoSecondsByIndex = useMemo(() => {
-    if (!testModeEnabled) {
-      return new Array<number | null>(rawEntries.length).fill(null);
-    }
-
+    // #19 : ces heures à la SECONDE sont calculées EN PERMANENCE (mode test ou
+    // non) — seul l'AFFICHAGE est réservé au mode test (cf. cellule Hora). Ainsi
+    // le log `ft:theo-schedule` dispose de `sec` même en usage normal.
     const clamp = (x: number, lo: number, hi: number) => Math.min(Math.max(x, lo), hi);
 
     const getPkNum = (idx: number): number | null => {
@@ -5770,41 +5769,6 @@ if (hasFranceFtLocal) {
       const secA = Math.round(depA * 60);
       const secB = Math.round(endB * 60);
 
-            // 🔎 DEBUG (uniquement 1er segment) : comprendre les "téléportations" au début
-      if (a === lastAnchorIndex && a === 0) {
-        try {
-          const pkA_dbg = getPkNum(a);
-          const pkB_dbg = getPkNum(i);
-
-          const arrB_dbg = arrivalMinutesByIndex[i];
-
-          const fmtMin = (m: number | null) => {
-            if (m == null) return null;
-            const hh = Math.floor((((m % (24 * 60)) + (24 * 60)) % (24 * 60)) / 60);
-            const mm = (((m % (24 * 60)) + (24 * 60)) % (24 * 60)) % 60;
-            const pad = (n: number) => n.toString().padStart(2, "0");
-            return `${pad(hh)}:${pad(mm)}`;
-          };
-
-          console.log(
-            "[FT][horaTheoSeconds][SEG0_JSON]",
-            JSON.stringify(
-              {
-                A: { idx: a, pk: pkA_dbg, depA_raw: depA, secA },
-                B: { idx: i, pk: pkB_dbg, depB_raw: depB, endB_raw: endB, secB },
-                arrivalB_raw: arrB_dbg,
-                deltaSec: secB - secA,
-              },
-              null,
-              0
-            )
-          );
-
-        } catch (err) {
-          console.warn("[FT][horaTheoSeconds][SEG0] debug failed", err);
-        }
-      }
-
 
       out[a] = secA;
       out[i] = Math.round(depB * 60); // on garde l’affichage “départ B” sur la ligne B (cohérent avec ta colonne)
@@ -5909,7 +5873,7 @@ if (hasFranceFtLocal) {
 
     // Si certaines cases restent null (avant la première ancre), on laisse null.
     return out;
-  }, [testModeEnabled, rawEntries, heuresDetectees, codesCParHeure, firstNonNoteIndex, lastNonNoteIndex]);
+  }, [rawEntries, heuresDetectees, codesCParHeure, firstNonNoteIndex, lastNonNoteIndex]);
 
   // #19 — LOG du barème THÉORIQUE calculé par l'app (heures intermédiaires par
   // ligne), pour pouvoir comparer hors-ligne « réel (GPS) vs calculé » sans avoir
