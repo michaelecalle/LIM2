@@ -5911,6 +5911,33 @@ if (hasFranceFtLocal) {
     return out;
   }, [testModeEnabled, rawEntries, heuresDetectees, codesCParHeure, firstNonNoteIndex, lastNonNoteIndex]);
 
+  // #19 — LOG du barème THÉORIQUE calculé par l'app (heures intermédiaires par
+  // ligne), pour pouvoir comparer hors-ligne « réel (GPS) vs calculé » sans avoir
+  // à rejouer/recalculer. `min` = horaTheoMinutesByIndex (réf. du scroll horaire,
+  // toujours dispo) ; `sec` = horaTheoSecondsByIndex (précis, pondéré Vmax, dispo
+  // en mode test). Émis quand le calcul change OU à l'activation du mode test ;
+  // `logTestEvent` est un no-op si l'enregistrement n'est pas actif → sans risque.
+  useEffect(() => {
+    const mins = horaTheoMinutesByIndex;
+    if (!mins || mins.length === 0) return;
+    const rows: Array<{ i: number; pk: any; dep: any; min: number; sec: number | null }> = [];
+    for (let i = 0; i < rawEntries.length; i++) {
+      const min = mins[i];
+      if (typeof min !== "number") continue;
+      const e = rawEntries[i] as any;
+      const sec = horaTheoSecondsByIndex[i];
+      rows.push({
+        i,
+        pk: e?.pk ?? null,
+        dep: e?.dependencia ?? null,
+        min,
+        sec: typeof sec === "number" ? sec : null,
+      });
+    }
+    if (rows.length === 0) return;
+    logTestEvent("ft:theo-schedule", { trainNumber, count: rows.length, rows });
+  }, [horaTheoMinutesByIndex, horaTheoSecondsByIndex, testModeEnabled, trainNumber, rawEntries]);
+
 
   // Gestion RC
   let rcCurrentSegmentId = 0;
