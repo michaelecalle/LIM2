@@ -1024,7 +1024,7 @@ if (referenceMode === "GPS") {
             const dataIndex = dataIndexAttr ? parseInt(dataIndexAttr, 10) : NaN;
 
             if (Number.isFinite(dataIndex)) {
-              const theoMin = horaTheoMinutesByIndex[dataIndex];
+              const theoMin = horaTheoMinFloatByIndex[dataIndex];
               if (typeof theoMin === "number" && Number.isFinite(theoMin)) {
                 return theoMin;
               }
@@ -5874,6 +5874,24 @@ if (hasFranceFtLocal) {
     // Si certaines cases restent null (avant la première ancre), on laisse null.
     return out;
   }, [rawEntries, heuresDetectees, codesCParHeure, firstNonNoteIndex, lastNonNoteIndex]);
+
+  // Heures théoriques par ligne en MINUTES FLOTTANTES (= précision SECONDE) :
+  // secondes/60 si dispo (toujours calculé maintenant), sinon repli sur la version
+  // minutes arrondie. C'est la référence à utiliser pour la LOCALISATION horaire
+  // (interpolation du scroll) afin d'éviter les à-coups d'arrondi à la minute.
+  const horaTheoMinFloatByIndex = useMemo(() => {
+    const out: Array<number | null> = new Array(rawEntries.length).fill(null);
+    for (let i = 0; i < rawEntries.length; i++) {
+      const sec = horaTheoSecondsByIndex[i];
+      if (typeof sec === "number" && Number.isFinite(sec)) {
+        out[i] = sec / 60;
+      } else {
+        const m = horaTheoMinutesByIndex[i];
+        out[i] = typeof m === "number" && Number.isFinite(m) ? m : null;
+      }
+    }
+    return out;
+  }, [horaTheoSecondsByIndex, horaTheoMinutesByIndex, rawEntries]);
 
   // #19 — LOG du barème THÉORIQUE calculé par l'app (heures intermédiaires par
   // ligne), pour pouvoir comparer hors-ligne « réel (GPS) vs calculé » sans avoir
