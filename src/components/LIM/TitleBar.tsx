@@ -586,6 +586,26 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     try { localStorage.setItem('lim:touch-indicator', touchIndicatorEnabled ? '1' : '0') } catch {}
   }, [touchIndicatorEnabled])
 
+  // ===== Mise à l'échelle de la fiche train (#25) — option + multiplicateur. =====
+  // La BASE (densité px/km) est calculée automatiquement par FT (segment le plus
+  // contraint) ; ici on ne règle qu'un MULTIPLICATEUR (1× = compact proportionnel).
+  const [ftScaleEnabled, setFtScaleEnabled] = useState(() => {
+    try { return localStorage.getItem('lim:ft-scale') === '1' } catch { return false }
+  })
+  const [ftScaleMult, setFtScaleMult] = useState(() => {
+    try { const v = parseFloat(localStorage.getItem('lim:ft-scale-mult') ?? '0.2'); return Number.isFinite(v) && v > 0 ? v : 0.2 } catch { return 0.2 }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('lim:ft-scale', ftScaleEnabled ? '1' : '0')
+      localStorage.setItem('lim:ft-scale-mult', String(ftScaleMult))
+    } catch {}
+    // FT écoute cet événement et se re-rend en direct.
+    window.dispatchEvent(new CustomEvent('lim:ft-scale', {
+      detail: { enabled: ftScaleEnabled, multiplier: ftScaleMult },
+    }))
+  }, [ftScaleEnabled, ftScaleMult])
+
   // Menu caché (dev / présentation) : appui LONG sur la roue dentée.
   // Appui court = vrai menu paramètres ; appui long = ce menu caché.
   const [hiddenMenuOpen, setHiddenMenuOpen] = useState(false)
@@ -1664,6 +1684,42 @@ ${coords}
     }
     window.addEventListener('replay:play-started', handler)
     return () => window.removeEventListener('replay:play-started', handler)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testRecording])
+
+  // ✅ Fin d'un replay (Stop du PANNEAU Replay, #23) : on propose l'export LOCAL du log
+  // (jamais d'upload, pour ne pas polluer lim-logs), on finalise l'enregistrement et on
+  // restaure l'horloge réelle.
+  useEffect(() => {
+    const handler = () => {
+      // 1) Restaurer l'horloge réelle (fin du replay).
+      if (origDateRef.current) {
+        window.Date = origDateRef.current
+        origDateRef.current = null
+      }
+      // 2) Finaliser l'enregistrement.
+      let hadLog = false
+      if (testRecording) {
+        logTestEvent('replay:stopped', {})
+        stopTestSession()
+        setTestRecording(false)
+        hadLog = true
+      }
+      // 3) Proposer l'export LOCAL (OUI = télécharger / NON = effacer). Jamais d'upload.
+      if (wasReplaySessionRef.current && hadLog) {
+        const doExport = window.confirm(
+          'Replay terminé.\n\nExporter le log de ce replay en local ?\n\nOK = télécharger    /    Annuler = effacer'
+        )
+        if (doExport) {
+          void exportTestLogLocal().catch((e) =>
+            console.warn('[TitleBar] Export log replay impossible', e)
+          )
+        }
+      }
+      wasReplaySessionRef.current = false
+    }
+    window.addEventListener('replay:stopped', handler)
+    return () => window.removeEventListener('replay:stopped', handler)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testRecording])
 
@@ -5634,18 +5690,14 @@ setAutoScrollStartedOnce(next)
                     setTestRecording(false)
                   }
 
-                  // Replay : pas d'upload GitHub, mais on EXPORTE le log en LOCAL (diagnostic).
+                  // Replay : l'export du log se fait désormais via le STOP du panneau Replay
+                  // (événement replay:stopped, #23). Ici on se contente de restaurer l'horloge
+                  // réelle si elle est encore proxifiée (sécurité), SANS export ni upload.
                   if (wasReplaySessionRef.current) {
-                    try {
-                      await exportTestLogLocal()
-                    } catch (e) {
-                      console.warn('[TitleBar] Export log replay impossible', e)
-                    }
-                    // Restaurer l'horloge RÉELLE (fin du replay) — cf #21.
                     if (origDateRef.current) {
                       window.Date = origDateRef.current
                       origDateRef.current = null
-                      console.log('[TitleBar] Horloge réelle restaurée (fin replay)')
+                      console.log('[TitleBar] Horloge réelle restaurée (sécurité STOP titlebar)')
                     }
                   }
 
@@ -6018,6 +6070,30 @@ setAutoScrollStartedOnce(next)
                     className="h-4 w-4 cursor-pointer accent-blue-600"
                   />
                 </label>
+
+                <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
+
+                {/* Mise à l'échelle de la fiche train (#25) */}
+                <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
+                  <span>Mise à l'échelle de la fiche train</span>
+                  <input
+                    type="checkbox"
+                    checked={ftScaleEnabled}
+                    onChange={() => setFtScaleEnabled(v => !v)}
+                    className="h-4 w-4 cursor-pointer accent-blue-600"
+                  />
+                </label>
+                {ftScaleEnabled && (
+                  <div className="pl-2 pb-1 text-xs text-zinc-600 dark:text-zinc-300 space-y-2">
+                    <div>
+                      <div className="flex justify-between"><span>Espacement</span><span>{ftScaleMult.toFixed(1)}×</span></div>
+                      <input type="range" min={0.2} max={3} step={0.1} value={ftScaleMult}
+                        onChange={(e) => setFtScaleMult(parseFloat(e.target.value))}
+                        className="w-full cursor-pointer accent-blue-600" />
+                      <div className="text-[10px] opacity-70 leading-tight">1× = proportionnel exact. En dessous = plus compact à l'écran (moins exact). Jamais de compression sous le contenu réel.</div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
 

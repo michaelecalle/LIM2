@@ -11,6 +11,25 @@ import { logTestEvent } from "../../lib/testLogger";
 import { getFtFranceHhmm } from "../../data/ftFranceTimes"
 import { tunnelZoneAt } from "../../data/tunnelZones"
 
+// Mise à l'échelle FT (#25) : PK numérique d'une entrée (pk_internal sinon champs PK / sit km).
+function ftEntryPkNum(e: any): number | null {
+  if (!e) return null;
+  if (typeof e.pk_internal === "number" && Number.isFinite(e.pk_internal)) return e.pk_internal;
+  for (const f of ["pk_internal", "pkInterne", "pkAdif", "pk_adif", "pk", "sitKm"]) {
+    const v = parseFloat(String(e[f] ?? "").replace(",", "."));
+    if (Number.isFinite(v) && v > 100) return v; // PK ligne ~616-805
+  }
+  return null;
+}
+
+// === Scroll « flèche épinglée » (#26) — réversible : false = ancien comportement
+// (scroll ligne-par-ligne aligné sur la ligne de référence). true = la flèche
+// (position continue du train) est épinglée à FT_PIN_FRACTION du viewport et
+// c'est la fiche train qui défile dessous, en GPS comme en horaire.
+const FT_PINNED_SCROLL = true;
+const FT_PIN_FRACTION = 1 / 3; // épinglage à ~1/3 du haut de la zone visible
+const FT_SCROLL_EASE = 0.12;   // lissage par frame (glisse vers la cible)
+
 type GpsPosition = {
   lat: number;
   lon: number;
@@ -58,8 +77,54 @@ export default function FT({ variant = "classic" }: FTProps) {
     first: 0,
     last: 0,
   });
+  // Cache de la plage visible : évite de re-rendre toute la FT à chaque event
+  // scroll (60 fps avec le scroll épinglé) quand la plage n'a pas changé.
+  const visibleRowsRef = React.useRef(visibleRows);
+  visibleRowsRef.current = visibleRows;
+  // Position CONTENU continue du train (px absolus dans le tableau, = arrow Y +
+  // scrollTop). Sert au scroll épinglé (#26). Renseignée par commitTrainPos.
+  const trainContentYRef = React.useRef<number | null>(null);
+  // Réf DOM de la flèche : en scroll épinglé, on pilote son `top` à 60 fps pour
+  // qu'elle reste figée à 1/3 (et descende proprement en début/fin de parcours).
+  const pinnedArrowRef = React.useRef<HTMLDivElement | null>(null);
   // ligne "active" quand on est en mode horaire (play)
   const [activeRowIndex, setActiveRowIndex] = useState<number>(0);
+
+  // Mise à l'échelle FT (#25) : reçu de TitleBar (option + multiplicateur), live.
+  // `multiplier` = facteur appliqué à la BASE auto-calculée (densité du segment
+  // le plus contraint). 1× = le plus compact en restant proportionnel.
+  const [ftScale, setFtScale] = useState<{ enabled: boolean; multiplier: number }>(() => {
+    try {
+      return {
+        enabled: localStorage.getItem("lim:ft-scale") === "1",
+        multiplier: parseFloat(localStorage.getItem("lim:ft-scale-mult") ?? "0.2") || 0.2,
+      };
+    } catch {
+      return { enabled: false, multiplier: 0.2 };
+    }
+  });
+  useEffect(() => {
+    const h = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (d) setFtScale({ enabled: !!d.enabled, multiplier: Number(d.multiplier) || 1 });
+    };
+    window.addEventListener("lim:ft-scale", h as EventListener);
+    return () => window.removeEventListener("lim:ft-scale", h as EventListener);
+  }, []);
+
+  // Mode déplié (INFOS/LTV affichés) : la zone FT visible est minuscule, la mise
+  // à l'échelle n'a aucun sens (on ne verrait que de l'espace vide) → on la coupe.
+  // `folded` (TitleBar) : true = FT seule (échelle pertinente), false = déplié.
+  const [infosLtvFolded, setInfosLtvFolded] = useState(false);
+  useEffect(() => {
+    const h = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (d && typeof d.folded === "boolean") setInfosLtvFolded(d.folded);
+    };
+    window.addEventListener("lim:infos-ltv-fold-change", h as EventListener);
+    return () =>
+      window.removeEventListener("lim:infos-ltv-fold-change", h as EventListener);
+  }, []);
 
   // source de référence pour la ligne active : horaire ou GPS
   const [referenceMode, setReferenceMode] = useState<ReferenceMode>("HORAIRE");
@@ -196,33 +261,6 @@ export default function FT({ variant = "classic" }: FTProps) {
     const firstDataRow = firstDataAttr ? parseInt(firstDataAttr, 10) : null;
     const lastDataRow = lastDataAttr ? parseInt(lastDataAttr, 10) : null;
 
-    console.log(
-      "[FT][scroll] scrollTop=",
-      scrollTop,
-      " / clientHeight=",
-      clientHeight,
-      " / rows=",
-      rowEls.length
-    );
-    console.log("[FT][visible-rows] first=", firstVisible, "last=", lastVisible);
-
-    // 🔎 Debug renforcé : on affiche aussi les attributs bruts pour diagnostiquer
-    console.log(
-      "[FT][VISIBLE_ROWS_DATA_ROW]",
-      "firstVisible=",
-      firstVisible,
-      "lastVisible=",
-      lastVisible,
-      "| firstAttr=",
-      firstDataAttr,
-      "lastAttr=",
-      lastDataAttr,
-      "| firstDataRow=",
-      firstDataRow,
-      "lastDataRow=",
-      lastDataRow
-    );
-
     // on met à jour le state : ✅ indices "réels" (data-ft-row) si disponibles
     const nextFirst =
       typeof firstDataRow === "number" && Number.isFinite(firstDataRow)
@@ -234,7 +272,15 @@ export default function FT({ variant = "classic" }: FTProps) {
         ? lastDataRow
         : lastVisible;
 
-    setVisibleRows({ first: nextFirst, last: nextLast });
+    // #26 : ne re-rendre la FT (et ne logguer) que si la plage visible a
+    // réellement changé — le scroll épinglé déclenche un event scroll ~60 fps.
+    if (
+      nextFirst !== visibleRowsRef.current.first ||
+      nextLast !== visibleRowsRef.current.last
+    ) {
+      visibleRowsRef.current = { first: nextFirst, last: nextLast };
+      setVisibleRows({ first: nextFirst, last: nextLast });
+    }
   };
 
 
@@ -750,6 +796,11 @@ if (referenceMode === "GPS") {
       const yRounded = Math.round(yCandidate);
       const gpsStateNow = gpsStateUi;
 
+      // #26 : position CONTENU = position viewport de la flèche + scrollTop courant
+      // (les deux mesurés dans le même tick → cohérent). Pilote le scroll épinglé.
+      const cPin = scrollContainerRef.current;
+      if (cPin) trainContentYRef.current = yRounded + cPin.scrollTop;
+
       setTrainPosYpx((prev) => {
         let next = yRounded;
 
@@ -897,7 +948,11 @@ if (referenceMode === "GPS") {
             const VISUAL_OFFSET_PX = -2;
             const y =
               tr.offsetTop + tr.offsetHeight / 2 - container.scrollTop + VISUAL_OFFSET_PX;
-            if (y < 0 || y > h) continue;
+            // ⚠️ CORRECTIF #26 : on garde TOUTES les lignes DOM, même hors viewport
+            // (comme la branche horaire). Avant, le filtre `if (y<0||y>h) continue`
+            // limitait l'interpolation aux lignes VISIBLES → quand le PK suivant était
+            // hors écran (grand espacement, ex. 723.7 → FGV à 26 km), la position se
+            // figeait sur la dernière ligne visible → le scroll épinglé s'arrêtait.
 
             pts.push({ u, y });
           }
@@ -905,7 +960,7 @@ if (referenceMode === "GPS") {
           if (pts.length >= 2) {
             pts.sort((a, b) => a.u - b.u);
 
-            // Clamp sur les bords visibles (évite le “ligne par ligne”)
+            // Clamp aux extrémités du parcours (toutes lignes confondues)
             if (targetU <= pts[0].u) {
               commitTrainPos(pts[0].y);
               return;
@@ -1170,6 +1225,69 @@ if (referenceMode === "GPS") {
     const id = window.setInterval(tick, TICK_MS);
     return () => window.clearInterval(id);
   }, [activeRowIndex, gpsStateUi]);
+
+  // #26 — SCROLL ÉPINGLÉ : une boucle rAF maintient la flèche (position continue
+  // du train, `trainContentYRef`) à FT_PIN_FRACTION du haut du viewport, en
+  // faisant glisser scrollTop en douceur. Tombe naturellement juste :
+  //  - début de parcours : scrollTop bute à 0 → la flèche descend du haut vers 1/3 ;
+  //  - régime établi      : flèche figée à 1/3, la FT défile ;
+  //  - fin de parcours    : scrollTop bute à scrollMax → la flèche repart vers le bas.
+  // Marche en GPS (flèche affichée) ET horaire (position rouge, masquée hors test).
+  // On respecte le scroll manuel (pause si isManualScrollRef) et l'auto-scroll OFF.
+  useEffect(() => {
+    if (!FT_PINNED_SCROLL) return;
+    let raf = 0;
+    let running = true;
+    // Position CONTENU LISSÉE : on lisse la POSITION (pas le scrollTop). Ainsi
+    // scrollTop = displayY − H/3 (direct) garde la flèche EXACTEMENT à 1/3
+    // (= displayY − scrollTop), et le contenu glisse en douceur car displayY
+    // glisse en douceur. En début/fin (scroll borné), la flèche descend/remonte.
+    let displayY: number | null = null;
+
+    const loop = () => {
+      if (!running) return;
+      const c = scrollContainerRef.current;
+      const trueY = trainContentYRef.current;
+      if (
+        c &&
+        autoScrollEnabledRef.current &&
+        !isManualScrollRef.current &&
+        trueY != null
+      ) {
+        const H = c.clientHeight;
+        // Resync immédiat si saut énorme (seek replay, changement de train…).
+        if (displayY == null || Math.abs(trueY - displayY) > H * 1.5) {
+          displayY = trueY;
+        } else {
+          displayY += (trueY - displayY) * FT_SCROLL_EASE;
+        }
+
+        const maxScroll = Math.max(0, c.scrollHeight - H);
+        const targetScroll = Math.max(
+          0,
+          Math.min(displayY - H * FT_PIN_FRACTION, maxScroll)
+        );
+        if (Math.abs(targetScroll - c.scrollTop) > 0.5) {
+          isProgrammaticScrollRef.current = true;
+          c.scrollTop = targetScroll;
+        }
+
+        // Flèche : position lissée − scroll → 1/3 en régime établi, descente
+        // fluide en début/fin. Pilotée en DOM (pas de re-render à 60 fps).
+        const arrowEl = pinnedArrowRef.current;
+        if (arrowEl) {
+          arrowEl.style.top = `${Math.round(displayY - c.scrollTop)}px`;
+        }
+      }
+      raf = requestAnimationFrame(loop);
+    };
+
+    raf = requestAnimationFrame(loop);
+    return () => {
+      running = false;
+      cancelAnimationFrame(raf);
+    };
+  }, []);
 
 
 
@@ -2336,6 +2454,9 @@ window.dispatchEvent(
   // (on autorise désormais le scroll à monter OU descendre),
   // quel que soit le mode de référence (HORAIRE ou GPS).
 useEffect(() => {
+    // #26 : en scroll épinglé, c'est la boucle rAF qui pilote le scroll.
+    // On neutralise l'ancien recentrage ligne-par-ligne pour éviter le conflit.
+    if (FT_PINNED_SCROLL) return;
     // ✅ GPS passif : sans autoscroll engagé, l'indicateur GPS peut évoluer,
     // mais la FT ne doit pas se recentrer toute seule.
     if (!autoScrollEnabled) return;
@@ -2619,6 +2740,108 @@ useEffect(() => {
 
     return visibleEntries;
   }, [isOdd, trainNumber, routeStart, routeEnd]);
+
+  // #25 — Mise à l'échelle PROPORTIONNELLE par SEGMENT (mesure + espace ajouté).
+  // Principe : on mesure la hauteur NATURELLE entre 2 lignes principales (PK)
+  // consécutives — ligne principale + TOUTES ses lignes intermédiaires/notes —
+  // puis on AJOUTE uniquement l'espace vide manquant pour atteindre
+  // `étalement × distance_km`. On n'ajoute jamais d'espace négatif (« écarter,
+  // jamais rapprocher ») → le plancher de chaque segment est sa hauteur réelle.
+  // L'espace est posé dans une ligne dédiée `tr.ft-scale-gap` (hauteur pilotée
+  // ici en impératif, donc non touchée par les re-rendus GPS).
+  useEffect(() => {
+    const apply = () => {
+      // ⚠️ Il y a 2 tables .ft-table : l'en-tête fixe (thead) ET le corps.
+      // Les lignes (dont ft-scale-gap) sont dans la table du CORPS.
+      const table = document.querySelector(
+        ".ft-body-scroll table.ft-table"
+      ) as HTMLElement | null;
+      if (!table) return;
+
+      const gapRows = Array.from(
+        table.querySelectorAll<HTMLTableRowElement>("tr.ft-scale-gap")
+      );
+      // 1) Reset : toutes les lignes d'espacement à 0 avant de mesurer.
+      const gapTdByIdx = new Map<number, HTMLElement>();
+      for (const tr of gapRows) {
+        const idx = Number(tr.getAttribute("data-scale-gap"));
+        const td = tr.querySelector<HTMLElement>("td");
+        if (td) {
+          td.style.height = "0px";
+          gapTdByIdx.set(idx, td);
+        }
+      }
+
+      // OFF, ou mode DÉPLIÉ (INFOS/LTV affichés) = layout naturel (gaps à 0).
+      if (!ftScale.enabled || !infosLtvFolded) return;
+
+      // 2) Mesure des positions naturelles (gaps à 0) des lignes principales.
+      const mains = Array.from(
+        table.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main")
+      );
+      const info = mains.map((tr) => {
+        const idx = Number(tr.getAttribute("data-ft-row"));
+        return { idx, top: tr.offsetTop, pk: ftEntryPkNum(rawEntries[idx]) };
+      });
+
+      // 3) BASE = densité (px/km) du segment le plus CONTRAINT (le plus de
+      //    contenu intermédiaire pour la plus courte distance). C'est le plancher
+      //    de densité imposé par la fiche train elle-même. Si l'étalement effectif
+      //    ≥ base, TOUS les segments atteignent `étalement×distance` → vraiment
+      //    proportionnel (le contenu intermédiaire occupe une partie de l'espace).
+      let base = 0;
+      for (let k = 0; k < info.length - 1; k++) {
+        const a = info[k];
+        const b = info[k + 1];
+        if (a.pk == null || b.pk == null) continue;
+        const dist = Math.abs(b.pk - a.pk);
+        if (dist <= 0) continue;
+        const naturalGap = b.top - a.top;
+        base = Math.max(base, naturalGap / dist);
+      }
+      if (base <= 0) return;
+
+      // Étalement effectif = base × multiplicateur choisi (≥ base → proportionnel).
+      const effEtalement = base * (ftScale.multiplier > 0 ? ftScale.multiplier : 1);
+
+      // 4) Pour chaque segment [k, k+1] : extra = max(0, voulu − naturel).
+      for (let k = 0; k < info.length - 1; k++) {
+        const a = info[k];
+        const b = info[k + 1];
+        if (a.pk == null || b.pk == null) continue;
+        const dist = Math.abs(b.pk - a.pk);
+        if (dist <= 0) continue;
+        const naturalGap = b.top - a.top; // distance pixels réelle (gaps à 0)
+        const desired = effEtalement * dist;
+        const extra = Math.max(0, desired - naturalGap);
+        const td = gapTdByIdx.get(a.idx);
+        if (td) td.style.height = `${Math.round(extra)}px`;
+      }
+    };
+
+    const raf = requestAnimationFrame(apply);
+    const t0 = window.setTimeout(apply, 0);
+    const t1 = window.setTimeout(apply, 120);
+    window.addEventListener("resize", apply);
+    window.addEventListener("lim:pdf-mode-change", apply as EventListener);
+    window.addEventListener("ltv:layout-stable", apply as EventListener);
+    window.addEventListener(
+      "lim:infos-ltv-fold-change",
+      apply as EventListener
+    );
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(t0);
+      window.clearTimeout(t1);
+      window.removeEventListener("resize", apply);
+      window.removeEventListener("lim:pdf-mode-change", apply as EventListener);
+      window.removeEventListener("ltv:layout-stable", apply as EventListener);
+      window.removeEventListener(
+        "lim:infos-ltv-fold-change",
+        apply as EventListener
+      );
+    };
+  }, [ftScale, rawEntries, infosLtvFolded]);
 
   const ltvNotesByRowIndex = useMemo(() => {
     const result = new Map<number, string[]>();
@@ -5882,10 +6105,20 @@ if (isStandby) {
       continue;
     }
 
+    // #25 : index de CETTE ligne principale (i peut être incrémenté plus bas
+    // quand on consomme une ligne note) → on le fige pour la ligne d'espacement.
+    const rowMainIndex = i;
+
     const ltvNoteLines = ltvNotesByRowIndex.get(i) ?? [];
 
     const nextEntry = rawEntries[i + 1];
     const hasNoteAfter = nextEntry && nextEntry.isNoteOnly === true;
+
+    // Trains IMPAIRS : la remarque rouge (ligne noteOnly) située JUSTE AVANT cette
+    // ligne principale lui est associée → on la fusionne avec l'heure d'arrivée de
+    // CETTE station, sur une seule ligne au-dessus (cf. bloc plus bas).
+    const prevEntry = i > 0 ? rawEntries[i - 1] : undefined;
+    const hasNoteBefore = !!prevEntry && prevEntry.isNoteOnly === true;
 
     const net = (entry as any).network as ("RFN" | "LFP" | "ADIF" | undefined);
 
@@ -6177,25 +6410,19 @@ const nivel =
         // est-ce que cette ligne principale est dans le viewport ?
         const segStillVisible = i >= visibleStart2 && i <= visibleEnd2;
 
-        // comme pour RC : on évite de coller la valeur sur la première ligne visible
-        const targetVisible2 = visibleStart2 + 1;
-        const isGoodSpot =
-          mainRowCounter >= targetVisible2 && mainRowCounter <= visibleEnd2;
-
-        if (segStillVisible && isGoodSpot) {
-          speedSpacerContent = currentSpeedText;
+        // On place la valeur sur la PREMIÈRE ligne principale visible du segment
+        // (la plus haute / la plus pertinente). On NE saute PLUS la 1re ligne
+        // visible (ancien `+1`) : ce skip faisait disparaître la valeur quand la
+        // seule ligne visible d'un segment était justement cette 1re ligne
+        // (ex. 749.6 entouré de grands espacements). isGoodSpot == segStillVisible.
+        if (segStillVisible && !showVBar) {
+          // ⚠️ CORRECTIF : on écrit la V max relocalisée sur la LIGNE PRINCIPALE
+          // (comme les rampes/bloque qui fonctionnent), PAS sur un spacer
+          // intermédiaire. Sinon la valeur dépendait de la présence/position
+          // d'une ligne intermédiaire visible (et, depuis l'espacement, elle se
+          // retrouvait poussée sous l'écran) → elle disparaissait.
+          mainRowSpeedContent = currentSpeedText;
           vPrintedSegments.add(segId);
-
-          console.log(
-            "[SCROLL INTELLIGENT VMAX] réaffiché sur ligne",
-            i,
-            "(mainRowCounter =",
-            mainRowCounter,
-            ") pour segment",
-            segId,
-            "valeur",
-            currentSpeedText
-          );
         }
       }
     }
@@ -6250,6 +6477,30 @@ const nivel =
       i === labelRowIndexRadio
     ) {
       radioSpacerContent = radioValue;
+    }
+
+    // --- SCROLL INTELLIGENT RADIO (était ABSENT) ---
+    // Quand la ligne-label du segment radio est hors écran, on relocalise la
+    // valeur sur une LIGNE PRINCIPALE visible (comme rampes/bloque/V max), pas
+    // sur un spacer. Sans ça la valeur radio ne bougeait pas du tout au scroll.
+    if (
+      segIdRadio > 0 &&
+      radioValue &&
+      !isRadioBreakpointHere &&
+      !radioPrintedSegments.has(segIdRadio)
+    ) {
+      const labelVisibleRadio =
+        labelRowIndexRadio !== null &&
+        labelRowIndexRadio >= visibleStart4 &&
+        labelRowIndexRadio <= visibleEnd4;
+      if (!labelVisibleRadio) {
+        // Première ligne principale visible du segment (plus de skip `+1`).
+        const segStillVisibleRadio = i >= visibleStart4 && i <= visibleEnd4;
+        if (segStillVisibleRadio) {
+          mainRowRadioContent = radioValue;
+          radioPrintedSegments.add(segIdRadio);
+        }
+      }
     }
 
           const showRadioBar = false;
@@ -6367,6 +6618,49 @@ const nivel =
           <td className="ft-td ft-td-nivel" />
         </tr>
       );
+    } else if (isOdd && hasNoteBefore) {
+      // 👇 Trains IMPAIRS : remarque rouge (prevEntry, ligne noteOnly juste au-dessus)
+      //    + heure d'arrivée de CETTE station, FUSIONNÉES sur une seule ligne au-dessus
+      //    de la ligne principale (comme le PDF de l'éditeur). Vaut aussi hors mise à
+      //    l'échelle. La note (i-1) est sautée dans sa propre itération via `continue`,
+      //    et n'est plus rendue après la ligne précédente (ancien bloc note-after retiré).
+      const vmaxClassForNoteBeforeOdd = csvZoneOpen ? " ft-v-csv-full" : "";
+
+      rows.push(
+        <tr className="ft-row-inter" key={`note-before-odd-${i}`}>
+          {(() => {
+            renderedRowIndex++;
+            return <td className="ft-td"></td>;
+          })()}
+
+          <td className={"ft-td ft-v-cell" + vmaxClassForNoteBeforeOdd}>
+            <div className="ft-v-inner text-center"></div>
+          </td>
+
+          <td className="ft-td" />
+
+          <td className="ft-td">
+            {renderDependenciaCell(prevEntry as FTEntry)}
+          </td>
+
+          {/* Com vide */}
+          <td className="ft-td" />
+
+          {/* Heure d'arrivée sur la même ligne que la remarque rouge */}
+          <td className="ft-td ft-hora-cell">
+            {showArrivalSpacer && horaArrivee && (
+              <span className="ft-hora-arrivee">{horaArrivee}</span>
+            )}
+          </td>
+
+          {/* Técn / Conc / Radio vides */}
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td ft-rc-cell" />
+          <td className="ft-td ft-td-nivel" />
+        </tr>
+      );
     } else if (shouldRenderArrivalSpacer) {
       // Cas général (IMPAIR ou sans remarque rouge) : heure d'arrivée seule au-dessus de la ligne principale
       const vmaxClassForArrival = csvZoneOpen ? " ft-v-csv-full" : "";
@@ -6400,7 +6694,11 @@ const nivel =
 
 
 
-    // 3) LIGNE PRINCIPALE (toujours)
+    // 3) LIGNE PRINCIPALE (toujours) — hauteur NATURELLE.
+    //    La mise à l'échelle #25 ne touche plus la ligne principale : l'espace
+    //    proportionnel est ajouté par segment via la ligne `ft-scale-gap`
+    //    (cf. effet de mesure plus haut). Les lignes principales gardent donc
+    //    leur hauteur de contenu → le surlignage jaune colle au texte tout seul.
     rows.push(
       <tr
         className={
@@ -6608,7 +6906,8 @@ right: -1,
               );
             }
 
-            return "";
+            // Valeur radio relocalisée par le scroll intelligent (ligne principale).
+            return mainRowRadioContent || "";
           })()}
         </td>
 
@@ -6621,6 +6920,40 @@ right: -1,
         </td>
 
         <td className="ft-td ft-td-nivel">{nivel}</td>
+      </tr>
+    );
+
+    // #25 : ligne d'espacement du segment, posée JUSTE APRÈS la ligne principale
+    // A (et AVANT ses lignes intermédiaires : LTV orange, remarques rouges, heure
+    // d'arrivée du PK suivant). Ainsi ces intermédiaires restent collées au PK
+    // SUIVANT (B), pas séparées de lui par l'espace. La mesure (gaps à 0) et le
+    // total restent identiques : seul l'emplacement de l'espace vide change.
+    // #25/① : l'espacement doit prolonger le surlignage orange de la colonne V Max
+    // s'il est dans une zone de vitesse ouverte. `csvZoneOpen` n'est mis à jour
+    // qu'APRÈS ce push → on prédit l'état qui s'appliquera (bottom ouvre, top ferme,
+    // sinon inchangé), comme la ligne de vitesse intermédiaire du même segment.
+    const gapZoneOpen = isCsvStart ? true : isCsvEnd ? false : csvZoneOpen;
+    rows.push(
+      <tr
+        className="ft-scale-gap"
+        data-scale-gap={rowMainIndex}
+        key={`scale-gap-${rowMainIndex}`}
+      >
+        {/* 11 cellules (= colonnes de la FT) pour que les bordures VERTICALES
+            continuent à travers l'espace. La hauteur est posée sur la 1re par
+            l'effet de mesure ; les autres s'alignent sur la hauteur de ligne.
+            La 2e cellule (colonne V Max) reçoit l'orange si zone ouverte. */}
+        {Array.from({ length: 11 }).map((_, ci) => (
+          <td
+            key={ci}
+            className={
+              "ft-td ft-scale-gap-cell" +
+              (ci === 1
+                ? " ft-v-cell" + (gapZoneOpen ? " ft-v-csv-full" : "")
+                : "")
+            }
+          />
+        ))}
       </tr>
     );
 
@@ -6752,68 +7085,12 @@ const vmaxClassForLtv =
       );
     }
 
-    // 4) LIGNE INTERMÉDIAIRE POUR LES REMARQUES ROUGES (noteOnly) SOUS la ligne principale
-    // ➜ désormais seulement pour les trains IMPAIR (isOdd === true)
-    if (isOdd && hasNoteAfter && i < rawEntries.length - 1) {
-      // Si on est dans une zone CSV, la ligne de note est aussi "dans la zone" => full
-      const vmaxClassForNote = csvZoneOpen ? " ft-v-csv-full" : "";
-
-      if (["629.4", "627.7", "626.7", "624.3"].includes(entry.pk ?? "")) {
-        console.log(
-          "[CSV LA SAGRERA NOTE FT]",
-          JSON.stringify({
-            i,
-            pk: entry.pk ?? "",
-            dependencia: entry.dependencia ?? "",
-            highlightKind,
-            csvZoneOpen,
-            vmaxClassForNote,
-            notePk: rawEntries[i + 1]?.pk ?? "",
-            noteIsNoteOnly: !!rawEntries[i + 1]?.isNoteOnly,
-            noteDependencia: rawEntries[i + 1]?.dependencia ?? "",
-          })
-        );
-      }
-
-      rows.push(
-        <tr className="ft-row-inter" key={`note-${i}`}>
-          {(() => {
-            renderedRowIndex++;
-            return <td className="ft-td"></td>;
-          })()}
-
-          <td className={"ft-td ft-v-cell" + vmaxClassForNote}>
-            <div className="ft-v-inner text-center"></div>
-          </td>
-
-          <td className="ft-td" />
-
-          <td className="ft-td">
-            {renderDependenciaCell(nextEntry as FTEntry)}
-          </td>
-
-          {/* Com vide */}
-          <td className="ft-td" />
-
-          {/* Hora d'arrivée sur la même ligne que les remarques rouges */}
-          <td className="ft-td ft-hora-cell">
-            {showArrivalSpacer && horaArrivee && (
-              <span className="ft-hora-arrivee">{horaArrivee}</span>
-            )}
-          </td>
-
-          {/* Técn / Conc / Radio vides */}
-          <td className="ft-td" />
-          <td className="ft-td" />
-          <td className="ft-td" />
-          <td className="ft-td ft-rc-cell" />
-          <td className="ft-td ft-td-nivel" />
-        </tr>
-      );
-
-      // on consomme la ligne noteOnly
-      i++;
-    }
+    // 4) (RETIRÉ) Ancien bloc « remarque rouge SOUS la ligne principale » pour les
+    //    trains IMPAIRS : la remarque rouge est désormais rendue AU-DESSUS de la
+    //    ligne SUIVANTE et fusionnée avec son heure d'arrivée (cf. bloc
+    //    `note-before-odd` plus haut, via prevEntry/hasNoteBefore). La ligne
+    //    noteOnly n'est donc plus consommée ici : elle est simplement sautée
+    //    dans sa propre itération par le `continue` en tête de boucle.
   }
 
   // On expose la liste des heures d'arrivée calculées pour le moteur d'auto-scroll
@@ -6986,9 +7263,20 @@ const vmaxClassForLtv =
           color: #000;
         }
 
-        /* Surlignage jaune (même esprit que InfoPanel) */
+        /* Surlignage jaune (même esprit que InfoPanel) — inchangé hors échelle. */
         .ft-highlight-cell {
           background: linear-gradient(180deg, #ffff00 0%, #fffda6 100%);
+        }
+
+        /* #25 — Cellules de la ligne d'espacement proportionnel (hauteur posée en
+           impératif par l'effet de mesure). On garde les bordures GAUCHE/DROITE
+           héritées de .ft-td (les séparateurs de colonnes continuent à travers
+           l'espace) ; on annule juste padding / interligne / contenu / hauteur. */
+        .ft-scale-gap-cell {
+          padding: 0;
+          line-height: 0;
+          font-size: 0;
+          height: 0;
         }
 
         /* Surlignage spécifique V max (ancienne version, conservée au cas où) */
@@ -7453,10 +7741,13 @@ const vmaxClassForLtv =
 
               return (
                 <div
+                  ref={pinnedArrowRef}
                   style={{
                     position: "absolute",
 
                     // ✅ Étape 4-2b : top piloté par le state (timer) si dispo
+                    // (#26 : en scroll épinglé, la boucle rAF surcharge ce `top`
+                    //  via pinnedArrowRef pour un mouvement lissé à 60 fps.)
                     top:
                       typeof trainPosYpx === "number" && Number.isFinite(trainPosYpx)
                         ? `${trainPosYpx}px`

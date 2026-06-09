@@ -49,6 +49,9 @@ type GhFile = { name: string; size: number; sha: string };
 export default function ReplayOverlay() {
   /* ── Visibilité : ouverte via le bouton Replay dans les paramètres ── */
   const [isVisible, setIsVisible] = useState(false);
+  // Barre repliable : quand true, on masque le corps et on ne garde que la
+  // barre de titre (empreinte minimale pour ne pas masquer la FT pendant la lecture).
+  const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     const handler = () => setIsVisible(true);
     window.addEventListener("replay:show", handler);
@@ -434,12 +437,10 @@ export default function ReplayOverlay() {
       <div
         style={{
           borderRadius: 14,
-          border: "2px solid rgba(0,0,0,0.80)",
-          background: "rgba(255,255,255,0.96)",
           boxShadow: "0 10px 26px rgba(0,0,0,0.30)",
           overflow: "hidden",
         }}
-        className="dark:border-white/70 dark:bg-zinc-900/95"
+        className="border-2 border-black/80 bg-white/95 text-zinc-900 dark:border-white/70 dark:bg-zinc-900/95 dark:text-zinc-100"
       >
         {/* ─── Barre de titre (draggable) ─── */}
         <div
@@ -514,6 +515,15 @@ export default function ReplayOverlay() {
 
             <button
               type="button"
+              onClick={(e) => { e.stopPropagation(); setCollapsed((v) => !v); }}
+              style={{ ...btnBase, fontSize: 13, padding: "4px 8px", opacity: 0.55 }}
+              title={collapsed ? "Déplier la barre replay" : "Replier la barre replay"}
+            >
+              {collapsed ? "▸" : "▾"}
+            </button>
+
+            <button
+              type="button"
               onClick={(e) => { e.stopPropagation(); setIsVisible(false); }}
               style={{ ...btnBase, fontSize: 13, padding: "4px 8px", opacity: 0.55 }}
               title="Fermer la barre replay"
@@ -523,8 +533,8 @@ export default function ReplayOverlay() {
           </div>
         </div>
 
-        {/* ─── Contenu ─── */}
-        <div style={{ padding: "14px 14px 12px" }}>
+        {/* ─── Contenu (masqué quand la barre est repliée) ─── */}
+        <div style={{ padding: "14px 14px 12px", display: collapsed ? "none" : undefined }}>
 
           {/* ── Panneau fichiers en ligne ── */}
           {ghOpen && GH_TOKEN && (
@@ -824,6 +834,8 @@ export default function ReplayOverlay() {
                     playerApi?.stop?.();
                     setSpeedIdx(0);
                     playerApi?.speed?.(1);
+                    // Fin du replay → TitleBar propose l'export LOCAL du log + restaure l'horloge (#23).
+                    window.dispatchEvent(new CustomEvent("replay:stopped"));
                     setTick((v) => v + 1);
                   }}
                   style={{ ...btnBase, fontSize: 16, padding: "6px 10px" }}
