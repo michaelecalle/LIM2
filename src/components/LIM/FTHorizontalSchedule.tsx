@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { getFtLignePair, getFtLigneImpair } from "../../data/ligneFT.normalized.adapter";
+import { getFtLignePair, getFtLigneImpair, getTrainOrigine, getTrainDestination } from "../../data/ligneFT.normalized.adapter";
 import type { FTEntry } from "../../data/ligneFT";
 
 // ============================================================================
@@ -54,8 +54,8 @@ type Stop = { pk: string; dep: string; arr: string | null; yellow: boolean; dist
 
 export default function FTHorizontalSchedule() {
   const [trainNumber, setTrainNumber] = useState<number | null>(null);
-  const [routeStart, setRouteStart]   = useState("");
-  const [routeEnd,   setRouteEnd]     = useState("");
+  const routeStart = getTrainOrigine(trainNumber)     ?? "";
+  const routeEnd   = getTrainDestination(trainNumber) ?? "";
   const [pxPerKm, setPxPerKm] = useState<number>(() => {
     try { const v = parseFloat(localStorage.getItem("lim:fth-scale") ?? String(PX_PER_KM_DEFAULT)); return Number.isFinite(v) && v > 0 ? v : PX_PER_KM_DEFAULT; } catch { return PX_PER_KM_DEFAULT; }
   });
@@ -66,25 +66,17 @@ export default function FTHorizontalSchedule() {
       const n = typeof raw === "number" ? raw : parseInt(raw, 10);
       if (!isNaN(n)) setTrainNumber(n);
     };
-    const onParsed = (e: any) => {
-      const od = (e?.detail?.origenDestino ?? e?.detail?.relation ?? "") as string;
-      if (typeof od !== "string" || !od.trim()) return;
-      const parts = od.split(/\s+[-–]\s+/).map((s) => s.trim()).filter(Boolean);
-      if (parts.length >= 2) { setRouteStart(parts[0]); setRouteEnd(parts.slice(1).join(" - ")); }
-    };
     const onScale = (e: Event) => {
       const v = (e as CustomEvent).detail?.pxPerKm;
       if (typeof v === "number" && v > 0) setPxPerKm(v);
     };
-    window.addEventListener("lim:train",        onTrain   as EventListener);
-    window.addEventListener("lim:train-change", onTrain   as EventListener);
-    window.addEventListener("lim:parsed",       onParsed  as EventListener);
-    window.addEventListener("lim:fth-scale",    onScale   as EventListener);
+    window.addEventListener("lim:train",        onTrain as EventListener);
+    window.addEventListener("lim:train-change", onTrain as EventListener);
+    window.addEventListener("lim:fth-scale",    onScale as EventListener);
     return () => {
-      window.removeEventListener("lim:train",        onTrain   as EventListener);
-      window.removeEventListener("lim:train-change", onTrain   as EventListener);
-      window.removeEventListener("lim:parsed",       onParsed  as EventListener);
-      window.removeEventListener("lim:fth-scale",    onScale   as EventListener);
+      window.removeEventListener("lim:train",        onTrain as EventListener);
+      window.removeEventListener("lim:train-change", onTrain as EventListener);
+      window.removeEventListener("lim:fth-scale",    onScale as EventListener);
     };
   }, []);
 
@@ -154,7 +146,7 @@ export default function FTHorizontalSchedule() {
       return { pk: displayPk(e), dep, arr, yellow, dist: Math.abs(pkVal - pk0) };
     });
     return { stops: out, distEnd };
-  }, [trainNumber, routeStart, routeEnd]);
+  }, [trainNumber]);
 
   if (stops.length === 0) return null;
 

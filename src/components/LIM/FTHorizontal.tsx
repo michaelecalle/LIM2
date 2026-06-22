@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import tgv2n2Url from "../../assets/tgv2n2-profile.png";
-import { getFtLignePair, getFtLigneImpair } from "../../data/ligneFT.normalized.adapter";
+import { getFtLignePair, getFtLigneImpair, getTrainOrigine, getTrainDestination } from "../../data/ligneFT.normalized.adapter";
 import type { FTEntry } from "../../data/ligneFT";
 import { useTrainDist } from "../../hooks/useTrainDist";
 import type { TDPoint } from "../../hooks/useTrainDist";
@@ -88,18 +88,11 @@ export default function FTHorizontal() {
     };
   }, []);
 
-  const [routeStart, setRouteStart] = useState("");
-  const [routeEnd,   setRouteEnd]   = useState("");
-  useEffect(() => {
-    const h = (e: any) => {
-      const od = (e?.detail?.origenDestino ?? e?.detail?.relation ?? "") as string;
-      if (!od.trim()) return;
-      const parts = od.split(/\s+[-–]\s+/).map((s: string) => s.trim()).filter(Boolean);
-      if (parts.length >= 2) { setRouteStart(parts[0]); setRouteEnd(parts.slice(1).join(" - ")); }
-    };
-    window.addEventListener("lim:parsed", h as EventListener);
-    return () => window.removeEventListener("lim:parsed", h as EventListener);
-  }, []);
+  // routeStart/routeEnd dérivés du normalisé (stable en replay/démo/normal)
+  // lim:parsed n'est PAS utilisé : en replay, il rejoue l'origenDestino du PDF original
+  // (potentiellement partiel), ce qui tronquerait la section française à tort.
+  const routeStart = getTrainOrigine(trainNumber)  ?? "";
+  const routeEnd   = getTrainDestination(trainNumber) ?? "";
 
   // ── Mode horizontal actif ─────────────────────────────────────────────────
   const [ftScrollMode, setFtScrollMode] = useState<"vertical" | "horizontal">(() => {
@@ -211,7 +204,7 @@ export default function FTHorizontal() {
       validIdx++;
     }
     return out;
-  }, [isOdd, trainNumber, routeStart, routeEnd]);
+  }, [isOdd, trainNumber]);
 
   // ── Tableau TDPoint pour le hook ─────────────────────────────────────────
   const tdPoints = useMemo<TDPoint[]>(() => points.map(p => ({
