@@ -606,6 +606,24 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     }))
   }, [ftScaleEnabled, ftScaleMult])
 
+  // #28 — mode de défilement FT : "vertical" (défaut) ou "horizontal" (expérimental).
+  const [ftScrollMode, setFtScrollMode] = useState<'vertical' | 'horizontal'>(() => {
+    try { return localStorage.getItem('lim:ft-scroll-mode') === 'horizontal' ? 'horizontal' : 'vertical' } catch { return 'vertical' }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('lim:ft-scroll-mode', ftScrollMode) } catch {}
+    window.dispatchEvent(new CustomEvent('lim:ft-scroll-mode', { detail: { mode: ftScrollMode } }))
+  }, [ftScrollMode])
+
+  // #28 — échelle horizontale (px/km) de la FT horizontale (réglage permanent, défaut 100).
+  const [ftHScale, setFtHScale] = useState<number>(() => {
+    try { const v = parseFloat(localStorage.getItem('lim:fth-scale') ?? '100'); return Number.isFinite(v) && v > 0 ? v : 100 } catch { return 100 }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('lim:fth-scale', String(ftHScale)) } catch {}
+    window.dispatchEvent(new CustomEvent('lim:fth-scale', { detail: { pxPerKm: ftHScale } }))
+  }, [ftHScale])
+
   // Menu caché (dev / présentation) : appui LONG sur la roue dentée.
   // Appui court = vrai menu paramètres ; appui long = ce menu caché.
   const [hiddenMenuOpen, setHiddenMenuOpen] = useState(false)
@@ -6073,26 +6091,52 @@ setAutoScrollStartedOnce(next)
 
                 <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
 
-                {/* Mise à l'échelle de la fiche train (#25) */}
+                {/* Défilement vertical / horizontal (#28, expérimental) */}
                 <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
-                  <span>Mise à l'échelle de la fiche train</span>
-                  <input
-                    type="checkbox"
-                    checked={ftScaleEnabled}
-                    onChange={() => setFtScaleEnabled(v => !v)}
-                    className="h-4 w-4 cursor-pointer accent-blue-600"
-                  />
+                  <span>Défilement fiche train</span>
+                  <select
+                    value={ftScrollMode}
+                    onChange={(e) => setFtScrollMode(e.target.value === 'horizontal' ? 'horizontal' : 'vertical')}
+                    className="text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-transparent px-1 py-0.5 cursor-pointer"
+                  >
+                    <option value="vertical">Vertical</option>
+                    <option value="horizontal">Horizontal (exp.)</option>
+                  </select>
                 </label>
-                {ftScaleEnabled && (
-                  <div className="pl-2 pb-1 text-xs text-zinc-600 dark:text-zinc-300 space-y-2">
-                    <div>
-                      <div className="flex justify-between"><span>Espacement</span><span>{ftScaleMult.toFixed(1)}×</span></div>
-                      <input type="range" min={0.2} max={3} step={0.1} value={ftScaleMult}
-                        onChange={(e) => setFtScaleMult(parseFloat(e.target.value))}
-                        className="w-full cursor-pointer accent-blue-600" />
-                      <div className="text-[10px] opacity-70 leading-tight">1× = proportionnel exact. En dessous = plus compact à l'écran (moins exact). Jamais de compression sous le contenu réel.</div>
-                    </div>
+                {ftScrollMode === 'horizontal' && (
+                  <div className="pl-2 pb-1 text-xs text-zinc-600 dark:text-zinc-300">
+                    <div className="flex justify-between"><span>Échelle horizontale</span><span>{ftHScale} px/km</span></div>
+                    <input type="range" min={10} max={150} step={1} value={ftHScale}
+                      onChange={(e) => setFtHScale(parseInt(e.target.value, 10))}
+                      className="w-full cursor-pointer accent-blue-600" />
                   </div>
+                )}
+
+                {/* Mise à l'échelle de la fiche train (#25) — VERTICAL uniquement
+                    (inutile en défilement horizontal, qui a sa propre échelle). */}
+                {ftScrollMode === 'vertical' && (
+                  <>
+                    <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
+                      <span>Mise à l'échelle de la fiche train</span>
+                      <input
+                        type="checkbox"
+                        checked={ftScaleEnabled}
+                        onChange={() => setFtScaleEnabled(v => !v)}
+                        className="h-4 w-4 cursor-pointer accent-blue-600"
+                      />
+                    </label>
+                    {ftScaleEnabled && (
+                      <div className="pl-2 pb-1 text-xs text-zinc-600 dark:text-zinc-300 space-y-2">
+                        <div>
+                          <div className="flex justify-between"><span>Espacement</span><span>{ftScaleMult.toFixed(1)}×</span></div>
+                          <input type="range" min={0.2} max={3} step={0.1} value={ftScaleMult}
+                            onChange={(e) => setFtScaleMult(parseFloat(e.target.value))}
+                            className="w-full cursor-pointer accent-blue-600" />
+                          <div className="text-[10px] opacity-70 leading-tight">1× = proportionnel exact. En dessous = plus compact à l'écran (moins exact). Jamais de compression sous le contenu réel.</div>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />

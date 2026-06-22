@@ -58,6 +58,7 @@ import TitleBar from "./components/LIM/TitleBar"
 import Infos from "./components/LIM/Infos"
 import LTV from "./components/LIM/LTV"
 import FT from "./components/LIM/FT"
+import FTHorizontal from "./components/LIM/FTHorizontal"
 import ReplayOverlay from "./components/Replay/ReplayOverlay"
 import { APP_VERSION } from "./components/version"
 
@@ -72,9 +73,34 @@ import { APP_VERSION } from "./components/version"
  * - Garder les 3 modes (bleu / vert / rouge).
  */
 
+type NextStop = { name: string; dep: string; arr: string | null; deltaMin: number } | null;
+
+function addDeltaToHora(hora: string, deltaMin: number): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hora.trim());
+  if (!m) return hora;
+  let total = Number(m[1]) * 60 + Number(m[2]) + deltaMin;
+  total = ((total % 1440) + 1440) % 1440;
+  return `${Math.floor(total / 60).toString().padStart(2, "0")}:${(total % 60).toString().padStart(2, "0")}`;
+}
+
 export default function App() {
   const [pdfMode, setPdfMode] = React.useState<"blue" | "green" | "red">("blue")
   const [foldInfosLtv, setFoldInfosLtv] = React.useState(false)
+  const [nextStop, setNextStop] = React.useState<NextStop>(null)
+
+  // #28 — mode de défilement de la fiche train : "vertical" (FT.tsx, défaut) ou
+  // "horizontal" (FTHorizontal.tsx, expérimental). Basculé via Paramètres.
+  const [ftScrollMode, setFtScrollMode] = React.useState<"vertical" | "horizontal">(() => {
+    try { return localStorage.getItem("lim:ft-scroll-mode") === "horizontal" ? "horizontal" : "vertical" } catch { return "vertical" }
+  })
+  React.useEffect(() => {
+    const h = (e: Event) => {
+      const m = (e as CustomEvent).detail?.mode
+      if (m === "vertical" || m === "horizontal") setFtScrollMode(m)
+    }
+    window.addEventListener("lim:ft-scroll-mode", h as EventListener)
+    return () => window.removeEventListener("lim:ft-scroll-mode", h as EventListener)
+  }, [])
 
   const [isDark, setIsDark] = React.useState(() => {
     if (typeof window === "undefined" || typeof document === "undefined") return false
@@ -509,6 +535,13 @@ export default function App() {
     }
   }, [])
 
+  // Prochaine arrêt : données temps réel envoyées par FT.tsx
+  React.useEffect(() => {
+    const h = (e: Event) => setNextStop((e as CustomEvent<NextStop>).detail ?? null)
+    window.addEventListener("lim:next-stop", h as EventListener)
+    return () => window.removeEventListener("lim:next-stop", h as EventListener)
+  }, [])
+
   return (
     <main className="p-2 sm:p-4 min-h-[100dvh] flex flex-col">
       {/* conteneur principal */}
@@ -685,12 +718,10 @@ export default function App() {
               : "mt-3 mx-auto max-w-7xl flex-1 min-h-0 flex flex-col hidden"
           }
         >
-          {/* Bloc infos (caché en mode plié) */}
-          {!foldInfosLtv && (
-            <div className="mt-0">
-              <Infos />
-            </div>
-          )}
+          {/* Bloc infos : toujours gardé quel que soit le mode de pliage */}
+          <div className="mt-0">
+            <Infos />
+          </div>
 
           {/* Zone LTV + FT (TOUJOURS rendue) */}
           <div
@@ -711,16 +742,68 @@ export default function App() {
   <LTV />
 </div>
 
+            {/* Bloc "prochaine arrêt" — affiché en mode plié (vertical ou horizontal), à la place du LTV */}
+            {foldInfosLtv && (
+              <div className={
+                "mt-1 min-w-0 h-[70px] flex flex-col items-center justify-center gap-0.5 select-none px-4 rounded-xl border " +
+                (isDark
+                  ? "bg-zinc-800/60 border-zinc-700/50 text-zinc-100"
+                  : "bg-zinc-50 border-zinc-200 text-zinc-900")
+              }>
+                {nextStop ? (
+                  <>
+                    <div className={"text-[10px] font-semibold uppercase tracking-widest " + (isDark ? "text-zinc-400" : "text-zinc-400")}>
+                      Prochain arrêt
+                    </div>
+                    <div className="text-[15px] font-bold text-center leading-snug">
+                      <span className={isDark ? "text-emerald-400" : "text-emerald-700"}>
+                        {nextStop.name}
+                      </span>
+                    </div>
+                    <div className={"text-[12px] font-medium text-center leading-none tabular-nums " + (isDark ? "text-zinc-300" : "text-zinc-600")}>
+                      {nextStop.arr && (
+                        <>
+                          Arr.&nbsp;<strong>{nextStop.arr}</strong>
+                          {nextStop.deltaMin !== 0 && (
+                            <span className={isDark ? " text-orange-400" : " text-orange-500"}>
+                              &nbsp;(est.&nbsp;{addDeltaToHora(nextStop.arr, nextStop.deltaMin)})
+                            </span>
+                          )}
+                          <span className="mx-2 opacity-40">·</span>
+                        </>
+                      )}
+                      Dép.&nbsp;<strong>{nextStop.dep}</strong>
+                      {nextStop.deltaMin !== 0 && (
+                        <span className={isDark ? " text-orange-400" : " text-orange-500"}>
+                          &nbsp;(est.&nbsp;{addDeltaToHora(nextStop.dep, nextStop.deltaMin)})
+                        </span>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className={"text-[12px] opacity-30 " + (isDark ? "text-zinc-300" : "text-zinc-600")}>
+                    —
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Bloc FT (toujours visible) */}
             <div
               className={
-                foldInfosLtv
+                (foldInfosLtv
                   ? "mt-0 flex-1 min-h-0 h-full"
-                  : "mt-3 flex-1 min-h-0"
+                  : "mt-3 flex-1 min-h-0") + " min-w-0"
               }
             >
-              <FT />
+              {/* #28 : on garde les DEUX montés et on bascule par display →
+                  aucune perte d'état (train, GPS, scroll) au changement de mode. */}
+              <div className="h-full" style={{ display: ftScrollMode === "horizontal" ? "none" : "block" }}>
+                <FT />
+              </div>
+              <div className="h-full min-w-0" style={{ position: "relative", display: ftScrollMode === "horizontal" ? "block" : "none" }}>
+                <FTHorizontal />
+              </div>
             </div>
 
             {/* Overlay FT France (opaque) — fixé au viewport, top aligné sur la zone LTV/FT */}

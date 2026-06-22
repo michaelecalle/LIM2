@@ -5449,6 +5449,48 @@ if (hasFranceFtLocal) {
     console.log("[FT] ft:figueres-hhmm", figueresTimes);
   }, [figueresTimes.departureHhmm, figueresTimes.arrivalHhmm]);
 
+  // ── Bloc "prochaine arrêt" : prochaine gare avec pastille jaune après la ligne active ──
+  useEffect(() => {
+    if (rawEntries.length === 0 || !autoScrollEnabled) {
+      window.dispatchEvent(new CustomEvent("lim:next-stop", { detail: null }));
+      return;
+    }
+
+    // Dernière entrée valide (destination) — incluse même sans com/tecn
+    let lastValidIdx = -1;
+    for (let j = rawEntries.length - 1; j > activeRowIndex; j--) {
+      const e2 = rawEntries[j] as any;
+      if (!e2.isNoteOnly && ((e2.dependencia ?? "") as string).trim()) {
+        lastValidIdx = j;
+        break;
+      }
+    }
+
+    let detail: { name: string; dep: string; arr: string | null; deltaMin: number } | null = null;
+    for (let i = activeRowIndex + 1; i < rawEntries.length; i++) {
+      const e = rawEntries[i] as any;
+      if (e.isNoteOnly) continue;
+      const hora = ((e.hora ?? "") as string).trim();
+      const dep  = ((e.dependencia ?? "") as string).trim();
+      if (!dep) continue;
+
+      const comN   = parseInt((e.com ?? "") as string, 10);
+      const hasCom = Number.isFinite(comN) && comN > 0;
+      const tecn   = ((e.tecn ?? e.tecnico ?? "") as string).trim();
+      const isLast = i === lastValidIdx;
+
+      // Pastille jaune = arrêt commercial, arrêt technique, ou destination finale
+      if (!hasCom && !tecn && !isLast) continue;
+      if (!hora) continue; // pas d'heure connue → on skip quand même
+
+      const depMin = parseHoraToMinutes(hora);
+      const arr    = hasCom && depMin != null ? formatMinutesToHora(depMin - comN) : null;
+      detail = { name: dep, dep: hora, arr, deltaMin: autoScrollBaseRef.current?.fixedDelay ?? 0 };
+      break;
+    }
+    window.dispatchEvent(new CustomEvent("lim:next-stop", { detail }));
+  }, [activeRowIndex, recalibrateTrigger, autoScrollEnabled, rawEntries]);
+
   // ===== Horaires théoriques (interpolation PK ↔ temps) =====
   // ✅ Règle : entre A -> B, on interpole de :
   // - départ(A)
