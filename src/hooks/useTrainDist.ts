@@ -222,7 +222,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
         const gpsPts = points
           .filter(p => p.pkInternal != null)
           .map(p => ({
-            key:  pkToU(p.pkInternal!, p.network ?? guessNet(p.pkInternal!)),
+            key:  p.pkInternal!,  // pkInternal est déjà la coordonnée U monotone (pkInterne)
             dist: p.dist,
           }));
         gpsPts.sort((a, b) => a.key - b.key);
