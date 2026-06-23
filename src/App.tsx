@@ -901,7 +901,7 @@ export default function App() {
             <div
               className={
                 (foldInfosLtv
-                  ? "mt-0 flex-1 min-h-0 h-full"
+                  ? "mt-0 flex-1 min-h-0"
                   : "mt-3 flex-1 min-h-0") + " min-w-0"
               }
             >
