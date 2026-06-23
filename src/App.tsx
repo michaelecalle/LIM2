@@ -61,6 +61,9 @@ import FT from "./components/LIM/FT"
 import FTHorizontal from "./components/LIM/FTHorizontal"
 import ReplayOverlay from "./components/Replay/ReplayOverlay"
 import { APP_VERSION } from "./components/version"
+import { getFtLignePair, getFtLigneImpair } from "./data/ligneFT.normalized.adapter"
+import type { FTEntry } from "./data/ligneFT"
+import { logTestEvent } from "./lib/testLogger"
 
 /**
  * App.tsx — version propre de l'écran LIM.
@@ -73,7 +76,8 @@ import { APP_VERSION } from "./components/version"
  * - Garder les 3 modes (bleu / vert / rouge).
  */
 
-type NextStop = { name: string; dep: string; arr: string | null; deltaMin: number } | null;
+type NextStop = { name: string; pk: string; dep: string; arr: string | null; deltaMin: number } | null;
+type WpEntry = { pkInternal: number; name: string; displayPk: string }
 
 function addDeltaToHora(hora: string, deltaMin: number): string {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hora.trim());
@@ -542,6 +546,85 @@ export default function App() {
     return () => window.removeEventListener("lim:next-stop", h as EventListener)
   }, [])
 
+  // #29 — marquage waypoints de passage
+  const [wpPassedPks, setWpPassedPks] = React.useState<ReadonlySet<number>>(new Set())
+  const [wpCurrentU, setWpCurrentU] = React.useState<number | null>(null)
+
+  React.useEffect(() => {
+    setWpPassedPks(new Set())
+    setWpCurrentU(null)
+  }, [trainNumber])
+
+  const wpList = React.useMemo((): WpEntry[] => {
+    if (trainNumber === null) return []
+    const isOdd = trainNumber % 2 !== 0
+    const ftRaw: FTEntry[] = isOdd ? getFtLignePair(trainNumber) : [...getFtLigneImpair(trainNumber)].reverse()
+    const entries: WpEntry[] = []
+    for (const e of ftRaw) {
+      if (e.isNoteOnly) continue
+      const pkInt = e.pk_internal
+      if (pkInt == null || !Number.isFinite(pkInt)) continue
+      const net = e.network ?? ""
+      const dpk = net === "RFN" ? (e.pk_rfn ?? String(e.pk ?? ""))
+        : net === "LFP" ? (e.pk_lfp ?? String(e.pk ?? ""))
+        : net === "ADIF" ? (e.pk_adif ?? String(e.pk ?? ""))
+        : String(e.pk ?? "")
+      const wname = (e.dependencia ?? "").trim()
+      entries.push({ pkInternal: pkInt, name: wname || dpk, displayPk: dpk })
+    }
+    const seenPk = new Set<number>()
+    return entries.filter(e => { if (seenPk.has(e.pkInternal)) return false; seenPk.add(e.pkInternal); return true })
+  }, [trainNumber])
+
+  React.useEffect(() => {
+    const h = (e: Event) => {
+      const pk = (e as CustomEvent).detail?.pk
+      if (typeof pk !== "number" || !Number.isFinite(pk)) return
+      // Convertit le PK réseau en coordonnée U monotone (même formule que useTrainDist)
+      const net: "ADIF" | "LFP" | "RFN" = pk >= 600 ? "ADIF" : pk >= 200 ? "RFN" : "LFP"
+      const u = net === "ADIF" ? pk : net === "LFP" ? 796.8 - pk : 1273.0 - pk
+      setWpCurrentU(u)
+    }
+    window.addEventListener("gps:position", h as EventListener)
+    return () => window.removeEventListener("gps:position", h as EventListener)
+  }, [])
+
+  // Calculs dérivés pour #29 (avant return)
+  const wpIsGps = gpsStateUi === "GREEN"
+  const wpIsIncreasing = wpList.length > 1 && wpList[0].pkInternal < wpList[wpList.length - 1].pkInternal
+
+  const wpIsPassed = (wp: WpEntry): boolean => {
+    if (wpIsGps && wpCurrentU !== null)
+      return wpIsIncreasing ? wp.pkInternal < wpCurrentU : wp.pkInternal > wpCurrentU
+    return wpPassedPks.has(wp.pkInternal)
+  }
+
+  const WP_WIN = 5
+  let wpCenterIdx = WP_WIN  // par défaut : montre les 11 premiers (5 avant + centre + 5 après)
+  if (wpIsGps && wpCurrentU !== null) {
+    // GPS actif avec position : centre sur le dernier point dépassé
+    for (let i = 0; i < wpList.length; i++) {
+      if (wpIsIncreasing ? wpList[i].pkInternal <= wpCurrentU : wpList[i].pkInternal >= wpCurrentU) wpCenterIdx = i
+    }
+  } else if (wpPassedPks.size > 0) {
+    // Mode horaire avec marques manuelles : centre sur la dernière marque
+    for (let i = wpList.length - 1; i >= 0; i--) {
+      if (wpPassedPks.has(wpList[i].pkInternal)) { wpCenterIdx = i; break }
+    }
+  }
+  const wpWindow = wpList.slice(Math.max(0, wpCenterIdx - WP_WIN), Math.min(wpList.length, wpCenterIdx + WP_WIN + 1))
+
+  const wpHandleTap = (wp: WpEntry) => {
+    if (wpIsGps) return
+    setWpPassedPks(prev => {
+      const next = new Set(prev)
+      if (next.has(wp.pkInternal)) { next.delete(wp.pkInternal); return next }
+      next.add(wp.pkInternal)
+      logTestEvent('manual:passage', { pk: wp.pkInternal, name: wp.name, t: new Date().toISOString() })
+      return next
+    })
+  }
+
   return (
     <main className="p-2 sm:p-4 min-h-[100dvh] flex flex-col">
       {/* conteneur principal */}
@@ -745,7 +828,8 @@ export default function App() {
             {/* Bloc "prochaine arrêt" — affiché en mode plié (vertical ou horizontal), à la place du LTV */}
             {foldInfosLtv && (
               <div className={
-                "mt-1 min-w-0 h-[70px] flex flex-col items-center justify-center gap-0.5 select-none px-4 rounded-xl border " +
+                "mt-1 min-w-0 flex flex-col items-center justify-center gap-0.5 select-none px-3 rounded-xl border " +
+                (wpWindow.length > 0 ? "py-2 " : "h-[70px] ") +
                 (isDark
                   ? "bg-zinc-800/60 border-zinc-700/50 text-zinc-100"
                   : "bg-zinc-50 border-zinc-200 text-zinc-900")
@@ -759,6 +843,11 @@ export default function App() {
                       <span className={isDark ? "text-emerald-400" : "text-emerald-700"}>
                         {nextStop.name}
                       </span>
+                      {nextStop.pk && (
+                        <span className={"ml-1.5 text-[12px] font-normal opacity-60"}>
+                          {nextStop.pk}
+                        </span>
+                      )}
                     </div>
                     <div className={"text-[12px] font-medium text-center leading-none tabular-nums " + (isDark ? "text-zinc-300" : "text-zinc-600")}>
                       {nextStop.arr && (
@@ -773,16 +862,36 @@ export default function App() {
                         </>
                       )}
                       Dép.&nbsp;<strong>{nextStop.dep}</strong>
-                      {nextStop.deltaMin !== 0 && (
-                        <span className={isDark ? " text-orange-400" : " text-orange-500"}>
-                          &nbsp;(est.&nbsp;{addDeltaToHora(nextStop.dep, nextStop.deltaMin)})
-                        </span>
-                      )}
                     </div>
                   </>
                 ) : (
                   <div className={"text-[12px] opacity-30 " + (isDark ? "text-zinc-300" : "text-zinc-600")}>
                     —
+                  </div>
+                )}
+
+                {/* #29 — étiquettes de passage (±5 points autour de la position courante) */}
+                {wpWindow.length > 0 && (
+                  <div className="flex flex-wrap gap-3 mt-2 justify-center">
+                    {wpWindow.map(wp => {
+                      const passed = wpIsPassed(wp)
+                      return (
+                        <button
+                          key={wp.pkInternal}
+                          type="button"
+                          onClick={() => wpHandleTap(wp)}
+                          title={wp.name !== wp.displayPk ? wp.name : undefined}
+                          className={
+                            "text-[11px] font-bold px-3 py-1.5 rounded-full leading-tight active:scale-95 transition-transform " +
+                            (passed
+                              ? (isDark ? "bg-emerald-700 text-white" : "bg-emerald-600 text-white")
+                              : (isDark ? "bg-red-700 text-white" : "bg-red-600 text-white"))
+                          }
+                        >
+                          {wp.displayPk}
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
               </div>

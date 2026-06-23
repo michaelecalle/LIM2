@@ -5466,7 +5466,7 @@ if (hasFranceFtLocal) {
       }
     }
 
-    let detail: { name: string; dep: string; arr: string | null; deltaMin: number } | null = null;
+    let detail: { name: string; pk: string; dep: string; arr: string | null; deltaMin: number } | null = null;
     for (let i = activeRowIndex + 1; i < rawEntries.length; i++) {
       const e = rawEntries[i] as any;
       if (e.isNoteOnly) continue;
@@ -5485,7 +5485,7 @@ if (hasFranceFtLocal) {
 
       const depMin = parseHoraToMinutes(hora);
       const arr    = hasCom && depMin != null ? formatMinutesToHora(depMin - comN) : null;
-      detail = { name: dep, dep: hora, arr, deltaMin: autoScrollBaseRef.current?.fixedDelay ?? 0 };
+      detail = { name: dep, pk: ((e.pk ?? "") as string).trim(), dep: hora, arr, deltaMin: autoScrollBaseRef.current?.fixedDelay ?? 0 };
       break;
     }
     window.dispatchEvent(new CustomEvent("lim:next-stop", { detail }));

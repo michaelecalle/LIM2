@@ -41,7 +41,7 @@ export type TrainDistResult = {
 const A_LFP_ADIF = 752.4;  // PK ADIF à la jonction ADIF/LFP
 const A_LFP_LFP  = 44.4;   // PK LFP  à la jonction ADIF/LFP
 const A_RFN_LFP  = 0.0;    // PK LFP  à la jonction LFP/RFN
-const A_RFN_RFN  = 473.3;  // PK RFN  à la jonction LFP/RFN
+const A_RFN_RFN  = 476.2;  // PK RFN  à la jonction LFP/RFN (origine de la chaîne PK RFN)
 
 function guessNet(pk: number): "ADIF" | "LFP" | "RFN" {
   return pk >= 600 ? "ADIF" : pk >= 200 ? "RFN" : "LFP";
