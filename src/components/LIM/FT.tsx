@@ -1641,8 +1641,9 @@ if (referenceMode === "GPS") {
   // PK figé : ORANGE à 10s, puis RED à 30s (10s + 20s)
   const GPS_FREEZE_TO_RED_MS = GPS_FREEZE_WINDOW_MS + ORANGE_TIMEOUT_MS;
 
-  // Si le PK figé est proche (<= 1 km) d’une gare commerciale => standby auto
-  const STATION_PROX_KM = 1.0;
+  // Si le PK figé est proche d’une gare commerciale => standby auto
+  // 5 km : couvre les arrêts signal jusqu’à ~4 km avant la gare (ex. Figueres pk 718 → gare pk 714.7)
+  const STATION_PROX_KM = 5.0;
   // Précision GPS max pour activer le mode ARRÊT GPS (sinon : standby horaire classique)
   const GPS_ARRET_MAX_ACCURACY_M = 200;
 
@@ -2082,6 +2083,14 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
     };
   };
 
+    // Sync base horaire vers useTrainDist (FTHorizontal) pour que les 2 modes partagent le même delta
+    const syncBaseToHorizontal = (base: typeof autoScrollBaseRef.current) => {
+      if (!base) return;
+      window.dispatchEvent(new CustomEvent("ft:delta:base-sync", {
+        detail: { firstHoraMin: base.firstHoraMin, realMinFloat: base.realMinFloat },
+      }));
+    };
+
     // Bug 1 fix : au premier Play (stand-by initial), on ne calcule aucun delta.
     // Le delta sera calculé quand l'utilisateur tapera sur la ligne pour valider le départ.
     if (skipInitialStandbyRecalibrationRef.current) {
@@ -2110,6 +2119,7 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
       } else {
         autoScrollBaseRef.current = captureBaseFromFirstRow();
       }
+      syncBaseToHorizontal(autoScrollBaseRef.current);
     }
 
     // On mémorise la position de scroll actuelle comme "base"
@@ -4631,6 +4641,11 @@ const isRelock = acceptedMode === "relock";
                       fixedDelay,
                       deltaSec,
                     };
+
+                    // Sync vers useTrainDist (FTHorizontal)
+                    window.dispatchEvent(new CustomEvent("ft:delta:base-sync", {
+                      detail: { firstHoraMin: usedMinutes, realMinFloat: nowMinFloat },
+                    }));
 
                     lastDeltaRecalageRef.current = {
                       rowIndex: idx,

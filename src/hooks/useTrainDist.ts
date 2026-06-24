@@ -194,6 +194,20 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
     return () => window.removeEventListener("ft:auto-scroll-change", h as EventListener);
   }, [points]);
 
+  // ── Écoute : sync delta depuis FT.tsx (source de vérité du recalage) ────
+  useEffect(() => {
+    const h = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      const fhm = d?.firstHoraMin;
+      const rmf = d?.realMinFloat;
+      if (typeof fhm === "number" && isFinite(fhm) && typeof rmf === "number" && isFinite(rmf)) {
+        autoScrollBaseRef.current = { firstHoraMin: fhm, realMinFloat: rmf };
+      }
+    };
+    window.addEventListener("ft:delta:base-sync", h as EventListener);
+    return () => window.removeEventListener("ft:delta:base-sync", h as EventListener);
+  }, []);
+
   // ── Tick 250 ms : calcul de la position ──────────────────────────────────
   useEffect(() => {
     if (!active) return;
