@@ -1529,9 +1529,9 @@ if (referenceMode === "GPS") {
         lastGpsStateEmitAtRef.current = nowTs;
         lastGpsStateEmitPkRef.current = pkForUi;
 
-        // Mode ARRÊT : si le GPS figure rouge à cause du freeze gare, on maintient GREEN
+        // Mode ARRÊT : émettre "ARRET" dès qu'un arrêt GPS est armé (isStop vert ou freeze rouge)
         const emitState =
-          stationArretRef.current != null && nextState === "RED" ? "ARRET" : nextState;
+          stationArretRef.current != null ? "ARRET" : nextState;
 
         window.dispatchEvent(
           new CustomEvent("lim:gps-state", {
@@ -3923,9 +3923,9 @@ const isRelock = acceptedMode === "relock";
         lastGpsStateEmitAtRef.current = now;
         lastGpsStateEmitPkRef.current = pkForUi;
 
-        // Mode ARRÊT : si le GPS figure rouge à cause du freeze gare, on maintient GREEN
+        // Mode ARRÊT : émettre "ARRET" dès qu'un arrêt GPS est armé (isStop vert ou freeze rouge)
         const emitState =
-          stationArretRef.current != null && nextState === "RED" ? "ARRET" : nextState;
+          stationArretRef.current != null ? "ARRET" : nextState;
 
         window.dispatchEvent(
           new CustomEvent("lim:gps-state", {
@@ -4411,6 +4411,7 @@ const isRelock = acceptedMode === "relock";
                 const firstMovementTime = arret.firstMovementTime!;
                 const arretKind = arret.kind;
                 stationArretRef.current = null;
+                standbyLockedRowRef.current = null;
 
                 window.dispatchEvent(
                   new CustomEvent("lim:station-arret", {
