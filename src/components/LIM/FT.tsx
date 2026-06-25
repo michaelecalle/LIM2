@@ -1984,10 +1984,11 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
     const nowMin = now.getHours() * 60 + now.getMinutes();
     const nowMinFloat = nowMin + now.getSeconds() / 60;
 
-    // ✅ En reprise de standby, on force la base sur la ligne qui a réellement
-    // déclenché l'entrée en standby (et non sur un éventuel clic parasite de reprise)
+    // En reprise de standby ACTIF, on force la base sur la ligne verrouillée.
+    // Sinon (recalage GPS, départ ARRET), on utilise le rowIndex fourni par l'appelant.
+    const inActiveStandby = selectedRowIndex != null;
     const lockedRowIndex =
-      standbyLockedRowRef.current != null && Number.isFinite(standbyLockedRowRef.current)
+      inActiveStandby && standbyLockedRowRef.current != null && Number.isFinite(standbyLockedRowRef.current)
         ? standbyLockedRowRef.current
         : rowIndex;
 
