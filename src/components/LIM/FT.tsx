@@ -4173,7 +4173,8 @@ const isRelock = acceptedMode === "relock";
           const canUseGpsArret =
             accuracyM != null &&
             accuracyM <= GPS_ARRET_MAX_ACCURACY_M &&
-            currentSKm != null;
+            currentSKm != null &&
+            !tunnelZoneAt(currentSKm);
 
           if (canUseGpsArret) {
             // ✅ Mode ARRÊT GPS : on reste en GPS vert, pas de standby horaire
