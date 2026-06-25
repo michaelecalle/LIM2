@@ -471,6 +471,21 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Fallback pdfUrl pour le mode secours quand seul lim:pdf-raw est dispatché (mode 2026)
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const file = (e as CustomEvent).detail?.file as File | undefined
+      if (file) {
+        setPdfUrl((old) => {
+          if (old) URL.revokeObjectURL(old)
+          return URL.createObjectURL(file)
+        })
+      }
+    }
+    window.addEventListener("lim:pdf-raw", handler as EventListener)
+    return () => window.removeEventListener("lim:pdf-raw", handler as EventListener)
+  }, [])
+
   // changement de mode (blue/green/red)
   React.useEffect(() => {
     const handler = (e: Event) => {
@@ -774,10 +789,10 @@ export default function App() {
                               &nbsp;(est.&nbsp;{addDeltaToHora(nextStop.arr, nextStop.deltaMin)})
                             </span>
                           )}
-                          <span className="mx-2 opacity-40">·</span>
+                          {nextStop.dep && <span className="mx-2 opacity-40">·</span>}
                         </>
                       )}
-                      Dép.&nbsp;<strong>{nextStop.dep}</strong>
+                      {nextStop.dep && <>Dép.&nbsp;<strong>{nextStop.dep}</strong></>}
                     </div>
                   </>
                 ) : (

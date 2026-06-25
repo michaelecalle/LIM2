@@ -31,7 +31,13 @@ async function renderPageToDataUrl(page: PDFPageProxy, scale = 1.5): Promise<str
 async function handleRedPdf(file: File) {
   try {
     const buf = await file.arrayBuffer()
-    const pdf: PDFDocumentProxy = await pdfjsLib.getDocument({ data: buf }).promise
+    const loadingTask = pdfjsLib.getDocument({ data: buf })
+    const pdf: PDFDocumentProxy = await Promise.race([
+      loadingTask.promise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => { loadingTask.destroy(); reject(new Error('PDF worker timeout')) }, 15_000)
+      ),
+    ])
 
     const images: string[] = []
     for (let i = 1; i <= pdf.numPages; i++) {

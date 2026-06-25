@@ -237,7 +237,15 @@ function parseDataRows(taggedRows: Array<{ row: RawItem[]; linea: string }>): Di
 export async function parseLtvPdf2026(file: File): Promise<NormalizedLtvFile> {
   const arrayBuffer = await file.arrayBuffer()
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
-  const doc = await loadingTask.promise
+  const doc = await Promise.race([
+    loadingTask.promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => {
+        loadingTask.destroy()
+        reject(new Error('Extraction impossible (moteur PDF non disponible — vérifiez la connexion réseau). Vous pouvez démarrer sans LTV.'))
+      }, 15_000)
+    ),
+  ])
   const numPages = doc.numPages
 
   // Collecter toutes les lignes des sections cibles (050 + 066) en un passage

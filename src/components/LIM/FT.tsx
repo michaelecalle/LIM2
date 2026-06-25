@@ -1328,6 +1328,9 @@ if (referenceMode === "GPS") {
   // Pour détecter une position "fraîche"
   const lastGpsSampleAtRef = React.useRef<number>(0);
 
+  // Dernier s_km GPS connu (pour garde-fou tunnel : bloquer le mode GPS en zone tunnel)
+  const lastGpsSKmRef = React.useRef<number | null>(null);
+
   // Pour détecter un PK figé
   const lastPkRef = React.useRef<number | null>(null);
   const lastPkChangeAtRef = React.useRef<number>(0);
@@ -1590,8 +1593,10 @@ if (referenceMode === "GPS") {
 
       // ✅ GPS passif : GREEN ne bascule la FT en GPS que si l'autoscroll est engagé.
       const gpsModeAllowed = autoScrollEnabledRef.current;
+      // Garde-fou tunnel : bloquer le GPS tant que le dernier s_km connu est dans une zone tunnel
+      const inTunnelZone = tunnelZoneAt(lastGpsSKmRef.current) != null;
       const nextMode: ReferenceMode =
-        stateNow === "GREEN" && gpsModeAllowed ? "GPS" : "HORAIRE";
+        stateNow === "GREEN" && gpsModeAllowed && !inTunnelZone ? "GPS" : "HORAIRE";
 
       if (currentMode !== nextMode) {
         referenceModeRef.current = nextMode;
@@ -3407,6 +3412,10 @@ const isRelock = acceptedMode === "relock";
 
       lastGpsSampleAtRef.current = sampleTs;
 
+      // Mémoriser s_km pour le garde-fou tunnel (mode GPS bloqué en zone tunnel)
+      const rawSKm = (detail as any).s_km;
+      if (typeof rawSKm === "number" && Number.isFinite(rawSKm)) lastGpsSKmRef.current = rawSKm;
+
       const ageSec = Math.max(0, (nowTs - sampleTs) / 1000);
       const isStale = ageSec > GPS_FRESH_SEC;
 
@@ -4028,8 +4037,10 @@ const isRelock = acceptedMode === "relock";
       // Le GPS passif sert à l'indicateur TitleBar, pas au déplacement de la FT avant Play.
       const stateForMode = gpsStateRef.current;
       const gpsModeAllowed = autoScrollEnabledRef.current;
+      // Garde-fou tunnel : bloquer le GPS tant que le dernier s_km connu est dans une zone tunnel
+      const inTunnelZone = tunnelZoneAt(lastGpsSKmRef.current) != null;
       const nextMode: ReferenceMode =
-        stateForMode === "GREEN" && gpsModeAllowed ? "GPS" : "HORAIRE";
+        stateForMode === "GREEN" && gpsModeAllowed && !inTunnelZone ? "GPS" : "HORAIRE";
       const currentMode = referenceModeRef.current;
 
       // On n'utilise plus l'hystérésis ORANGE : si un timer traîne, on le coupe.
@@ -4313,17 +4324,18 @@ const isRelock = acceptedMode === "relock";
             lastArretSKm: lastArretSKmRef.current,
             minKm: GPS_ARRET_REARM_MIN_KM,
           });
-        } else if (currentSKm != null && !approachOk) {
-          // Pas de vraie décélération vers ~0 et/ou précision dégradée => entrée de tunnel, pas un arrêt.
-          logTestEvent("gps:arret:rejected-approach", {
-            approachSpeedKmh,
-            approachAccMax,
-            maxKmh: GPS_STOP_DECEL_MAX_KMH,
-            maxAccM: GPS_STOP_APPROACH_ACC_MAX_M,
-            currentSKm,
-            pk,
-          });
         } else if (currentSKm != null) {
+          // Log si l'approche n'est pas nominale (info, plus bloquant — le garde-fou tunnel suffit)
+          if (!approachOk) {
+            logTestEvent("gps:arret:approach-warning", {
+              approachSpeedKmh,
+              approachAccMax,
+              maxKmh: GPS_STOP_DECEL_MAX_KMH,
+              maxAccM: GPS_STOP_APPROACH_ACC_MAX_M,
+              currentSKm,
+              pk,
+            });
+          }
           lastArretSKmRef.current = currentSKm;
           const deptThreshKm = Math.max(0.075, (4 * (accuracyM ?? 0)) / 1000);
           const nearest = findNearestCommercialStopRowIndex(pk, STATION_PROX_KM);
@@ -5500,7 +5512,12 @@ if (hasFranceFtLocal) {
 
       const depMin = parseHoraToMinutes(hora);
       const arr    = hasCom && depMin != null ? formatMinutesToHora(depMin - comN) : null;
-      detail = { name: dep, pk: ((e.pk ?? "") as string).trim(), dep: hora, arr, deltaMin: autoScrollBaseRef.current?.fixedDelay ?? 0 };
+      const pkStr  = ((e.pk ?? "") as string).trim();
+      const delta  = autoScrollBaseRef.current?.fixedDelay ?? 0;
+      // Terminus : hora = heure d'arrivée (pas de départ)
+      detail = isLast && !hasCom
+        ? { name: dep, pk: pkStr, dep: "", arr: hora, deltaMin: delta }
+        : { name: dep, pk: pkStr, dep: hora, arr, deltaMin: delta };
       break;
     }
     window.dispatchEvent(new CustomEvent("lim:next-stop", { detail }));

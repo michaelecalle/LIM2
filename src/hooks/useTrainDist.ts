@@ -217,8 +217,10 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
       if (standbyIndexRef.current !== null) return;  // figé en stand-by
 
       const gs   = gpsStateRef.current;
+      // Garde-fou tunnel : bloquer le GPS tant que le dernier s_km est dans une zone tunnel
+      const inTunnel = tunnelZoneAt(lastGpsSKmRef.current) != null;
       const mode: ReferenceMode =
-        (gs === "GREEN" || gs === "ARRET") ? "GPS" : "HORAIRE";
+        (gs === "GREEN" || gs === "ARRET") && !inTunnel ? "GPS" : "HORAIRE";
 
       // ─── Mode GPS ──────────────────────────────────────────────────────
       if (mode === "GPS") {
