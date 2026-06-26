@@ -744,7 +744,7 @@ export default function ReplayOverlay() {
                   fontSize: 11,
                   fontWeight: 600,
                   opacity: 0.65,
-                  marginBottom: 8,
+                  marginBottom: 40,
                   fontVariantNumeric: "tabular-nums",
                 }}
               >
@@ -816,11 +816,11 @@ export default function ReplayOverlay() {
                   />
                 </div>
 
-                {/* Heure courante sous le curseur */}
+                {/* Heure courante AU-DESSUS du curseur (évite que le doigt/curseur la cache) */}
                 <div
                   style={{
                     position: "absolute",
-                    top: 10,
+                    top: -34,
                     left: `${knobPct}%`,
                     transform: tooltipTransform,
                     fontSize: 11,
@@ -838,8 +838,8 @@ export default function ReplayOverlay() {
                 </div>
               </div>
 
-              {/* Espace pour le tooltip */}
-              <div style={{ height: 24 }} />
+              {/* Espace sous la barre */}
+              <div style={{ height: 12 }} />
 
               {/* ── Contrôles ── */}
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

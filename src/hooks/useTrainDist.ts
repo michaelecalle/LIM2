@@ -21,7 +21,8 @@ export type TDPoint = {
   dist: number;                        // km depuis l'origine (>= 0)
   pkInternal: number | null;           // PK continu brut (pour GPS)
   network: "ADIF" | "LFP" | "RFN" | null;
-  hora: string;                        // "HH:MM" ou ""
+  hora: string;                        // heure de DÉPART "HH:MM" ou ""
+  arr?: string | null;                 // heure d'ARRIVÉE (gare commerciale) "HH:MM" ou null
 };
 
 export type GpsStateUi = "RED" | "ORANGE" | "GREEN" | "ARRET";
@@ -298,9 +299,16 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
 
       const effectiveMin = base.firstHoraMin + (nowMinFloat() - base.realMinFloat);
 
-      const horaPts = points
-        .map(p => ({ key: parseMin(p.hora), dist: p.dist }))
-        .filter((x): x is { key: number; dist: number } => x.key != null);
+      // Courbe temps→dist : chaque point d'arrêt commercial crée DEUX bornes à la
+      // même distance — arrivée et départ — pour que la position reste figée à quai
+      // entre les deux (interpolation de départ(A) → arrivée(B), plateau, départ(B) → …).
+      const horaPts: { key: number; dist: number }[] = [];
+      for (const p of points) {
+        const depMin = parseMin(p.hora);
+        const arrMin = p.arr ? parseMin(p.arr) : null;
+        if (arrMin != null) horaPts.push({ key: arrMin, dist: p.dist });
+        if (depMin != null) horaPts.push({ key: depMin, dist: p.dist });
+      }
       horaPts.sort((a, b) => a.key - b.key);
 
       const r = interpDist(horaPts, effectiveMin);

@@ -4,6 +4,7 @@ import { getFtLignePair, getFtLigneImpair, getTrainOrigine, getTrainDestination 
 import type { FTEntry } from "../../data/ligneFT";
 import { useTrainDist } from "../../hooks/useTrainDist";
 import type { TDPoint } from "../../hooks/useTrainDist";
+import { TUNNEL_ZONES_PKINTERNAL } from "../../data/tunnelZones";
 
 // ============================================================================
 // FT HORIZONTALE (#28) — graphique espace-vitesse + scroll automatique.
@@ -206,12 +207,29 @@ export default function FTHorizontal() {
     return out;
   }, [isOdd, trainNumber]);
 
+  // ── Bandes de tunnel (pkInternal → dist) pour repère visuel sur la voie ────
+  const tunnelBands = useMemo(() => {
+    if (points.length < 2 || points[0].pkInternal == null) return [] as { id: string; lo: number; hi: number }[];
+    const pk0 = points[0].pkInternal;
+    const pkLast = points[points.length - 1].pkInternal;
+    if (pkLast == null) return [];
+    const increasing = pkLast > pk0;
+    // dist SIGNÉE (pas abs) : un tunnel qui chevauche le départ est clampé à 0 au rendu
+    const toDist = (pk: number) => (increasing ? pk - pk0 : pk0 - pk);
+    return TUNNEL_ZONES_PKINTERNAL.map(z => {
+      const dA = toDist(z.pkIntMin);
+      const dB = toDist(z.pkIntMax);
+      return { id: z.id, lo: Math.min(dA, dB), hi: Math.max(dA, dB) };
+    });
+  }, [points]);
+
   // ── Tableau TDPoint pour le hook ─────────────────────────────────────────
   const tdPoints = useMemo<TDPoint[]>(() => points.map(p => ({
     dist:      p.dist,
     pkInternal: p.pkInternal,
     network:   p.network,
     hora:      p.hora,
+    arr:       p.arr,
   })), [points]);
 
   // ── Moteur de position (hook partagé) ─────────────────────────────────────
@@ -671,6 +689,18 @@ export default function FTHorizontal() {
                 <rect x={bx} y={by} width={w} height={h} rx={3} className={s.csv ? "ft-h-vbox-csv" : "ft-h-vbox"} />
                 <text className="ft-h-vlabel" x={bx + w / 2} y={by + h - 4}>{txt}</text>
               </g>
+            );
+          })}
+
+          {/* Bandes de tunnel : fond gris léger sur la voie (le train "entre" dans le tunnel) */}
+          {tunnelBands.filter(b => b.hi >= 0 && b.lo <= maxDist).map(b => {
+            const xa = x(Math.max(0, b.lo));
+            const xb = x(Math.min(maxDist, b.hi));
+            return (
+              <rect key={`tun-${b.id}`}
+                x={xa} y={baseY - 22}
+                width={Math.max(1, xb - xa)} height={26}
+                fill="rgba(110,110,110,0.16)" pointerEvents="none" />
             );
           })}
 
