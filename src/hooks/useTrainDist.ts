@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { tunnelZoneAt } from "../data/tunnelZones";
+import { logTestEvent } from "../lib/testLogger";
 
 // ─── Types publics ────────────────────────────────────────────────────────────
 
@@ -105,6 +106,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
   const lastGpsPkRef            = useRef<number | null>(null);
   const lastGpsSKmRef           = useRef<number | null>(null);
   const lastFrozenDistRef       = useRef<number | null>(null);  // gel tunnel
+  const lastHoraLogAtRef        = useRef<number>(0);  // throttle log diagnostic horaire
   const autoScrollBaseRef       = useRef<{
     firstHoraMin: number;   // heure de référence (minutes) de la base
     realMinFloat: number;   // heure d'horloge au moment du Play
@@ -146,8 +148,43 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
       const d    = (e as CustomEvent).detail ?? {};
       const enabled: boolean = !!d.enabled;
       const standby: boolean = !!d.standby;
+      const eventPk = typeof d.pk === "number" && isFinite(d.pk) ? d.pk : null;
 
-      // ① Stand-by initial : premier Play → on se fige sur le premier point
+      logTestEvent("utd:auto-scroll-change", {
+        enabled, standby, pk: eventPk, source: d.source ?? null,
+        initialDone: initialStandbyDoneRef.current,
+        standbyIdx: standbyIndexRef.current,
+        pointsLen: points.length,
+      });
+
+      // Le PK est le SEUL discriminant (pas l'état initialDone, fragile en seek/replay) :
+      // - event AVEC pk  → stand-by automatique sur la gare de ce pk (①b)
+      // - event SANS pk  → stand-by initial sur le premier point (①)
+
+      // ①b Stand-by automatique (arrêt détecté) : figer sur la gare du pk fourni
+      if (enabled && standby && eventPk != null && points.length > 0) {
+        initialStandbyDoneRef.current = true;
+        const targetU = pkToU(eventPk, guessNet(eventPk));
+        let bestIdx = 0;
+        let bestDelta = Infinity;
+        for (let i = 0; i < points.length; i++) {
+          if (points[i].pkInternal == null) continue;
+          const delta = Math.abs(points[i].pkInternal! - targetU);
+          if (delta < bestDelta) { bestDelta = delta; bestIdx = i; }
+        }
+        standbyIndexRef.current = bestIdx;
+        setStandbyPointIndex(bestIdx);
+        autoScrollEnabledRef.current = true;
+        setAutoScrollEnabled(true);
+        setDist(points[bestIdx].dist);
+        logTestEvent("utd:branch", {
+          branch: "①b-standby-auto", eventPk, targetU, bestIdx, bestDelta,
+          bestPkInternal: points[bestIdx].pkInternal, dist: points[bestIdx].dist,
+        });
+        return;
+      }
+
+      // ① Stand-by initial : premier Play sans pk → on se fige sur le premier point
       if (enabled && standby && !initialStandbyDoneRef.current && points.length > 0) {
         initialStandbyDoneRef.current = true;
         standbyIndexRef.current       = 0;
@@ -155,27 +192,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
         autoScrollEnabledRef.current  = true;
         setAutoScrollEnabled(true);
         setDist(points[0].dist);
-        return;
-      }
-
-      // ①b Stand-by automatique (arrêt détecté en horaire ou GPS) : figer sur le point le plus proche
-      if (enabled && standby && initialStandbyDoneRef.current && points.length > 0) {
-        // PK de la gare (fourni par ft:auto:arrival-stop), sinon dernier PK GPS connu
-        const eventPk = typeof d.pk === "number" && isFinite(d.pk) ? d.pk : null;
-        const refPk = eventPk ?? lastGpsPkRef.current;
-        let bestIdx = 0;
-        if (refPk != null) {
-          const targetU = pkToU(refPk, guessNet(refPk));
-          let bestDelta = Infinity;
-          for (let i = 0; i < points.length; i++) {
-            if (points[i].pkInternal == null) continue;
-            const delta = Math.abs(points[i].pkInternal! - targetU);
-            if (delta < bestDelta) { bestDelta = delta; bestIdx = i; }
-          }
-        }
-        standbyIndexRef.current = bestIdx;
-        setStandbyPointIndex(bestIdx);
-        setDist(points[bestIdx].dist);
+        logTestEvent("utd:branch", { branch: "①-standby-initial", idx: 0, dist: points[0].dist });
         return;
       }
 
@@ -195,6 +212,10 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
           // Pas de point horaire : base = heure courante (train à l'heure)
           autoScrollBaseRef.current = { firstHoraMin: nowMinFloat(), realMinFloat: nowMinFloat() };
         }
+        logTestEvent("utd:branch", {
+          branch: "②-resume", lockedIdx, refHora: refPt?.hora ?? null,
+          usedFirstHoraPoint: lockedIdx == null,
+        });
         standbyIndexRef.current = null;
         setStandbyPointIndex(null);
       }
@@ -205,6 +226,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
         standbyIndexRef.current   = null;
         setStandbyPointIndex(null);
         setDist(null);
+        logTestEvent("utd:branch", { branch: "③-pause" });
       }
 
       autoScrollEnabledRef.current = enabled;
@@ -223,6 +245,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
       const rmf = d?.realMinFloat;
       if (typeof fhm === "number" && isFinite(fhm) && typeof rmf === "number" && isFinite(rmf)) {
         autoScrollBaseRef.current = { firstHoraMin: fhm, realMinFloat: rmf };
+        logTestEvent("utd:base-sync", { firstHoraMin: fhm, realMinFloat: rmf });
       }
     };
     window.addEventListener("ft:delta:base-sync", h as EventListener);
@@ -281,7 +304,18 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
       horaPts.sort((a, b) => a.key - b.key);
 
       const r = interpDist(horaPts, effectiveMin);
-      if (r != null) setDist(r);
+      if (r != null) {
+        setDist(r);
+        // Log throttlé toutes les 5s pour suivre la position horaire calculée
+        const nowT = Date.now();
+        if (nowT - lastHoraLogAtRef.current >= 5000) {
+          lastHoraLogAtRef.current = nowT;
+          logTestEvent("utd:tick-horaire", {
+            effectiveMin: Math.round(effectiveMin * 100) / 100,
+            firstHoraMin: base.firstHoraMin, dist: Math.round(r * 100) / 100,
+          });
+        }
+      }
     }, 250);
 
     return () => window.clearInterval(id);

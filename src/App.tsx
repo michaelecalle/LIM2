@@ -400,7 +400,9 @@ export default function App() {
           pause: () => player.pause(),
           stop: () => player.stop(),
           seek: (tMs: number) => player.seek(tMs),
-          speed: (x: number) => player.setSpeed(x),
+
+          setInteractive: (on: boolean) => player.setInteractive(on),
+          setInteractivePrompt: (fn: (desc: string) => Promise<boolean>) => player.setInteractivePrompt(fn),
 
           status: () => player.getStatus(),
           cursor: () => player.getCursor(),

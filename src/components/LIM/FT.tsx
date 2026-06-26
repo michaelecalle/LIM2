@@ -150,10 +150,10 @@ export default function FT({ variant = "classic" }: FTProps) {
         // ✅ GPS passif : l'indicateur peut passer GREEN avant Play,
         // mais la FT ne doit utiliser la référence GPS que lorsque l'autoscroll est engagé.
         const gpsModeAllowed = autoScrollEnabledRef.current;
-        // ARRET = arrêt GPS détecté (position connue) → on reste en GPS, comme le watchdog.
-        // (Évite l'oscillation HORAIRE↔GPS pendant un arrêt — #20 Bug A.)
+        // Garde-fou tunnel : jamais GPS en zone tunnel (même si l'event dit GREEN)
+        const inTunnel = tunnelZoneAt(lastGpsSKmRef.current) != null;
         const nextMode: ReferenceMode =
-          (s === "GREEN" || s === "ARRET") && gpsModeAllowed ? "GPS" : "HORAIRE";
+          (s === "GREEN" || s === "ARRET") && gpsModeAllowed && !inTunnel ? "GPS" : "HORAIRE";
 
         if (referenceModeRef.current !== nextMode) {
           referenceModeRef.current = nextMode;
@@ -720,6 +720,9 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   const standbyLockedRowRef = React.useRef<number | null>(null);
   // GPS ARRÊT mode : données de l'arrêt en cours (null = pas en mode ARRÊT)
   const stationArretRef = React.useRef<StationArretState | null>(null);
+  // "Prochain arrêt" : row de la dernière gare commerciale dont on est PARTI.
+  // Le bloc next-stop ne cherche qu'APRÈS ce row (pas après activeRowIndex).
+  const nextStopAnchorRowRef = React.useRef<number>(-1);
   // Timestamp de départ réel pour le recalage (consommé une seule fois)
   const recalibrateAtTimeRef = React.useRef<Date | null>(null);
   // Bug 1 fix : blocage du recalcul delta au premier Play (stand-by initial)
@@ -1781,6 +1784,10 @@ detail: { enabled: true, standby: true },
           });
 
           recalibrateFromRowRef.current = resumeRowIndex;
+          // N'avancer le "prochain arrêt" que si le standby venait d'une détection d'arrêt
+          // (pas d'un standby manuel entre deux gares)
+          const wasAutoArret = stationArretRef.current != null || (rawEntries[resumeRowIndex] as any)?.com > 0;
+          if (wasAutoArret) nextStopAnchorRowRef.current = resumeRowIndex;
           // Bug 2 fix : forcer le re-déclenchement du useEffect même si autoScrollEnabled
           // reste à true (le state ne changerait pas, l'effect ne se relancerait pas sinon)
           setRecalibrateTrigger(prev => prev + 1);
@@ -4253,9 +4260,10 @@ const isRelock = acceptedMode === "relock";
             recalibrateFromRowRef.current = rowIndex;
             standbyLockedRowRef.current = rowIndex;
             setActiveRowIndex(rowIndex);
+            const stationPkForEvent = autoStandbyEntry?.pk != null ? Number(autoStandbyEntry.pk) : undefined;
             window.dispatchEvent(
               new CustomEvent("ft:auto-scroll-change", {
-                detail: { enabled: true, standby: true },
+                detail: { enabled: true, standby: true, pk: stationPkForEvent },
               })
             );
             window.dispatchEvent(
@@ -4465,6 +4473,7 @@ const isRelock = acceptedMode === "relock";
                 const arretKind = arret.kind;
                 stationArretRef.current = null;
                 standbyLockedRowRef.current = null;
+                if (frozenRowIndex != null) nextStopAnchorRowRef.current = frozenRowIndex;
 
                 window.dispatchEvent(
                   new CustomEvent("lim:station-arret", {
@@ -5525,8 +5534,23 @@ if (hasFranceFtLocal) {
       }
     }
 
+    // Fallback : si activeRowIndex dépasse une gare commerciale de plus de 1 km,
+    // avancer nextStopAnchorRow (couvre le cas où ni standby ni GPS arret n'a été détecté)
+    for (let f = nextStopAnchorRowRef.current + 1; f <= activeRowIndex; f++) {
+      const ef = rawEntries[f] as any;
+      if (ef?.isNoteOnly) continue;
+      const comF = parseInt((ef?.com ?? "") as string, 10);
+      if (!(Number.isFinite(comF) && comF > 0)) continue;
+      const pkF = ef?.pk_internal as number | undefined;
+      const pkActive = (rawEntries[activeRowIndex] as any)?.pk_internal as number | undefined;
+      if (pkF != null && pkActive != null && Math.abs(pkActive - pkF) > 1.0) {
+        nextStopAnchorRowRef.current = f;
+      }
+    }
+
+    const searchFrom = Math.max(nextStopAnchorRowRef.current, activeRowIndex) + 1;
     let detail: { name: string; pk: string; dep: string; arr: string | null; deltaMin: number } | null = null;
-    for (let i = activeRowIndex + 1; i < rawEntries.length; i++) {
+    for (let i = searchFrom; i < rawEntries.length; i++) {
       const e = rawEntries[i] as any;
       if (e.isNoteOnly) continue;
       const hora = ((e.hora ?? "") as string).trim();

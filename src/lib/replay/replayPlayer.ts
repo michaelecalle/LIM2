@@ -174,8 +174,11 @@ export class ReplayPlayer {
   private nowMs = 0;
   private durationMs = 0;
 
-  private speed = 1;
   private skipImportPdfEvents = false;
+  private interactive = false;
+  private interactivePrompt: ((desc: string) => Promise<boolean>) | null = null;
+  private seenFirstGreenMode = false;
+  private seenFirstUnfold = false;
 
   private startedAtPerf: number | null = null;
   private startedAtNowMs: number | null = null;
@@ -222,15 +225,12 @@ export class ReplayPlayer {
     this.skipImportPdfEvents = skip;
   }
 
-  setSpeed(speed: number): void {
-    if (!Number.isFinite(speed) || speed <= 0) return;
-    this.speed = speed;
+  setInteractive(on: boolean): void {
+    this.interactive = on;
+  }
 
-    // si on est en lecture, on recale la base temps
-    if (this.status === "playing") {
-      this.startedAtPerf = performance.now();
-      this.startedAtNowMs = this.nowMs;
-    }
+  setInteractivePrompt(fn: ((desc: string) => Promise<boolean>) | null): void {
+    this.interactivePrompt = fn;
   }
 
   async loadFromUrl(remoteLogUrl: string): Promise<void> {
@@ -443,7 +443,7 @@ export class ReplayPlayer {
       if (this.startedAtPerf == null || this.startedAtNowMs == null) return;
 
       const elapsed = performance.now() - this.startedAtPerf;
-      this.nowMs = this.startedAtNowMs + elapsed * this.speed;
+      this.nowMs = this.startedAtNowMs + elapsed;
 
       // évite réentrance si un barrier async est en cours
       if (this.isDraining) return;
@@ -469,7 +469,7 @@ export class ReplayPlayer {
     // figer nowMs au moment pause
     if (this.startedAtPerf != null && this.startedAtNowMs != null) {
       const elapsed = performance.now() - this.startedAtPerf;
-      this.nowMs = this.startedAtNowMs + elapsed * this.speed;
+      this.nowMs = this.startedAtNowMs + elapsed;
     }
     this.startedAtPerf = null;
     this.startedAtNowMs = null;
@@ -494,8 +494,57 @@ export class ReplayPlayer {
     }
   }
 
+  private describeUserAction(kind: string, payload: any): string | null {
+    switch (kind) {
+      case "ui:autoScroll:toggle":
+        return payload?.enabled ? "Activation du défilement automatique" : "Arrêt du défilement automatique";
+      case "ui:standby:enter":
+        return `Entrée en stand-by sur ${payload?.dependencia ?? `ligne ${payload?.rowIndex}`}`;
+      case "ui:standby:resume":
+        return `Sortie du stand-by depuis ${payload?.dependencia ?? `ligne ${payload?.rowIndex}`}`;
+      case "ui:pdf:mode-change": {
+        // Le premier passage en mode "green" est automatique (initialisation), pas un clic
+        if (payload?.mode === "green" && !this.seenFirstGreenMode) {
+          this.seenFirstGreenMode = true;
+          return null;
+        }
+        this.seenFirstGreenMode = true;
+        return `Changement de mode : ${payload?.mode === "red" ? "secours" : payload?.mode === "green" ? "normal" : payload?.mode}`;
+      }
+      case "ui:infos-ltv:fold-change": {
+        // Le premier dépliage est automatique (initialisation)
+        if (!payload?.folded && !this.seenFirstUnfold) {
+          this.seenFirstUnfold = true;
+          return null;
+        }
+        this.seenFirstUnfold = true;
+        return payload?.folded ? "Passage en mode plié" : "Passage en mode déplié";
+      }
+      // ui:displayed-train-number-change et ui:displayed-composition-change
+      // sont des conséquences automatiques, pas des actions utilisateur
+      default:
+        return null;
+    }
+  }
+
   private async applyEvent(ev: ReplayEvent): Promise<void> {
     const { kind, payload } = ev;
+
+    // Mode interactif : pause + confirmation pour les actions utilisateur
+    if (this.interactive && this.interactivePrompt) {
+      const desc = this.describeUserAction(kind, payload);
+      if (desc != null) {
+        // Geler le temps : mettre startedAtPerf à null pour que le tick retourne immédiatement
+        const frozenNowMs = this.nowMs;
+        this.startedAtPerf = null;
+        this.startedAtNowMs = null;
+        const accepted = await this.interactivePrompt(desc);
+        // Recalibrer le temps à la reprise (reprend là où on s'est arrêté)
+        this.startedAtPerf = performance.now();
+        this.startedAtNowMs = frozenNowMs;
+        if (!accepted) return;
+      }
+    }
 
     // --- mapping v1 ---
     switch (kind) {
@@ -619,7 +668,55 @@ export class ReplayPlayer {
         return;
       }
 
-      // --- ignorer : outputs/diagnostics ---
+      // --- actions utilisateur supplémentaires ---
+      case "ui:infos-ltv:fold-change": {
+        const folded = !!payload?.folded;
+        dispatch("lim:infos-ltv-fold-change", { folded, source: "replay" });
+        return;
+      }
+
+      case "ui:displayed-train-number-change": {
+        dispatch("lim:train-display-change", { ...(payload ?? {}), source: "replay" });
+        return;
+      }
+
+      case "ui:displayed-composition-change": {
+        dispatch("lim:composition-display-change", { ...(payload ?? {}), source: "replay" });
+        return;
+      }
+
+      // --- ignorer : conséquences (l'app les dérive des actions/GPS) ---
+      case "ft:auto:arrival-stop":
+      case "ft:delta:gps-recalage":
+      case "ft:delta:gps-recalage:skip":
+      case "ft:delta:recalage:mark":
+      case "ft:delta:capture-base-from-row":
+      case "ft:standby:visual-clear":
+      case "gps:arret:armed":
+      case "gps:arret:departure-confirmed":
+      case "gps:arret:departure-implausible":
+      case "gps:arret:departure-no-recal":
+      case "gps:arret:first-movement":
+      case "gps:arret:rejected-approach":
+      case "gps:arret:approach-warning":
+      case "gps:arret:approach-warning-near-station":
+      case "gps:arret:rejected-tunnel-zone":
+      case "gps:arret:rearm-blocked":
+      case "gps:freeze-red:entered":
+      case "gps:freeze-red:station-arret":
+      case "gps:freeze-red:station-standby-skip":
+      case "gps:orange-to-red:fire":
+      case "gps:orange-to-red:start":
+      case "gps:orange-to-red:stop":
+      case "gps:state-change:watchdog":
+      case "gps:mode-change:watchdog":
+      case "direction:expected:set":
+      case "direction:lock":
+      case "direction:mismatch":
+      case "figueres:armed":
+      case "ft:ltv:rows-received":
+      case "ltv:source:loaded":
+      // --- ignorer : diagnostics/infrastructure ---
       case "ft:scroll:viewport":
       case "ft:delta:tick":
       case "gps:watch:start":
@@ -628,10 +725,15 @@ export class ReplayPlayer {
       case "gps:mode-change":
       case "gps:mode-check":
       case "testlog:uploaded":
+      case "testlog:silent-start":
       case "session:start":
       case "session:stop":
       case "ui:test:auto-start":
       case "ui:test:stop":
+      case "ui:gps-state:red":
+      case "ui:auto:precal:ok":
+      case "ui:lim:parsed":
+      case "ui:manual-import:train-selected":
       default: {
         // no-op
         return;

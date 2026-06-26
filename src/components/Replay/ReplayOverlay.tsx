@@ -5,7 +5,7 @@ import { unzipSync } from "fflate";
 type Pos = { x: number; y: number };
 
 const POS_KEY = "limgpt:replayOverlayPos";
-const SPEED_STEPS = [1, 2, 4, 8, 16, 32, 64] as const;
+// Vitesse accélérée supprimée (#9 refactoring) — replay x1 uniquement.
 const ZIP_FILENAME_REGEX = /^(\d+) du (\d{4}-\d{2}-\d{2}) - (\d{2})h(\d{2})\.zip$/i;
 
 function clamp(n: number, lo: number, hi: number) {
@@ -99,13 +99,14 @@ export default function ReplayOverlay() {
           pause?: () => void;
           stop?: () => void;
           seek?: (tMs: number) => void;
-          speed?: (x: number) => void;
           status?: () => string;
           cursor?: () => { idx: number; tMs: number };
           durationMs?: () => number;
           startIso?: () => string | null;
           nowIso?: () => string | null;
           error?: () => unknown;
+          setInteractive?: (on: boolean) => void;
+          setInteractivePrompt?: (fn: (desc: string) => Promise<boolean>) => void;
         }
       | undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -348,14 +349,30 @@ export default function ReplayOverlay() {
     }
   };
 
-  /* ── Vitesse ── */
-  const [speedIdx, setSpeedIdx] = useState(0);
-  useEffect(() => { speedRef.current = SPEED_STEPS[speedIdx]; }, [speedIdx]);
+  /* ── Replay interactif (#31) ── */
+  const [interactive, setInteractive] = useState(false);
+  const [interactivePromptData, setInteractivePromptData] = useState<{
+    desc: string;
+    resolve: (accepted: boolean) => void;
+  } | null>(null);
 
-  const handleSpeedCycle = () => {
-    const next = (speedIdx + 1) % SPEED_STEPS.length;
-    setSpeedIdx(next);
-    playerApi?.speed?.(SPEED_STEPS[next]);
+  useEffect(() => {
+    playerApi?.setInteractive?.(interactive);
+  }, [interactive, playerApi]);
+
+  useEffect(() => {
+    playerApi?.setInteractivePrompt?.((desc: string) => {
+      return new Promise<boolean>((resolve) => {
+        setInteractivePromptData({ desc, resolve });
+      });
+    });
+  }, [playerApi]);
+
+  const handleInteractiveAnswer = (accepted: boolean) => {
+    if (interactivePromptData) {
+      interactivePromptData.resolve(accepted);
+      setInteractivePromptData(null);
+    }
   };
 
   /* ── Scrubbing barre de progression ── */
@@ -376,7 +393,7 @@ export default function ReplayOverlay() {
   const displayMs = (() => {
     if (isPlaying && interpBaseRef.current && dur > 0) {
       const elapsed = Date.now() - interpBaseRef.current.wallMs;
-      const interp = interpBaseRef.current.tMs + elapsed * speedRef.current;
+      const interp = interpBaseRef.current.tMs + elapsed;
       return Math.min(Math.max(0, interp), dur);
     }
     return currentMs;
@@ -832,8 +849,6 @@ export default function ReplayOverlay() {
                   type="button"
                   onClick={() => {
                     playerApi?.stop?.();
-                    setSpeedIdx(0);
-                    playerApi?.speed?.(1);
                     // Fin du replay → TitleBar propose l'export LOCAL du log + restaure l'horloge (#23).
                     window.dispatchEvent(new CustomEvent("replay:stopped"));
                     setTick((v) => v + 1);
@@ -863,23 +878,50 @@ export default function ReplayOverlay() {
                   {isPlaying ? "⏸ Pause" : "▶ Lecture"}
                 </button>
 
-                {/* Vitesse */}
-                <button
-                  type="button"
-                  onClick={handleSpeedCycle}
-                  style={{
-                    ...btnBase,
-                    fontSize: 13,
-                    padding: "6px 12px",
-                    minWidth: 64,
-                    opacity: SPEED_STEPS[speedIdx] === 1 ? 0.7 : 1,
-                  }}
-                  title={`Vitesse actuelle : ×${SPEED_STEPS[speedIdx]} — clic pour passer au palier suivant`}
-                >
-                  {SPEED_STEPS[speedIdx] === 1 ? "×1" : `⏩ ×${SPEED_STEPS[speedIdx]}`}
-                </button>
+                {/* Case interactif */}
+                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, opacity: 0.8, cursor: "pointer", userSelect: "none" }}>
+                  <input
+                    type="checkbox"
+                    checked={interactive}
+                    onChange={(e) => setInteractive(e.target.checked)}
+                    style={{ margin: 0 }}
+                  />
+                  Interactif
+                </label>
 
               </div>
+
+              {/* Modale interactive */}
+              {interactivePromptData && (
+                <div style={{
+                  marginTop: 8,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(59,130,246,0.5)",
+                  background: "rgba(59,130,246,0.1)",
+                  fontSize: 12,
+                }}>
+                  <div style={{ marginBottom: 6, fontWeight: 500 }}>
+                    Action : {interactivePromptData.desc}
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => handleInteractiveAnswer(true)}
+                      style={{ ...btnBase, fontSize: 11, padding: "4px 12px", background: "rgba(34,197,94,0.2)" }}
+                    >
+                      ✓ Reproduire
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleInteractiveAnswer(false)}
+                      style={{ ...btnBase, fontSize: 11, padding: "4px 12px", background: "rgba(239,68,68,0.2)" }}
+                    >
+                      ✗ Ignorer
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
