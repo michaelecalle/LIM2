@@ -158,6 +158,25 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
         return;
       }
 
+      // ①b Stand-by automatique (arrêt détecté en horaire) : figer sur le point le plus proche
+      if (enabled && standby && initialStandbyDoneRef.current && points.length > 0) {
+        const lastPk = lastGpsPkRef.current;
+        let bestIdx = 0;
+        if (lastPk != null) {
+          const targetU = pkToU(lastPk, guessNet(lastPk));
+          let bestDelta = Infinity;
+          for (let i = 0; i < points.length; i++) {
+            if (points[i].pkInternal == null) continue;
+            const d = Math.abs(points[i].pkInternal! - targetU);
+            if (d < bestDelta) { bestDelta = d; bestIdx = i; }
+          }
+        }
+        standbyIndexRef.current = bestIdx;
+        setStandbyPointIndex(bestIdx);
+        setDist(points[bestIdx].dist);
+        return;
+      }
+
       // ② Reprise depuis stand-by { enabled: true, standby: false }
       if (enabled && !standby) {
         const lockedIdx = standbyIndexRef.current;

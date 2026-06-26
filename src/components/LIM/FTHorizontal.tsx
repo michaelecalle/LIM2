@@ -11,7 +11,7 @@ import type { TDPoint } from "../../hooks/useTrainDist";
 // tunnel, replay) adaptés à l'axe horizontal : scrollLeft = dist * pxPerKm.
 // ============================================================================
 
-const PX_PER_KM     = 100;
+const PX_PER_KM     = 60;
 const V_MAX_AXIS    = 300;
 const CHART_H       = 230;
 const MARGIN        = { top: 16, right: 28, bottom: 88, left: 44 };

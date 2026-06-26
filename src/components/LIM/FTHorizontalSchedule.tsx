@@ -14,7 +14,7 @@ const MARGIN_RIGHT = 28;
 const H      = 70;
 const LINE_Y = 42;
 const DOT_R  = 5;
-const PX_PER_KM_DEFAULT = 100;
+const PX_PER_KM_DEFAULT = 60;
 
 // PK affiché selon le réseau : pk_rfn (RFN), pk_lfp (LFP), pk_adif (ADIF), sinon pk.
 function displayPk(e: FTEntry): string {

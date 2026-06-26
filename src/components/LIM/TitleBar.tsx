@@ -617,7 +617,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
 
   // #28 — échelle horizontale (px/km) de la FT horizontale (réglage permanent, défaut 100).
   const [ftHScale, setFtHScale] = useState<number>(() => {
-    try { const v = parseFloat(localStorage.getItem('lim:fth-scale') ?? '100'); return Number.isFinite(v) && v > 0 ? v : 100 } catch { return 100 }
+    try { const v = parseFloat(localStorage.getItem('lim:fth-scale') ?? '60'); return Number.isFinite(v) && v > 0 ? v : 60 } catch { return 60 }
   })
   useEffect(() => {
     try { localStorage.setItem('lim:fth-scale', String(ftHScale)) } catch {}

@@ -638,7 +638,7 @@ export default function FT({ variant = "classic" }: FTProps) {
       })
     );
 
-if (referenceMode === "GPS") {
+if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   window.dispatchEvent(
     new CustomEvent("lim:hourly-mode", {
       detail: { enabled: autoScrollEnabledRef.current, standby: false },
@@ -1558,10 +1558,12 @@ if (referenceMode === "GPS") {
       };
 
       const prevState = gpsStateRef.current;
-      // En mode ARRÊT gare, on ne laisse pas gpsStateRef passer en RED
-      // (cela couperait le mode GPS et le ruban ne suivrait plus)
+      // En mode ARRÊT gare : pas de RED (couperait le GPS).
+      // En zone tunnel : pas de GREEN (retour GPS fugitif = parasite).
       const effectiveNextState =
-        stationArretRef.current != null && nextState === "RED" ? "GREEN" : nextState;
+        stationArretRef.current != null && nextState === "RED" ? "GREEN"
+        : tunnelZoneAt(lastGpsSKmRef.current) != null && nextState === "GREEN" ? "ORANGE"
+        : nextState;
 
       if (prevState !== effectiveNextState) {
         gpsStateRef.current = effectiveNextState;
@@ -3974,9 +3976,11 @@ const isRelock = acceptedMode === "relock";
         );
       };
 
-      // En mode ARRÊT gare, on ne laisse pas gpsStateRef passer en RED
+      // En mode ARRÊT gare : pas de RED. En zone tunnel : pas de GREEN.
       const effectiveNextState =
-        stationArretRef.current != null && nextState === "RED" ? "GREEN" : nextState;
+        stationArretRef.current != null && nextState === "RED" ? "GREEN"
+        : tunnelZoneAt(lastGpsSKmRef.current) != null && nextState === "GREEN" ? "ORANGE"
+        : nextState;
 
       if (gpsStateRef.current !== effectiveNextState) {
         const prevState = gpsStateRef.current;
