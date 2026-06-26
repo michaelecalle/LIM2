@@ -1516,7 +1516,9 @@ if (referenceMode === "GPS") {
       // 3) Emission vers TitleBar (throttle)
       // -------------------------
       const emitGpsState = (forced: boolean) => {
-        const pkForUi = nextState === "GREEN" ? pkFinite : null;
+        // Garde-fou tunnel : ne pas émettre GREEN ni PK en zone tunnel
+        const inTunnelNow = tunnelZoneAt(lastGpsSKmRef.current) != null;
+        const pkForUi = nextState === "GREEN" && !inTunnelNow ? pkFinite : null;
 
         const lastEmitAt = lastGpsStateEmitAtRef.current;
         const lastEmitPk = lastGpsStateEmitPkRef.current;
@@ -1533,8 +1535,11 @@ if (referenceMode === "GPS") {
         lastGpsStateEmitPkRef.current = pkForUi;
 
         // Mode ARRÊT : émettre "ARRET" dès qu'un arrêt GPS est armé (isStop vert ou freeze rouge)
+        // En tunnel : forcer ORANGE pour éviter un flash vert parasite
         const emitState =
-          stationArretRef.current != null ? "ARRET" : nextState;
+          stationArretRef.current != null ? "ARRET"
+          : inTunnelNow && nextState === "GREEN" ? "ORANGE"
+          : nextState;
 
         window.dispatchEvent(
           new CustomEvent("lim:gps-state", {
@@ -3924,8 +3929,12 @@ const isRelock = acceptedMode === "relock";
         const pkFinite =
           typeof pk === "number" && Number.isFinite(pk) ? pk : null;
 
-        // On n'affiche un PK que si GREEN (TitleBar attend ça)
-        const pkForUi = nextState === "GREEN" ? pkFinite : null;
+        // Garde-fou tunnel : ne pas émettre GREEN ni PK en zone tunnel
+        // (empêche le flash PK parasite sur un retour GPS fugitif en souterrain)
+        const inTunnelNow = tunnelZoneAt(lastGpsSKmRef.current) != null;
+
+        // On n'affiche un PK que si GREEN ET hors tunnel
+        const pkForUi = nextState === "GREEN" && !inTunnelNow ? pkFinite : null;
 
         const lastEmitAt = lastGpsStateEmitAtRef.current;
         const lastEmitPk = lastGpsStateEmitPkRef.current;
@@ -3943,8 +3952,11 @@ const isRelock = acceptedMode === "relock";
         lastGpsStateEmitPkRef.current = pkForUi;
 
         // Mode ARRÊT : émettre "ARRET" dès qu'un arrêt GPS est armé (isStop vert ou freeze rouge)
+        // En tunnel : forcer ORANGE (même si le GPS dit GREEN) pour éviter un flash vert parasite
         const emitState =
-          stationArretRef.current != null ? "ARRET" : nextState;
+          stationArretRef.current != null ? "ARRET"
+          : inTunnelNow && nextState === "GREEN" ? "ORANGE"
+          : nextState;
 
         window.dispatchEvent(
           new CustomEvent("lim:gps-state", {
@@ -4327,48 +4339,62 @@ const isRelock = acceptedMode === "relock";
             minKm: GPS_ARRET_REARM_MIN_KM,
           });
         } else if (currentSKm != null) {
-          // Log si l'approche n'est pas nominale (info, plus bloquant — le garde-fou tunnel suffit)
-          if (!approachOk) {
-            logTestEvent("gps:arret:approach-warning", {
+          // Approche requise SAUF si on est proche d'une gare commerciale
+          // (à une gare, l'arrêt est attendu même avec une approche rapide ;
+          //  hors gare, le seuil d'approche protège contre les faux arrêts en entrée de tunnel)
+          const nearest = findNearestCommercialStopRowIndex(pk, STATION_PROX_KM);
+          if (!approachOk && !nearest) {
+            logTestEvent("gps:arret:rejected-approach", {
               approachSpeedKmh,
               approachAccMax,
               maxKmh: GPS_STOP_DECEL_MAX_KMH,
               maxAccM: GPS_STOP_APPROACH_ACC_MAX_M,
               currentSKm,
               pk,
+              reason: "no_nearby_station",
+            });
+          } else {
+            if (!approachOk) {
+              logTestEvent("gps:arret:approach-warning-near-station", {
+                approachSpeedKmh,
+                approachAccMax,
+                currentSKm,
+                pk,
+                stationRow: nearest!.rowIndex,
+                stationDeltaKm: nearest!.deltaKm,
+              });
+            }
+            lastArretSKmRef.current = currentSKm;
+            const deptThreshKm = Math.max(0.075, (4 * (accuracyM ?? 0)) / 1000);
+            const arretKind: "station" | "pleine-ligne" = nearest ? "station" : "pleine-ligne";
+
+            stationArretRef.current = {
+              kind: arretKind,
+              frozenSKm: currentSKm,
+              frozenRowIndex: nearest ? nearest.rowIndex : null,
+              frozenAccuracy: accuracyM ?? 0,
+              departureThresholdKm: deptThreshKm,
+              firstMovementTime: null,
+              prevSKm: currentSKm,
+              consecutiveSteps: 0,
+            };
+
+            window.dispatchEvent(
+              new CustomEvent("lim:station-arret", {
+                detail: { active: true, source: "gps", kind: arretKind },
+              })
+            );
+
+            logTestEvent("gps:arret:armed", {
+              kind: arretKind,
+              rowIndex: nearest ? nearest.rowIndex : null,
+              deltaKm: nearest ? nearest.deltaKm : null,
+              pk,
+              currentSKm,
+              accuracyM,
+              deptThreshKm,
             });
           }
-          lastArretSKmRef.current = currentSKm;
-          const deptThreshKm = Math.max(0.075, (4 * (accuracyM ?? 0)) / 1000);
-          const nearest = findNearestCommercialStopRowIndex(pk, STATION_PROX_KM);
-          const arretKind: "station" | "pleine-ligne" = nearest ? "station" : "pleine-ligne";
-
-          stationArretRef.current = {
-            kind: arretKind,
-            frozenSKm: currentSKm,
-            frozenRowIndex: nearest ? nearest.rowIndex : null,
-            frozenAccuracy: accuracyM ?? 0,
-            departureThresholdKm: deptThreshKm,
-            firstMovementTime: null,
-            prevSKm: currentSKm,
-            consecutiveSteps: 0,
-          };
-
-          window.dispatchEvent(
-            new CustomEvent("lim:station-arret", {
-              detail: { active: true, source: "gps", kind: arretKind },
-            })
-          );
-
-          logTestEvent("gps:arret:armed", {
-            kind: arretKind,
-            rowIndex: nearest ? nearest.rowIndex : null,
-            deltaKm: nearest ? nearest.deltaKm : null,
-            pk,
-            currentSKm,
-            accuracyM,
-            deptThreshKm,
-          });
         }
       }
 
