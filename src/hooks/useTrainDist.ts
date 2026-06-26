@@ -158,17 +158,19 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
         return;
       }
 
-      // ①b Stand-by automatique (arrêt détecté en horaire) : figer sur le point le plus proche
+      // ①b Stand-by automatique (arrêt détecté en horaire ou GPS) : figer sur le point le plus proche
       if (enabled && standby && initialStandbyDoneRef.current && points.length > 0) {
-        const lastPk = lastGpsPkRef.current;
+        // PK de la gare (fourni par ft:auto:arrival-stop), sinon dernier PK GPS connu
+        const eventPk = typeof d.pk === "number" && isFinite(d.pk) ? d.pk : null;
+        const refPk = eventPk ?? lastGpsPkRef.current;
         let bestIdx = 0;
-        if (lastPk != null) {
-          const targetU = pkToU(lastPk, guessNet(lastPk));
+        if (refPk != null) {
+          const targetU = pkToU(refPk, guessNet(refPk));
           let bestDelta = Infinity;
           for (let i = 0; i < points.length; i++) {
             if (points[i].pkInternal == null) continue;
-            const d = Math.abs(points[i].pkInternal! - targetU);
-            if (d < bestDelta) { bestDelta = d; bestIdx = i; }
+            const delta = Math.abs(points[i].pkInternal! - targetU);
+            if (delta < bestDelta) { bestDelta = delta; bestIdx = i; }
           }
         }
         standbyIndexRef.current = bestIdx;

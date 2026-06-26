@@ -2344,7 +2344,7 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
 // la même logique interne qu’un standby manuel.
 window.dispatchEvent(
   new CustomEvent("ft:auto-scroll-change", {
-    detail: { enabled: true, standby: true },
+    detail: { enabled: true, standby: true, pk: Number(stationPkRaw) || undefined },
   })
 );
 // Afficher le badge ARRÊT (même comportement visuel que le GPS ARRET)
