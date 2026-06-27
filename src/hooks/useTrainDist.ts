@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { tunnelZoneAt } from "../data/tunnelZones";
 import { logTestEvent } from "../lib/testLogger";
+import { empiricalPkAtElapsed, isInEmpiricalZone } from "../data/empiricalCurve";
 
 // ─── Types publics ────────────────────────────────────────────────────────────
 
@@ -108,6 +109,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
   const lastGpsSKmRef           = useRef<number | null>(null);
   const lastFrozenDistRef       = useRef<number | null>(null);  // gel tunnel
   const lastHoraLogAtRef        = useRef<number>(0);  // throttle log diagnostic horaire
+  const empiricalAnchorRef      = useRef<{ pk: number; minFloat: number } | null>(null);  // ancrage courbe empirique
   const autoScrollBaseRef       = useRef<{
     firstHoraMin: number;   // heure de référence (minutes) de la base
     realMinFloat: number;   // heure d'horloge au moment du Play
@@ -199,6 +201,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
 
       // ② Reprise depuis stand-by { enabled: true, standby: false }
       if (enabled && !standby) {
+        empiricalAnchorRef.current = null;  // départ/reprise : la courbe empirique se ré-ancrera
         const lockedIdx = standbyIndexRef.current;
         // On cherche le point de référence : soit la ligne verrouillée, soit le premier point horaire
         const refPt = lockedIdx != null
@@ -269,6 +272,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
 
       // ─── Mode GPS ──────────────────────────────────────────────────────
       if (mode === "GPS") {
+        empiricalAnchorRef.current = null;  // on quitte l'horaire : l'ancre empirique se re-posera au retour
         const pk  = lastGpsPkRef.current;
         const skm = lastGpsSKmRef.current;
         if (pk == null) return;
@@ -296,6 +300,37 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
       // ─── Mode horaire ──────────────────────────────────────────────────
       const base = autoScrollBaseRef.current;
       if (!base) return;
+
+      // Courbe empirique (à CHAQUE tunnel) : profil de vitesse RÉEL au lieu de la VL théorique
+      // irréaliste. ANCRAGE sur la position courante à l'entrée en horaire (pas en absolu) : évite
+      // le saut à la bascule ET reste correct si le GPS revient puis se reperd. Hors segment mesuré
+      // → empPk null → repli sur le calcul horaire théorique ci-dessous.
+      const pk0 = points[0]?.pkInternal;
+      if (pk0 != null) {
+        if (empiricalAnchorRef.current == null) {
+          // 1re entrée en horaire : ancrer sur la position courante (0 au départ, sinon dernier GPS)
+          const curDist = lastFrozenDistRef.current ?? 0;
+          empiricalAnchorRef.current = { pk: pk0 + curDist, minFloat: nowMinFloat() };
+        }
+        const anchor = empiricalAnchorRef.current;
+        if (isInEmpiricalZone(anchor.pk)) {
+          const elapsedSec = (nowMinFloat() - anchor.minFloat) * 60;
+          const empPk = empiricalPkAtElapsed(anchor.pk, elapsedSec);
+          if (empPk != null) {
+            const empDist = empPk - pk0;
+            setDist(empDist);
+            const nowT = Date.now();
+            if (nowT - lastHoraLogAtRef.current >= 5000) {
+              lastHoraLogAtRef.current = nowT;
+              logTestEvent("utd:tick-empirique", {
+                anchorPk: Math.round(anchor.pk * 1000) / 1000, elapsedSec: Math.round(elapsedSec),
+                empPk: Math.round(empPk * 1000) / 1000, dist: Math.round(empDist * 100) / 100,
+              });
+            }
+            return;
+          }
+        }
+      }
 
       const effectiveMin = base.firstHoraMin + (nowMinFloat() - base.realMinFloat);
 

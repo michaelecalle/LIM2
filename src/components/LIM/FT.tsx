@@ -10,6 +10,7 @@ import type { FTEntry, CsvSens } from "../../data/ligneFT";
 import { logTestEvent } from "../../lib/testLogger";
 import { getFtFranceHhmm } from "../../data/ftFranceTimes"
 import { tunnelZoneAt } from "../../data/tunnelZones"
+import { empiricalPkAtElapsed, isInEmpiricalZone } from "../../data/empiricalCurve"
 
 // Mise à l'échelle FT (#25) : PK numérique d'une entrée (pk_internal sinon champs PK / sit km).
 function ftEntryPkNum(e: any): number | null {
@@ -764,12 +765,22 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   const lastTrainPosYpxRef = React.useRef<number | null>(null);
   const prevGpsStateUiRef = React.useRef<GpsStateUi>("RED");
 
+  // Courbe empirique : ancre STABLE {pk, heure}. Posée à la reprise (départ/gare), re-synchronisée
+  // sur les bons fix GPS (≤ seuil), jamais re-posée sur un clignotement/fix douteux. La courbe se
+  // rejoue en temps absolu cohérent à partir de cette ancre.
+  const empiricalAnchorVertRef = React.useRef<{ pk: number; minFloat: number } | null>(null);
+  // Vrai après une reprise à l'ORIGINE du parcours (Barcelone) : autorise le repli "ancre = origine"
+  // dans le bloc position. Ailleurs (gare en cours), c'est le GPS qui (ré)ancre.
+  const empiricalResumeAtOriginRef = React.useRef<boolean>(false);
+  const lastEmpVertLogAtRef = React.useRef<number>(0);
+
   // Pendant RED : on applique un offset à l'horaire pour partir exactement du Y courant
   const redHoraireAnchorRef = React.useRef<{
     anchorY: number;        // Y affiché au moment de l'entrée en RED
     baseHoraireY: number;   // Y horaire calculé au même instant
     offsetY: number;        // anchorY - baseHoraireY
   } | null>(null);
+
 
   useEffect(() => {
     const TICK_MS = 250;
@@ -933,6 +944,22 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
           const netGps = guessNetFromPk(pkTrain);
           const targetU = pkToU(pkTrain, netGps);
 
+          // Re-synchronisation de l'ancre empirique sur une position GPS FIABLE (acc ≤ seuil),
+          // en coordonnée U (= pkInternal, cohérent avec les segments, valable aussi en LFP/Perthus).
+          // ON STOCKE pk ET heure DU MÊME FIX → la courbe rejoue ensuite en temps absolu cohérent.
+          // On exige une vraie bonne précision (PAS de chemin "accuracy absente" : le relais souterrain
+          // de La Sagrera donne des fix 64-335 m / PK faux qu'il ne faut SURTOUT pas adopter). L'ancre
+          // n'est jamais remise à null ici : sur un fix douteux ou un clignotement, elle reste stable.
+          {
+            const accLatch = (lastGpsPositionRef.current as any)?.accuracy;
+            if (typeof accLatch === "number" && accLatch <= GPS_RECALAGE_MAX_ACCURACY_M) {
+              const riGps = (() => { try { return (window as any).__limgptDemo?.nowIso?.() ?? (window as any).__limgptReplay?.nowIso?.() ?? null; } catch { return null; } })();
+              const ndGps = riGps ? new Date(riGps) : new Date();
+              const nmfGps = ndGps.getHours() * 60 + ndGps.getMinutes() + ndGps.getSeconds() / 60;
+              empiricalAnchorVertRef.current = { pk: targetU, minFloat: nmfGps };
+            }
+          }
+
           const rows = Array.from(
             container.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main")
           );
@@ -1020,6 +1047,68 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
           const rows = Array.from(
             container.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main")
           );
+
+          // ─── Courbe empirique : profil de vitesse RÉEL au lieu de la VL théorique, à CHAQUE
+          // tunnel. L'ancre {pk, heure} est posée à la REPRISE (départ/gare) et re-synchronisée
+          // sur les bons fix GPS (≤ seuil) ; elle reste STABLE sur les clignotements/fix douteux.
+          // On rejoue ici le temps écoulé sur la forme de la courbe en temps absolu cohérent.
+          // Hors segment → empPk null → repli théorique. ───
+          // Repli "origine" : juste après une reprise à l'origine (Barcelone), pose l'ancre sur le
+          // 1er PK du parcours + l'heure courante (= instant réel de départ). Ne joue qu'au tout
+          // début ; ensuite l'ancre est posée/mise à jour par le GPS et n'est plus null.
+          if (empiricalAnchorVertRef.current == null && empiricalResumeAtOriginRef.current) {
+            let originPk: number | null = null;
+            for (let i = 0; i < rawEntries.length; i++) {
+              const p = ftEntryPkNum(rawEntries[i]);
+              if (p != null) { originPk = p; break; }
+            }
+            if (originPk != null && isInEmpiricalZone(originPk)) {
+              empiricalAnchorVertRef.current = { pk: originPk, minFloat: nowMinFloat };
+              empiricalResumeAtOriginRef.current = false;
+            }
+          }
+          {
+            const ea = empiricalAnchorVertRef.current;
+            const empPk = ea != null ? empiricalPkAtElapsed(ea.pk, (nowMinFloat - ea.minFloat) * 60) : null;
+            if (ea != null && empPk != null) {
+              const ptsPk: { pk: number; y: number }[] = [];
+              for (const tr of rows) {
+                const di = Number(tr.getAttribute("data-ft-row"));
+                const rpk = ftEntryPkNum(rawEntries[di]);
+                if (rpk == null) continue;
+                ptsPk.push({ pk: rpk, y: tr.offsetTop + tr.offsetHeight / 2 - container.scrollTop - 2 });
+              }
+              if (ptsPk.length >= 2) {
+                ptsPk.sort((a, b) => a.pk - b.pk);
+                let yEmp: number | null = null;
+                if (empPk <= ptsPk[0].pk) yEmp = ptsPk[0].y;
+                else if (empPk >= ptsPk[ptsPk.length - 1].pk) yEmp = ptsPk[ptsPk.length - 1].y;
+                else {
+                  for (let i = 0; i < ptsPk.length - 1; i++) {
+                    const p0 = ptsPk[i], p1 = ptsPk[i + 1];
+                    if (empPk >= p0.pk && empPk <= p1.pk) {
+                      const tt = p1.pk === p0.pk ? 0 : (empPk - p0.pk) / (p1.pk - p0.pk);
+                      yEmp = p0.y + tt * (p1.y - p0.y);
+                      break;
+                    }
+                  }
+                }
+                if (yEmp != null) {
+                  const nowT = Date.now();
+                  if (nowT - lastEmpVertLogAtRef.current >= 5000) {
+                    lastEmpVertLogAtRef.current = nowT;
+                    logTestEvent("ft:tick-empirique", {
+                      anchorPk: Math.round(ea.pk * 1000) / 1000,
+                      elapsedSec: Math.round((nowMinFloat - ea.minFloat) * 60),
+                      empPk: Math.round(empPk * 1000) / 1000,
+                    });
+                  }
+                  commitTrainPos(Math.max(0, Math.min(yEmp, h)));
+                  return;
+                }
+              }
+            }
+          }
 
           const parseMinutesFromRow = (tr: HTMLTableRowElement): number | null => {
             // ✅ Source de vérité principale : horaire théorique interne du moteur
@@ -1660,6 +1749,11 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   const STATION_PROX_KM = 1.0;
   // Précision GPS max pour activer le mode ARRÊT GPS (sinon : standby horaire classique)
   const GPS_ARRET_MAX_ACCURACY_M = 200;
+  // Précision GPS max pour autoriser un RECALAGE DU DELTA (delta affiché + base horaire).
+  // En souterrain, le GPS relayé par antennes donne une position FAUSSE à mauvaise précision
+  // (ex. La Sagrera recalée à pk 627.7 / acc 279m alors que le train était à 629.1).
+  // 50 m sépare nettement le vrai fix (~3m) du relais souterrain (74-335m).
+  const GPS_RECALAGE_MAX_ACCURACY_M = 50;
 
   // État "GPS OK" (fix + sur la ligne) pour l'hystérésis
   const gpsHealthyRef = React.useRef<boolean>(false);
@@ -1773,6 +1867,14 @@ detail: { enabled: true, standby: true },
               Number.isFinite(recalibrateFromRowRef.current)
             ? recalibrateFromRowRef.current
             : null;
+
+        // Départ/reprise : on remet l'ancre empirique à null pour qu'elle se re-pose sur l'instant
+        // réel de départ (et non sur l'armement de l'auto-scroll). C'est le BLOC position (qui a le
+        // rawEntries À JOUR, contrairement à ce handler dont la closure est figée au 1er rendu) qui
+        // la repose. Le flag dit si on est à l'ORIGINE du parcours (Barcelone) : seul ce cas autorise
+        // le repli "origine" ; ailleurs (gare en cours, ex. Girona) c'est le GPS qui (ré)ancre.
+        empiricalAnchorVertRef.current = null;
+        empiricalResumeAtOriginRef.current = (resumeRowIndex == null || resumeRowIndex === 0);
 
         if (resumeRowIndex != null) {
           logTestEvent("ui:standby:resume", {
@@ -4611,6 +4713,11 @@ const isRelock = acceptedMode === "relock";
                 lastDeltaRecalage.source === "MANUAL" &&
                 lastDeltaRecalage.rowIndex === idx;
 
+              // Garde-fou précision : ne PAS recaler le delta sur une position GPS
+              // à mauvaise accuracy (souterrain relayé par antennes = position fausse).
+              const recalageAccuracyTooPoor =
+                accuracyM != null && accuracyM > GPS_RECALAGE_MAX_ACCURACY_M;
+
               if (gpsRecalageBlockedByManual) {
                 logTestEvent("ft:delta:gps-recalage:skip", {
                   rowIndex: idx,
@@ -4619,6 +4726,15 @@ const isRelock = acceptedMode === "relock";
                   reason: "manual_recalage_already_done_on_same_row",
                   lastDeltaRecalageSource: lastDeltaRecalage.source,
                   lastDeltaRecalageTs: lastDeltaRecalage.ts,
+                });
+              } else if (recalageAccuracyTooPoor) {
+                logTestEvent("ft:delta:gps-recalage:skip", {
+                  rowIndex: idx,
+                  pk: entry?.pk ?? null,
+                  dependencia: entry?.dependencia ?? null,
+                  reason: "accuracy_too_poor_for_recalage",
+                  accuracyM,
+                  maxAccuracyM: GPS_RECALAGE_MAX_ACCURACY_M,
                 });
               } else {
                 // ✅ Définition métier d’un point d’ancrage GPS :
@@ -7865,7 +7981,10 @@ const vmaxClassForLtv =
           }}
           overlay={
             (() => {
-              if (!testModeEnabled && gpsStateUi !== "GREEN") {
+              // Hors mode test : on n'affiche que la FLÈCHE GAUCHE (pas la barre ni la flèche droite).
+              // C'était réservé au GPS vert ; on l'autorise aussi en mode horaire (flèche rouge), même
+              // règle d'affichage. La barre + flèche droite restent réservées au mode test.
+              if (!testModeEnabled && gpsStateUi !== "GREEN" && referenceMode !== "HORAIRE") {
                 return null;
               }
 
