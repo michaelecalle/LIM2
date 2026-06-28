@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import ManualPdfCanvasViewer from './ManualPdfCanvasViewer'
 import { logTestEvent } from '../../lib/testLogger'
+import { fetchManagedDocBlobUrl } from '../../lib/managedDocs'
 
 const MANUAL_PDF_URL = '/manuel-utilisateur-lim.pdf?limManual=1'
 
@@ -97,6 +98,15 @@ export default function ManualViewer({ open, dark, onClose, initialPage = 1, ini
     let objectUrl: string | null = null
     void (async () => {
       try {
+        // 1) Version gérée (mise à jour via l'éditeur) depuis lim-logs, en priorité.
+        const managed = await fetchManagedDocBlobUrl('manuel')
+        if (managed) {
+          if (cancelled) { URL.revokeObjectURL(managed); return }
+          objectUrl = managed
+          setPdfObjectUrl(managed)
+          return
+        }
+        // 2) Repli : PDF statique livré avec l'app.
         const res = await fetch(MANUAL_PDF_URL, { cache: 'no-store', headers: { Accept: 'application/pdf' } })
         if (!res.ok) throw new Error('HTTP ' + res.status)
         const contentType = res.headers.get('content-type')?.toLowerCase() ?? ''

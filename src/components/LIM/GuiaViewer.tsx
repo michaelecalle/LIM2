@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import ManualPdfCanvasViewer from './ManualPdfCanvasViewer'
+import { fetchManagedDocBlobUrl } from '../../lib/managedDocs'
 
 const GUIA_PDF_URL = '/guia-bsn.pdf?guiaBsn=1'
 
@@ -51,6 +52,15 @@ export default function GuiaViewer({ open, dark, onClose }: Props) {
     let objectUrl: string | null = null
     void (async () => {
       try {
+        // 1) Version gérée (mise à jour via l'éditeur) depuis lim-logs, en priorité.
+        const managed = await fetchManagedDocBlobUrl('guia')
+        if (managed) {
+          if (cancelled) { URL.revokeObjectURL(managed); return }
+          objectUrl = managed
+          setPdfObjectUrl(managed)
+          return
+        }
+        // 2) Repli : PDF statique livré avec l'app.
         const res = await fetch(GUIA_PDF_URL, { cache: 'no-store', headers: { Accept: 'application/pdf' } })
         if (!res.ok) throw new Error('HTTP ' + res.status)
         const blob = await res.blob()
