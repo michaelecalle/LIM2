@@ -5,6 +5,7 @@ import type { FTEntry } from "../../data/ligneFT";
 import { useTrainDist } from "../../hooks/useTrainDist";
 import type { TDPoint } from "../../hooks/useTrainDist";
 import { TUNNEL_ZONES_PKINTERNAL } from "../../data/tunnelZones";
+import { LINE_PROFILE } from "../../data/lineProfile";
 
 // ============================================================================
 // FT HORIZONTALE (#28) — graphique espace-vitesse + scroll automatique.
@@ -20,6 +21,8 @@ const PIN_X_FRACTION = 0.15;
 const DOT_R         = 5;
 const SCROLL_EASE   = 0.12;   // lissage rAF (même valeur que FT_SCROLL_EASE)
 const RUBBER_BAND_MS = 5000;  // délai avant ressort (ms)
+const RELIEF_FLOOR_KMH = 10;  // plancher : le creux se pose au niveau ~10 km/h (mi-chemin 0–20)
+const RELIEF_BAND_KMH  = 60;  // amplitude du relief en équivalent km/h (sommet ≈ floor + band)
 
 // ─── Helpers PK ──────────────────────────────────────────────────────────────
 
@@ -471,6 +474,52 @@ export default function FTHorizontal() {
   pinXPxRef.current = pinXPx;
   chartHRef.current = chartH;
 
+  // ── Silhouette de relief (profil en long) sous la courbe Vmax (#32) ──
+  // elev normalisée sur la portion visible → bande au-dessus de la voie (forme seule).
+  let reliefPath = "";
+  {
+    const pk0i = points[0].pkInternal;
+    const pkLi = points[points.length - 1].pkInternal;
+    if (pk0i != null && pkLi != null && LINE_PROFILE.length >= 2) {
+      const profLo = LINE_PROFILE[0][0];
+      const profHi = LINE_PROFILE[LINE_PROFILE.length - 1][0];
+      // bornes visibles, clampées à la couverture réelle du profil
+      const lo = Math.max(Math.min(pk0i, pkLi), profLo);
+      const hi = Math.min(Math.max(pk0i, pkLi), profHi);
+      // élévation interpolée à un pkInternal donné (extrémités → atteint le terminus pile)
+      const elevAt = (pk: number): number => {
+        if (pk <= profLo) return LINE_PROFILE[0][1];
+        if (pk >= profHi) return LINE_PROFILE[LINE_PROFILE.length - 1][1];
+        for (let i = 1; i < LINE_PROFILE.length; i++) {
+          if (LINE_PROFILE[i][0] >= pk) {
+            const a = LINE_PROFILE[i - 1], b = LINE_PROFILE[i];
+            const t = (pk - a[0]) / (b[0] - a[0]);
+            return a[1] + t * (b[1] - a[1]);
+          }
+        }
+        return LINE_PROFILE[LINE_PROFILE.length - 1][1];
+      };
+      if (hi - lo > 1e-3) {
+        // bornes interpolées + points internes du profil
+        const raw: Array<{ pk: number; e: number }> = [{ pk: lo, e: elevAt(lo) }];
+        for (const [pk, e] of LINE_PROFILE) if (pk > lo + 1e-6 && pk < hi - 1e-6) raw.push({ pk, e });
+        raw.push({ pk: hi, e: elevAt(hi) });
+        const samp = raw.map(r => ({ xPx: x(Math.abs(r.pk - pk0i)), e: r.e }));
+        samp.sort((a, b) => a.xPx - b.xPx);
+        let eMin = Infinity, eMax = -Infinity;
+        for (const s of samp) { if (s.e < eMin) eMin = s.e; if (s.e > eMax) eMax = s.e; }
+        const band = (RELIEF_BAND_KMH / V_MAX_AXIS) * chartH;
+        const span = eMax - eMin || 1;
+        // plancher : le creux ne touche pas le rail, il est posé au niveau ~10 km/h.
+        const floorPx = (RELIEF_FLOOR_KMH / V_MAX_AXIS) * chartH;
+        const yOf = (e: number) => baseY - floorPx - ((e - eMin) / span) * band;
+        reliefPath = `M ${samp[0].xPx.toFixed(1)} ${baseY}`;
+        for (const s of samp) reliefPath += ` L ${s.xPx.toFixed(1)} ${yOf(s.e).toFixed(1)}`;
+        reliefPath += ` L ${samp[samp.length - 1].xPx.toFixed(1)} ${baseY} Z`;
+      }
+    }
+  }
+
   // Courbe Vmax en escalier, avec intégration des limites LTV.
   // Calcule aussi les polygones de fond LTV (suivent la courbe effective → nesting correct)
   // et les rappels de vitesse aux fins de LTV.
@@ -643,6 +692,8 @@ export default function FTHorizontal() {
         .ft-h-ltv-pk { font-size: 9px; fill: #f97316; text-anchor: middle; font-weight: 700; }
         .ft-h-ltv-vbox { fill: #fff7ed; stroke: #f97316; stroke-width: 1; }
         .ft-h-ltv-vlabel { font-size: 11px; font-weight: 700; fill: #ea580c; text-anchor: middle; }
+        .ft-h-relief { fill: rgb(150,150,150); fill-opacity: 0.11; stroke: rgb(150,150,150); stroke-opacity: 0.11; stroke-width: 1; }
+        .dark .ft-h-relief { fill: rgb(205,205,205); fill-opacity: 0.13; stroke: rgb(205,205,205); stroke-opacity: 0.13; }
       `}</style>
 
       {/* ── Axe vitesse fixe ─────────────────────────────────────────────── */}
@@ -670,6 +721,9 @@ export default function FTHorizontal() {
           {ticks.map(v => (
             <line key={v} className="ft-h-grid" x1={MARGIN.left} y1={y(v)} x2={contentRight} y2={y(v)} />
           ))}
+
+          {/* Silhouette de relief (profil en long, #32) — derrière tout le reste */}
+          {reliefPath && <path className="ft-h-relief" d={reliefPath} />}
 
           {/* Fond LTV orange — polygone suivant la courbe effective (nesting correct) */}
           {ltvFillPaths.map((d, i) => (
@@ -700,7 +754,7 @@ export default function FTHorizontal() {
               <rect key={`tun-${b.id}`}
                 x={xa} y={baseY - 22}
                 width={Math.max(1, xb - xa)} height={26}
-                fill="rgba(110,110,110,0.16)" pointerEvents="none" />
+                fill="rgba(154,140,106,0.22)" pointerEvents="none" />
             );
           })}
 
