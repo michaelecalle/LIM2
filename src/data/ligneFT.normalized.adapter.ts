@@ -321,6 +321,12 @@ function getActiveVariantByRowKey(
   return matchedVariant.byRowKey as Record<string, NormalizedTrainRowOverride>;
 }
 
+// ===== SDM (#27) — train de session cree a la volee (non persiste, en memoire) =====
+type SdmSessionTrain = { meta: Record<string, any>; byRowKey: Record<string, NormalizedTrainRowOverride> };
+let sdmSession: { key: string; train: SdmSessionTrain } | null = null;
+const sdmKey = (trainNumber: number | string): string =>
+  String(trainNumber).trim().replace(/^0+(?=\d)/, "");
+
 function getNormalizedTrain(
   trainNumber: number | string | null | undefined
 ): NormalizedTrain | undefined {
@@ -328,6 +334,11 @@ function getNormalizedTrain(
 
   const rawKey = String(trainNumber).trim();
   if (rawKey === "") return undefined;
+
+  // SDM prioritaire : si un train de session est actif et correspond, on le sert.
+  if (sdmSession && rawKey.replace(/^0+(?=\d)/, "") === sdmSession.key) {
+    return sdmSession.train as unknown as NormalizedTrain;
+  }
 
   const directMatch = LIGNE_FT_NORMALIZED.trains[rawKey as NormalizedTrainKey];
   if (directMatch) return directMatch;
@@ -646,6 +657,101 @@ export function getFtLigneImpair(
   trainNumber: number | string | null | undefined
 ): FTEntry[] {
   return buildFtEntries(impairBaseRows, trainNumber);
+}
+
+// SDM (#27) — liste ordonnee des etablissements de la ligne, dans le SENS DE CIRCULATION.
+// Parite du numero espagnol : PAIR = Perpignan->Can Tunis (sudNord) ; IMPAIR = Can Tunis->Perpignan (nordSud).
+// Retourne nom + PK AFFICHE (reseau-dependant : RFN->pkRfn, LFP->pkLfp, ADIF->pkAdif, sinon sitKm),
+// lignes "data" seulement, dedupliques (1re occurrence), dans l'ordre du parcours.
+// Le PK permet de choisir l'etablissement juste avant/apres une origine/destination en pleine ligne.
+export type SdmStation = { name: string; pk: string };
+
+export function getStationsInTravelOrder(isPair: boolean): SdmStation[] {
+  // Ordre de PARCOURS (calque FTHorizontal) : les 2 jeux sont stockes Sud->Nord (Can Tunis d'abord).
+  // IMPAIR = Can Tunis->Perpignan = sudNord tel quel ; PAIR = Perpignan->Can Tunis = nordSud INVERSE.
+  const rows = isPair ? [...impairBaseRows].reverse() : pairBaseRows;
+  const stationPk = (r: NormalizedRow): string => {
+    const net = (r.reseau ?? "").trim();
+    if (net === "RFN" && (r.pkRfn ?? "").trim()) return r.pkRfn.trim();
+    if (net === "LFP" && (r.pkLfp ?? "").trim()) return r.pkLfp.trim();
+    if (net === "ADIF" && (r.pkAdif ?? "").trim()) return r.pkAdif.trim();
+    return (r.sitKm ?? (r as any).pkInterne ?? "").trim();
+  };
+  const seen = new Set<string>();
+  const out: SdmStation[] = [];
+  for (const r of rows) {
+    if ((r as any).type !== "data") continue;
+    const dep = (r.dependencia ?? "").trim();
+    if (!dep || seen.has(dep)) continue;
+    seen.add(dep);
+    out.push({ name: dep, pk: stationPk(r) });
+  }
+  return out;
+}
+
+// SDM (#27) — active/desactive le train de session. Construit meta + surcharges hora/com par gare
+// a partir des heures saisies (regle : 1 seule heure = passage ; arrivee+depart differents = arret).
+export type SdmSessionInput = {
+  trainNumber: string;
+  isPair: boolean;
+  origine: string;
+  destination: string;
+  type?: string;
+  stations: { name: string; arr: string; dep: string }[]; // heures "HH:MM" ou ""
+};
+
+function hhmmToMin(s: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((s ?? "").trim());
+  return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
+}
+
+export function setSdmSessionTrain(input: SdmSessionInput | null): void {
+  if (!input) { sdmSession = null; return; }
+  // Meme jeu de base que getFtLigne pour cette parite (rowKeys coherents) :
+  // IMPAIR -> getFtLignePair(pairBaseRows/sudNord) ; PAIR -> getFtLigneImpair(impairBaseRows/nordSud).
+  // Override par nom de gare (regle : 1 seule heure = passage ; arrivee+depart differents = arret).
+  const ovByName = new Map<string, NormalizedTrainRowOverride>();
+  const n = input.stations.length;
+  input.stations.forEach((st, i) => {
+    const aMin = hhmmToMin(st.arr);
+    const dMin = hhmmToMin(st.dep);
+    let hora = "";
+    let com = "";
+    if (i === n - 1) {
+      hora = st.arr || st.dep || "";               // destination : arrivee seule
+    } else if (i === 0) {
+      hora = st.dep || st.arr || "";               // origine : depart seul
+    } else if (aMin != null && dMin != null && aMin !== dMin) {
+      hora = st.dep;                               // arret : hora = depart, com = duree
+      com = String(dMin - aMin);
+    } else {
+      hora = st.dep || st.arr || "";               // passage : 1 seule heure (ou arr == dep)
+    }
+    if (hora) ovByName.set(st.name.trim(), { hora, ...(com ? { com } : {}) } as NormalizedTrainRowOverride);
+  });
+  // Applique sur les rowKeys des DEUX jeux (sudNord + nordSud) -> robuste quel que soit le sens/base.
+  const byRowKey: Record<string, NormalizedTrainRowOverride> = {};
+  for (const rows of [pairBaseRows, impairBaseRows]) {
+    for (const r of rows) {
+      if ((r as any).type !== "data") continue;
+      const ov = ovByName.get((r.dependencia ?? "").trim());
+      const rk = (r as any).rowKey as string | undefined;
+      if (ov && rk) byRowKey[rk] = ov;
+    }
+  }
+  sdmSession = {
+    key: sdmKey(input.trainNumber),
+    train: {
+      meta: {
+        origine: input.origine,
+        destination: input.destination,
+        categorieEspagne: input.type || undefined,
+        composition: "US",
+        materiel: "TGV 2N2",
+      },
+      byRowKey,
+    },
+  };
 }
 
 // Compatibilité temporaire avec l’existant tant que FT.tsx

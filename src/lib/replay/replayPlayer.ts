@@ -318,15 +318,24 @@ export class ReplayPlayer {
     const fromIdx = isBackward ? 0 : this.cursorIdx;
     const toIdx = this.findCursorForTime(clamped);
 
+    // ⚠️ #21b : l'horloge virtuelle doit valoir la CIBLE *avant* le burst de catch-up.
+    // Sinon les events rejoués (gps:position, deltas…) le sont avec l'ancienne heure
+    // → positions / deltas incohérents, faux stale/figeage.
+    this.nowMs = clamped;
+
+    // Prévenir l'app qu'un saut a lieu : elle réinitialise ses compteurs transitoires
+    // GPS (fraîcheur / figeage / approche d'arrêt) → plus de faux arrêt/standby au saut.
+    // Émis AVANT le catch-up : le 1er fix rejoué juste après réinitialise proprement.
+    dispatch("replay:seek", { toMs: clamped, toIso: this.getNowIso(), backward: isBackward });
+
     if (toIdx > fromIdx) {
       this.opts.logger(
         `[replay] seek catch-up ${isBackward ? "↩ recul" : "↪ avance"} : ${toIdx - fromIdx} événements`,
-        { fromIdx, toIdx, fromMs: this.nowMs, toMs: clamped }
+        { fromIdx, toIdx, toMs: clamped }
       );
       this.applyCatchupRange(fromIdx, toIdx);
     }
 
-    this.nowMs = clamped;
     this.cursorIdx = toIdx;
   }
 

@@ -1446,6 +1446,26 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   // puis se réarme dès que le PK rebouge.
   const freezeArretEvaluatedRef = React.useRef<boolean>(false);
 
+  // ===== #21b : SEEK replay → repartir d'un état GPS propre =====
+  // Un saut d'horloge rendrait figeage/fraîcheur/approche incohérents (faux arrêt/standby).
+  // On vide les compteurs transitoires ; le 1er fix rejoué par le catch-up (émis juste
+  // après replay:seek) réinitialise tout. NE PAS toucher la position/sélection horaire ici.
+  useEffect(() => {
+    const onReplaySeek = () => {
+      lastPkRef.current = null;
+      lastPkChangeAtRef.current = 0;
+      lastLatRef.current = null;
+      lastLonRef.current = null;
+      lastLatLonChangeAtRef.current = 0;
+      gpsArretEvaluatedRef.current = false;
+      freezeArretEvaluatedRef.current = false;
+      lastArretSKmRef.current = null;
+      recentFixesRef.current = [];
+    };
+    window.addEventListener("replay:seek", onReplaySeek as EventListener);
+    return () => window.removeEventListener("replay:seek", onReplaySeek as EventListener);
+  }, []);
+
   // ===== Watchdog GPS : re-évalue l'état même s'il n'y a plus d'events gps:position =====
   useEffect(() => {
     const WATCHDOG_INTERVAL_MS = 1000;

@@ -35,11 +35,15 @@ type Props = {
   // Si demoPdfFiles est fourni, les imports proposent un choix parmi ces PDF
   // (au lieu d’un sélecteur de fichier système).
   demoPdfFiles?: File[]
+  // SDM (#27) : sélection de « SDM » dans la liste → ouvre la modale de création (gérée par le parent).
+  onSelectSdm?: () => void
+  // SDM (#27) : train de session fraîchement créé → à pré-sélectionner au retour.
+  preselectTrainNumber?: string | null
 }
 
 export default function Mode2026Modal({
   dark, trainOptions, onClose, onConfirm,
-  lockedTrainNumber = null, demoPdfFiles,
+  lockedTrainNumber = null, demoPdfFiles, onSelectSdm, preselectTrainNumber = null,
 }: Props) {
   const isDemo = Array.isArray(demoPdfFiles) && demoPdfFiles.length > 0
 
@@ -61,6 +65,11 @@ export default function Mode2026Modal({
 
   // SECOURS (#18) : dernier normalisé LTV connu, chargé en silence (hors démo).
   // Utilisé si le conducteur démarre sans importer de PDF LTV.
+  // SDM (#27) : quand un train de session vient d'être créé, le pré-sélectionner.
+  useEffect(() => {
+    if (preselectTrainNumber) setSelectedTrainNumber(preselectTrainNumber)
+  }, [preselectTrainNumber])
+
   const [storedLtv, setStoredLtv] = useState<NormalizedLtvFile | null>(null)
   useEffect(() => {
     if (isDemo) return
@@ -136,7 +145,7 @@ export default function Mode2026Modal({
           <div className="text-xs font-semibold opacity-70 mb-1">1 — Train</div>
           <select
             value={selectedTrainNumber}
-            onChange={e => setSelectedTrainNumber(e.target.value)}
+            onChange={e => { if (e.target.value === 'SDM') { onSelectSdm?.(); return } setSelectedTrainNumber(e.target.value) }}
             className="w-full h-10 rounded-lg border px-3 text-sm"
             style={{
               backgroundColor: dark ? '#27272a' : '#ffffff',
@@ -157,6 +166,7 @@ export default function Mode2026Modal({
                 {t.relation ? ` — ${t.relation}` : ''}
               </option>
             ))}
+            {!isDemo && <option value="SDM">Créer un train</option>}
           </select>
         </div>
 

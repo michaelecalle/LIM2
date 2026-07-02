@@ -35,6 +35,7 @@ import DemoLoader, { type DemoData } from './DemoLoader'
 import DemoRunner from './DemoRunner'
 import DemoTouchIndicator from './DemoTouchIndicator'
 import Mode2026Modal from './Mode2026Modal'
+import SdmModal, { type SdmDraft } from './SdmModal'
 import { loadPdfLtvRows } from './titleBarLtvUtils'
 import {
   type LIMFields,
@@ -79,6 +80,7 @@ import {
   getTrainMateriel,
   getTrainNumeroFrance,
   getTrainRelation,
+  setSdmSessionTrain,
 } from '../../data/ligneFT.normalized.adapter'
 
 // ⚠️ FT France = fonctionnalité ABANDONNÉE (on a fusionné FR+ES). Neutralisée le 2026-06-08 :
@@ -171,6 +173,10 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   }
 
   const [manualImportOpen, setManualImportOpen] = useState(false)
+  // SDM (#27) : modale de creation d'un sillon de derniere minute (par-dessus la modale de demarrage).
+  const [sdmOpen, setSdmOpen] = useState(false)
+  // Train de session cree via « Creer un train » (brouillon). Non persiste.
+  const [sdmTrain, setSdmTrain] = useState<SdmDraft | null>(null)
   const [manualImportContext, setManualImportContext] =
     useState<'manual' | 'mixed_fallback'>('manual')
   const [manualImportSelectedTrain, setManualImportSelectedTrain] = useState('')
@@ -211,12 +217,30 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       })
   }, [])
 
+  // SDM (#27) : ajoute le train de session cree en fin de liste (pour l'afficher selectionne au retour).
+  const effectiveTrainOptions = useMemo<ManualTrainOption[]>(
+    () =>
+      sdmTrain
+        ? [
+            ...manualImportTrainOptions,
+            {
+              trainNumber: sdmTrain.trainNumber,
+              relation: `${sdmTrain.origine} - ${sdmTrain.destination}`,
+              categorieEspagne: sdmTrain.type || undefined,
+              composition: 'US',       // defaut SDM (modifiable en cabine par appui long)
+              materiel: 'TGV 2N2',     // seul materiel autorise sur la ligne
+            },
+          ]
+        : manualImportTrainOptions,
+    [manualImportTrainOptions, sdmTrain]
+  )
+
   const selectedManualImportTrain = useMemo(
     () =>
-      manualImportTrainOptions.find(
+      effectiveTrainOptions.find(
         (train) => train.trainNumber === manualImportSelectedTrain
       ),
-    [manualImportTrainOptions, manualImportSelectedTrain]
+    [effectiveTrainOptions, manualImportSelectedTrain]
   )
 
   // ----- FT VIEW MODE (ES / FR / AUTO) -----
@@ -5082,19 +5106,20 @@ style={{
 
                 <select
                   value={manualImportSelectedTrain}
-                  onChange={(e) => setManualImportSelectedTrain(e.target.value)}
+                  onChange={(e) => { if (e.target.value === 'SDM') { setSdmOpen(true); return } setManualImportSelectedTrain(e.target.value) }}
                   className={`w-full h-10 rounded-lg border px-3 text-sm${dark ? ' bg-zinc-800 border-zinc-700 text-zinc-100' : ' bg-white border-zinc-300 text-zinc-900'}`}
                   style={dark ? { colorScheme: 'dark' } : undefined}
                 >
                   <option value="">Sélectionner un train…</option>
 
-                  {manualImportTrainOptions.map((train) => (
+                  {effectiveTrainOptions.map((train) => (
                     <option key={train.trainNumber} value={train.trainNumber}>
                       {train.trainNumber}
                       {train.numeroFrance ? ` / ${train.numeroFrance}` : ''}
                       {train.relation ? ` — ${train.relation}` : ''}
                     </option>
                   ))}
+                  <option value="SDM">Créer un train</option>
                 </select>
               </label>
 
@@ -6212,7 +6237,8 @@ setAutoScrollStartedOnce(next)
           {mode2026Open && (
             <Mode2026Modal
               dark={dark}
-              trainOptions={manualImportTrainOptions}
+              trainOptions={effectiveTrainOptions}
+              preselectTrainNumber={sdmTrain?.trainNumber ?? null}
               onClose={() => {
                 setMode2026Open(false)
                 // Fermer sans démarrer = annuler la démo armée (retour état normal)
@@ -6224,7 +6250,30 @@ setAutoScrollStartedOnce(next)
               onConfirm={handleMode2026Confirm}
               lockedTrainNumber={mode2026LockedTrain}
               demoPdfFiles={mode2026DemoPdfs.length > 0 ? mode2026DemoPdfs : undefined}
+              onSelectSdm={() => setSdmOpen(true)}
             />
+          )}
+
+          {sdmOpen && createPortal(
+            <SdmModal
+              dark={dark}
+              onClose={() => setSdmOpen(false)}
+              onConfirm={(draft) => {
+                setSdmTrain(draft)
+                // Active le train de session : l'app lira ce "normalise provisoire" pour ce numero.
+                setSdmSessionTrain({
+                  trainNumber: draft.trainNumber,
+                  isPair: draft.isPair,
+                  origine: draft.origine,
+                  destination: draft.destination,
+                  type: draft.type,
+                  stations: draft.stations.map(s => ({ name: s.name, arr: s.arr, dep: s.dep })),
+                })
+                setSdmOpen(false)
+                setManualImportSelectedTrain(draft.trainNumber)
+              }}
+            />,
+            document.body
           )}
 
           {demoLoaderOpen && (

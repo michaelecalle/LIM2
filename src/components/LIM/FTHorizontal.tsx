@@ -412,10 +412,11 @@ export default function FTHorizontal() {
     // coordonnée X dans le système de la FT (distance depuis l'origine)
     const distClicked = (e.clientX - rootRect.left - pinXPxRef.current + div.scrollLeft) / pxPerKm;
 
-    // Filtre Y : seulement la zone track ±35px autour de baseY
+    // Filtre Y : tout le bloc qui clignote en stand-by (arrivée baseY−22 → pastille/tick →
+    // PK et nom en position basse baseY+68). On accepte donc clic de baseY−28 à baseY+76.
     const clickY    = e.clientY - rootRect.top;
     const baseYpx   = MARGIN.top + chartHRef.current;
-    if (Math.abs(clickY - baseYpx) > 35) return;
+    if (clickY < baseYpx - 28 || clickY > baseYpx + 76) return;
 
     // Repère horaire le plus proche dans un rayon ±25px
     const thresholdKm = 25 / pxPerKm;
