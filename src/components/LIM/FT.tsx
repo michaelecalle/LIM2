@@ -1446,6 +1446,14 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   // puis se réarme dès que le PK rebouge.
   const freezeArretEvaluatedRef = React.useRef<boolean>(false);
 
+  // ===== Anti "faux arrêt figé" (log 9705 du 2026-07-20) =====
+  // Dernière gare dont on a CONFIRMÉ le départ : interdit de re-poser un standby dessus
+  // tant qu'on ne s'en est pas suffisamment éloigné.
+  const lastDepartedRowRef = React.useRef<number | null>(null);
+  const lastDepartedSKmRef = React.useRef<number | null>(null);
+  // Standby posé AUTOMATIQUEMENT par le chemin freeze-red : doit pouvoir se relâcher tout seul.
+  const autoStandbyFromFreezeRef = React.useRef<{ rowIndex: number; sKm: number } | null>(null);
+
   // ===== #21b : SEEK replay → repartir d'un état GPS propre =====
   // Un saut d'horloge rendrait figeage/fraîcheur/approche incohérents (faux arrêt/standby).
   // On vide les compteurs transitoires ; le 1er fix rejoué par le catch-up (émis juste
@@ -1757,6 +1765,9 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   // s'établisse AVANT le moindre passage orange du PK figé (évite un flash orange à l'arrêt).
   const GPS_STOP_CONFIRM_MS = 8_000;
   const GPS_ARRET_REARM_MIN_KM = 0.3; // ne pas réarmer un arrêt à moins de 300 m du précédent (#20)
+  // Standby "gare" auto (chemin freeze-red) : distance à parcourir avant de pouvoir le re-poser
+  // sur une gare dont on vient de confirmer le départ (log 9705 : re-posé à 938 m de Figueres).
+  const STANDBY_REARM_MIN_KM = 3.0;
   const GPS_STOP_DECEL_MAX_KMH = 12; // approche: vitesse max (décél vers ~0) pour valider un arrêt (#20)
   const GPS_STOP_APPROACH_ACC_MAX_M = 18; // approche: précision max (rejette la dégradation type tunnel) (#20)
   const GPS_ARRET_DEPARTURE_MAX_KM = 0.5; // reprise au-delà => c'était un tunnel, pas un arrêt → annuler sans recalage (#20)
@@ -1919,6 +1930,9 @@ detail: { enabled: true, standby: true },
           forceRealignOnResumeRef.current = true;
           standbyLockedRowRef.current = null;
         }
+
+        // Une reprise (manuelle ou auto) annule le suivi du standby automatique.
+        autoStandbyFromFreezeRef.current = null;
 
         // Sortie de standby : toujours effacer le marqueur ARRÊT.
         // Le badge ARRÊT peut avoir été affiché soit par le mode GPS ARRET
@@ -4347,6 +4361,30 @@ const isRelock = acceptedMode === "relock";
               accuracyM,
               deptThreshKm,
             });
+          } else if (
+            // ⛔ Garde-fous avant de poser un standby "gare" (bug log 9705 du 2026-07-20) :
+            //  (a) ZONE TUNNEL — le chemin gps:arret est protégé par tunnelZoneAt, PAS celui-ci :
+            //      d'où le faux arrêt posé dans T31 juste après le départ de Figueres.
+            //  (b) GARE DÉJÀ QUITTÉE — on venait de confirmer le départ de cette même gare.
+            (currentSKm != null && !!tunnelZoneAt(currentSKm)) ||
+            (lastDepartedRowRef.current === rowIndex &&
+              (currentSKm == null ||
+                lastDepartedSKmRef.current == null ||
+                Math.abs(currentSKm - lastDepartedSKmRef.current) < STANDBY_REARM_MIN_KM))
+          ) {
+            logTestEvent("gps:freeze-red:station-standby-blocked", {
+              rowIndex,
+              deltaKm,
+              pk,
+              currentSKm,
+              accuracyM,
+              reason:
+                currentSKm != null && !!tunnelZoneAt(currentSKm)
+                  ? "tunnel_zone"
+                  : "station_already_departed",
+              lastDepartedRow: lastDepartedRowRef.current,
+              lastDepartedSKm: lastDepartedSKmRef.current,
+            });
           } else {
             // Fallback : standby horaire classique (gare souterraine ou GPS dégradé)
             const autoStandbyEntry = rawEntries[rowIndex] as any;
@@ -4393,6 +4431,9 @@ const isRelock = acceptedMode === "relock";
                 detail: { active: true, source: "horaire" },
               })
             );
+            // Mémorise que CE standby est automatique -> il pourra se relâcher seul (filet #3).
+            autoStandbyFromFreezeRef.current =
+              currentSKm != null ? { rowIndex, sKm: currentSKm } : null;
           }
         } else {
           // Pas de gare commerciale proche => on ne fait rien (comportement normal)
@@ -4401,6 +4442,40 @@ const isRelock = acceptedMode === "relock";
             reason: "no_near_commercial_stop",
             stationProxKm: STATION_PROX_KM,
           });
+        }
+      }
+
+      // 🔓 FILET DE SÉCURITÉ (bug log 9705) : un standby posé AUTOMATIQUEMENT par le chemin
+      // freeze-red ne doit jamais rester bloqué. Dès que le GPS redevient exploitable ET que le
+      // train a réellement bougé, on le relâche (même chemin qu'une reprise manuelle).
+      {
+        const stuck = autoStandbyFromFreezeRef.current;
+        if (stuck) {
+          const sKmNow =
+            typeof (detail as any).s_km === "number" && Number.isFinite((detail as any).s_km)
+              ? ((detail as any).s_km as number)
+              : null;
+          const movedKm = sKmNow != null ? Math.abs(sKmNow - stuck.sKm) : 0;
+          if (
+            sKmNow != null &&
+            accuracyM != null &&
+            accuracyM <= GPS_ARRET_MAX_ACCURACY_M &&
+            movedKm >= GPS_ARRET_REARM_MIN_KM
+          ) {
+            autoStandbyFromFreezeRef.current = null;
+            logTestEvent("gps:freeze-red:standby-auto-release", {
+              rowIndex: stuck.rowIndex,
+              fromSKm: stuck.sKm,
+              currentSKm: sKmNow,
+              movedKm,
+              accuracyM,
+            });
+            window.dispatchEvent(
+              new CustomEvent("ft:auto-scroll-change", {
+                detail: { enabled: true, standby: false, source: "auto-release-freeze-standby" },
+              })
+            );
+          }
         }
       }
 
@@ -4593,6 +4668,11 @@ const isRelock = acceptedMode === "relock";
                 const frozenRowIndex = arret.frozenRowIndex;
                 const firstMovementTime = arret.firstMovementTime!;
                 const arretKind = arret.kind;
+                // Mémorise la gare quittée : interdit d'y re-poser un standby auto trop tôt (log 9705).
+                if (frozenRowIndex != null) {
+                  lastDepartedRowRef.current = frozenRowIndex;
+                  lastDepartedSKmRef.current = currentSKm;
+                }
                 stationArretRef.current = null;
                 standbyLockedRowRef.current = null;
                 if (frozenRowIndex != null) nextStopAnchorRowRef.current = frozenRowIndex;
