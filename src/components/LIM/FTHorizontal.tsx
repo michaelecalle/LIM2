@@ -333,10 +333,36 @@ export default function FTHorizontal() {
   useEffect(() => { autoScrollEnabledRef.current = trainDist.autoScrollEnabled; }, [trainDist.autoScrollEnabled]);
 
   // Cible de scroll : dist → scrollLeft
+  const distRef = useRef<number | null>(null);
   useEffect(() => {
     if (trainDist.dist == null) return;
+    distRef.current = trainDist.dist;
     targetScrollLeftRef.current = trainDist.dist * pxPerKm;
   }, [trainDist.dist, pxPerKm]);
+
+  // Bascule vertical → horizontal : téléportation immédiate sur la position courante.
+  // Tant que le bloc est en display:none il n'a aucune mise en page (clientWidth 0), donc
+  // tout scrollLeft écrit pendant ce temps est ramené à 0. Sans ce snap, le lerp de la
+  // boucle rAF ferait repartir le train de l'origine (Barcelone) vers sa vraie position.
+  useEffect(() => {
+    if (!active) return;
+    let raf = 0;
+    const snap = () => {
+      const div = scrollDivRef.current;
+      const d   = distRef.current;
+      if (!div || d == null) return;
+      const target = d * pxPerKm;
+      targetScrollLeftRef.current     = target;
+      displayScrollLeftRef.current    = target;
+      isProgrammaticScrollRef.current = true;
+      div.scrollLeft = target;
+    };
+    // 2 frames : la 1re rend le bloc visible, sa mise en page n'est exploitable qu'ensuite
+    raf = requestAnimationFrame(() => { raf = requestAnimationFrame(snap); });
+    return () => cancelAnimationFrame(raf);
+  // au changement de `active` uniquement — dist est relu via distRef au moment du snap
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   // Téléportation immédiate si pxPerKm change (pas de lerp sur changement d'échelle)
   useEffect(() => {

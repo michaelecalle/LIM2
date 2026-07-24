@@ -775,6 +775,8 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   const lastEmpVertLogAtRef = React.useRef<number>(0);
 
   // Pendant RED : on applique un offset à l'horaire pour partir exactement du Y courant
+  // Mode de reference precedent : sert a ancrer la position a l'ENTREE en mode horaire.
+  const prevRefModeForAnchorRef = React.useRef<string | null>(null);
   const redHoraireAnchorRef = React.useRef<{
     anchorY: number;        // Y affiché au moment de l'entrée en RED
     baseHoraireY: number;   // Y horaire calculé au même instant
@@ -838,29 +840,25 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
       // Détection entrée/sortie RED (ancrage)
       // -------------------------
       const gpsStateNow = gpsStateUi;
-      const prevGpsState = prevGpsStateUiRef.current;
+      if (prevGpsStateUiRef.current !== gpsStateNow) prevGpsStateUiRef.current = gpsStateNow;
 
-      if (prevGpsState !== gpsStateNow) {
-        // Entrée en RED : on prépare l'ancrage (offset calculé au premier y horaire disponible)
-        if (gpsStateNow === "RED") {
+      // ⚓ ANCRAGE DE LA POSITION HORAIRE (correctif du "saut" a la bascule).
+      // AVANT : l'ancrage etait declenche par la couleur GPS (RED uniquement). Or l'app passe en
+      // mode horaire des l'etat ORANGE : a cet instant l'ancre etait EFFACEE et la position
+      // recalculee en ABSOLU depuis l'horaire -> le train se teleportait la ou l'horaire le
+      // croyait. On ancre desormais sur le MODE DE REFERENCE : a l'entree en HORAIRE on memorise
+      // la DERNIERE POSITION CONNUE, et l'horaire ne sert plus qu'a faire PROGRESSER le train
+      // depuis ce point. Au retour du GPS, l'ancre est levee (la position redevient absolue).
+      const refModeNow = referenceModeRef.current;
+      if (prevRefModeForAnchorRef.current !== refModeNow) {
+        if (refModeNow === "HORAIRE") {
           const anchorY = lastTrainPosYpxRef.current;
-          if (anchorY != null) {
-            // baseHoraireY sera fixé dès qu'on calcule l'horaire (ci-dessous)
-            redHoraireAnchorRef.current = {
-              anchorY,
-              baseHoraireY: anchorY,
-              offsetY: 0,
-            };
-          } else {
-            // pas de Y précédent connu : on initialisera dès qu'on a un y horaire
-            redHoraireAnchorRef.current = null;
-          }
+          redHoraireAnchorRef.current =
+            anchorY != null ? { anchorY, baseHoraireY: anchorY, offsetY: 0 } : null;
         } else {
-          // Sortie de RED : on supprime l'offset
           redHoraireAnchorRef.current = null;
         }
-
-        prevGpsStateUiRef.current = gpsStateNow;
+        prevRefModeForAnchorRef.current = refModeNow;
       }
 
       // =========================
@@ -1048,6 +1046,26 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
             container.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main")
           );
 
+          // Applique l'ancrage : l'horaire ne fournit plus une position ABSOLUE mais une
+          // PROGRESSION a partir de la derniere position connue (cf. commentaire plus haut).
+          const applyHoraireAnchor = (yHoraireRaw: number): number => {
+            const lastY = lastTrainPosYpxRef.current;
+            if (redHoraireAnchorRef.current == null && lastY != null) {
+              redHoraireAnchorRef.current = {
+                anchorY: lastY,
+                baseHoraireY: yHoraireRaw,
+                offsetY: lastY - yHoraireRaw,
+              };
+            }
+            const anc = redHoraireAnchorRef.current;
+            if (anc == null) return yHoraireRaw;
+            if (anc.offsetY === 0 && lastY != null) {
+              anc.baseHoraireY = yHoraireRaw;
+              anc.offsetY = anc.anchorY - yHoraireRaw;
+            }
+            return yHoraireRaw + anc.offsetY;
+          };
+
           // ─── Courbe empirique : profil de vitesse RÉEL au lieu de la VL théorique, à CHAQUE
           // tunnel. L'ancre {pk, heure} est posée à la REPRISE (départ/gare) et re-synchronisée
           // sur les bons fix GPS (≤ seuil) ; elle reste STABLE sur les clignotements/fix douteux.
@@ -1175,23 +1193,7 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
             if (effectiveMinFloat <= pts[0].m) {
               const yHoraireRaw = Math.max(0, Math.min(pts[0].y, h));
 
-              let yFinal = yHoraireRaw;
-
-              if (gpsStateUi === "RED") {
-                const lastY = lastTrainPosYpxRef.current;
-
-                if (redHoraireAnchorRef.current == null && lastY != null) {
-                  redHoraireAnchorRef.current = {
-                    anchorY: lastY,
-                    baseHoraireY: yHoraireRaw,
-                    offsetY: lastY - yHoraireRaw,
-                  };
-                }
-
-                if (redHoraireAnchorRef.current != null) {
-                  yFinal = yHoraireRaw + redHoraireAnchorRef.current.offsetY;
-                }
-              }
+              const yFinal = applyHoraireAnchor(yHoraireRaw);
 
               commitTrainPos(Math.max(0, Math.min(yFinal, h)));
               return;
@@ -1200,23 +1202,7 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
             if (effectiveMinFloat >= pts[pts.length - 1].m) {
               const yHoraireRaw = Math.max(0, Math.min(pts[pts.length - 1].y, h));
 
-              let yFinal = yHoraireRaw;
-
-              if (gpsStateUi === "RED") {
-                const lastY = lastTrainPosYpxRef.current;
-
-                if (redHoraireAnchorRef.current == null && lastY != null) {
-                  redHoraireAnchorRef.current = {
-                    anchorY: lastY,
-                    baseHoraireY: yHoraireRaw,
-                    offsetY: lastY - yHoraireRaw,
-                  };
-                }
-
-                if (redHoraireAnchorRef.current != null) {
-                  yFinal = yHoraireRaw + redHoraireAnchorRef.current.offsetY;
-                }
-              }
+              const yFinal = applyHoraireAnchor(yHoraireRaw);
 
               commitTrainPos(Math.max(0, Math.min(yFinal, h)));
               return;
@@ -1242,52 +1228,14 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
 
               const yHoraireRaw = a.y + t * (b.y - a.y);
 
-              let yFinal = yHoraireRaw;
-
-              if (gpsStateUi === "RED") {
-                const lastY = lastTrainPosYpxRef.current;
-
-                if (redHoraireAnchorRef.current == null && lastY != null) {
-                  redHoraireAnchorRef.current = {
-                    anchorY: lastY,
-                    baseHoraireY: yHoraireRaw,
-                    offsetY: lastY - yHoraireRaw,
-                  };
-                }
-
-                if (redHoraireAnchorRef.current != null) {
-                  if (redHoraireAnchorRef.current.offsetY === 0 && lastY != null) {
-                    redHoraireAnchorRef.current.baseHoraireY = yHoraireRaw;
-                    redHoraireAnchorRef.current.offsetY =
-                      redHoraireAnchorRef.current.anchorY - yHoraireRaw;
-                  }
-
-                  yFinal = yHoraireRaw + redHoraireAnchorRef.current.offsetY;
-                }
-              }
+              const yFinal = applyHoraireAnchor(yHoraireRaw);
 
               commitTrainPos(Math.max(0, Math.min(yFinal, h)));
               return;
             } else {
               const yHoraireRaw = a.y;
 
-              let yFinal = yHoraireRaw;
-
-              if (gpsStateUi === "RED") {
-                const lastY = lastTrainPosYpxRef.current;
-
-                if (redHoraireAnchorRef.current == null && lastY != null) {
-                  redHoraireAnchorRef.current = {
-                    anchorY: lastY,
-                    baseHoraireY: yHoraireRaw,
-                    offsetY: lastY - yHoraireRaw,
-                  };
-                }
-
-                if (redHoraireAnchorRef.current != null) {
-                  yFinal = yHoraireRaw + redHoraireAnchorRef.current.offsetY;
-                }
-              }
+              const yFinal = applyHoraireAnchor(yHoraireRaw);
 
               commitTrainPos(Math.max(0, Math.min(yFinal, h)));
               return;

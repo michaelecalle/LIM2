@@ -110,6 +110,9 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
   const lastFrozenDistRef       = useRef<number | null>(null);  // gel tunnel
   const lastHoraLogAtRef        = useRef<number>(0);  // throttle log diagnostic horaire
   const empiricalAnchorRef      = useRef<{ pk: number; minFloat: number } | null>(null);  // ancrage courbe empirique
+  // Offset d'ancrage du repli THEORIQUE : l'horaire fait PROGRESSER le train depuis la
+  // derniere position connue au lieu de le placer en absolu (evite le saut a la bascule).
+  const horaireOffsetRef        = useRef<number | null>(null);
   const autoScrollBaseRef       = useRef<{
     firstHoraMin: number;   // heure de référence (minutes) de la base
     realMinFloat: number;   // heure d'horloge au moment du Play
@@ -202,6 +205,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
       // ② Reprise depuis stand-by { enabled: true, standby: false }
       if (enabled && !standby) {
         empiricalAnchorRef.current = null;  // départ/reprise : la courbe empirique se ré-ancrera
+        horaireOffsetRef.current = null;
         const lockedIdx = standbyIndexRef.current;
         // On cherche le point de référence : soit la ligne verrouillée, soit le premier point horaire
         const refPt = lockedIdx != null
@@ -257,9 +261,12 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
   }, []);
 
   // ── Tick 250 ms : calcul de la position ──────────────────────────────────
+  // Tourne EN PERMANENCE, meme quand la FT horizontale est masquee (#28 : les deux
+  // modes restent montes, on bascule par `display`). Sinon `dist` reste fige sur la
+  // valeur du stand-by initial (= l'origine) pendant tout le trajet passe en vertical,
+  // et la bascule vertical -> horizontal replace le train a Barcelone.
+  // `active` ne sert donc plus qu'a museler les logs de diagnostic.
   useEffect(() => {
-    if (!active) return;
-
     const id = window.setInterval(() => {
       if (!autoScrollEnabledRef.current) return;
       if (standbyIndexRef.current !== null) return;  // figé en stand-by
@@ -273,6 +280,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
       // ─── Mode GPS ──────────────────────────────────────────────────────
       if (mode === "GPS") {
         empiricalAnchorRef.current = null;  // on quitte l'horaire : l'ancre empirique se re-posera au retour
+        horaireOffsetRef.current = null;
         const pk  = lastGpsPkRef.current;
         const skm = lastGpsSKmRef.current;
         if (pk == null) return;
@@ -320,7 +328,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
             const empDist = empPk - pk0;
             setDist(empDist);
             const nowT = Date.now();
-            if (nowT - lastHoraLogAtRef.current >= 5000) {
+            if (active && nowT - lastHoraLogAtRef.current >= 5000) {
               lastHoraLogAtRef.current = nowT;
               logTestEvent("utd:tick-empirique", {
                 anchorPk: Math.round(anchor.pk * 1000) / 1000, elapsedSec: Math.round(elapsedSec),
@@ -346,16 +354,26 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
       }
       horaPts.sort((a, b) => a.key - b.key);
 
-      const r = interpDist(horaPts, effectiveMin);
-      if (r != null) {
+      const rTheo = interpDist(horaPts, effectiveMin);
+      if (rTheo != null) {
+        // ⚓ ancrage : a la 1re entree en horaire on fige l'ecart entre la position REELLE
+        // (dernier GPS connu) et ce que dit l'horaire ; ensuite l'horaire ne fait que faire
+        // AVANCER le train depuis ce point. Au retour du GPS l'offset est remis a null.
+        if (horaireOffsetRef.current == null) {
+          const cur = lastFrozenDistRef.current;
+          horaireOffsetRef.current = cur != null ? cur - rTheo : 0;
+        }
+        const r = rTheo + horaireOffsetRef.current;
         setDist(r);
         // Log throttlé toutes les 5s pour suivre la position horaire calculée
         const nowT = Date.now();
-        if (nowT - lastHoraLogAtRef.current >= 5000) {
+        if (active && nowT - lastHoraLogAtRef.current >= 5000) {
           lastHoraLogAtRef.current = nowT;
           logTestEvent("utd:tick-horaire", {
             effectiveMin: Math.round(effectiveMin * 100) / 100,
             firstHoraMin: base.firstHoraMin, dist: Math.round(r * 100) / 100,
+            distTheo: Math.round(rTheo * 100) / 100,
+            offset: Math.round((horaireOffsetRef.current ?? 0) * 100) / 100,
           });
         }
       }
