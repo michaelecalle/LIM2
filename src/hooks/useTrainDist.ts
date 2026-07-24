@@ -216,6 +216,10 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
           if (horaMin != null) {
             autoScrollBaseRef.current = { firstHoraMin: horaMin, realMinFloat: nowMinFloat() };
           }
+          // Ré-ancrage explicite : à la reprise on est physiquement sur la gare verrouillée.
+          // Sans ça, si le GPS était périmé à l'approche, le repli horaire recalcule son offset
+          // sur le dernier fix GPS (lastFrozenDist) et téléporte le train en arrière.
+          lastFrozenDistRef.current = refPt.dist;
         } else {
           // Pas de point horaire : base = heure courante (train à l'heure)
           autoScrollBaseRef.current = { firstHoraMin: nowMinFloat(), realMinFloat: nowMinFloat() };
