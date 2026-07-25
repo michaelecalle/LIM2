@@ -551,7 +551,7 @@ export default function FTHorizontal() {
   // Calcule aussi les polygones de fond LTV (suivent la courbe effective → nesting correct)
   // et les rappels de vitesse aux fins de LTV.
   let speedPath = "";
-  const ltvStartLabels:   Array<{ xPx: number; yPx: number; speed: number }> = [];
+  const ltvStartLabels:   Array<{ xPx: number; yPx: number; speed: number; pkA: number; pkB: number }> = [];
   const ltvRestoreLabels: Array<{ xPx: number; yPx: number; speed: number; isLtv: boolean }> = [];
   const ltvFillPaths: string[] = [];
   {
@@ -595,7 +595,7 @@ export default function FTHorizontal() {
       const nowLtvActive = activeLtv.size > 0;
       // Étiquette de début : seulement si la vitesse effective change vraiment
       if (evt.isLtv && !evt.isEnd && newV != null && newV !== effectVBefore)
-        ltvStartLabels.push({ xPx: px + 2, yPx: y(newV), speed: newV });
+        ltvStartLabels.push({ xPx: px + 2, yPx: y(newV), speed: newV, pkA: ltvSegments[evt.ltvId!].pkA, pkB: ltvSegments[evt.ltvId!].pkB });
       // Étiquette de restauration : idem
       if (evt.isLtv && evt.isEnd && newV != null && newV !== effectVBefore)
         ltvRestoreLabels.push({ xPx: px + 2, yPx: y(newV), speed: newV, isLtv: nowLtvActive });
@@ -812,7 +812,15 @@ export default function FTHorizontal() {
             const txt = String(lbl.speed);
             const lw = txt.length * 8 + 10, lh = 16;
             return (
-              <g key={`ltv-sl-${i}`}>
+              <g
+                key={`ltv-sl-${i}`}
+                style={{ cursor: "pointer" }}
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent("lim:infos-ltv-fold-change", { detail: { folded: false, source: "ltv-click" } }));
+                  window.dispatchEvent(new CustomEvent("lim:ltv-focus", { detail: { pkA: lbl.pkA, pkB: lbl.pkB } }));
+                }}
+              >
+                <title>Voir cette LTV dans le tableau</title>
                 <rect x={lbl.xPx} y={lbl.yPx - lh - 2} width={lw} height={lh} rx={3} className="ft-h-ltv-vbox" />
                 <text className="ft-h-ltv-vlabel" x={lbl.xPx + lw / 2} y={lbl.yPx - 6}>{txt}</text>
               </g>
@@ -828,6 +836,33 @@ export default function FTHorizontal() {
               </g>
             );
           })}
+
+          {/* Zone cliquable = toute la bande orange de chaque LTV (les plus étroites au-dessus) */}
+          {ltvSegments
+            .map((seg, i) => ({ seg, i, w: Math.abs(x(seg.distEnd) - x(seg.distStart)) }))
+            .sort((a, b) => b.w - a.w)
+            .map(({ seg, i, w }) => {
+              const xL = Math.min(x(seg.distStart), x(seg.distEnd));
+              const yTop = y(seg.speed);
+              if (w <= 0 || baseY - yTop <= 0) return null;
+              return (
+                <rect
+                  key={`ltv-hit-${i}`}
+                  x={xL}
+                  y={yTop}
+                  width={w}
+                  height={baseY - yTop}
+                  fill="transparent"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent("lim:infos-ltv-fold-change", { detail: { folded: false, source: "ltv-click" } }));
+                    window.dispatchEvent(new CustomEvent("lim:ltv-focus", { detail: { pkA: seg.pkA, pkB: seg.pkB } }));
+                  }}
+                >
+                  <title>Voir cette LTV dans le tableau</title>
+                </rect>
+              );
+            })}
 
           {/* Repères PK + gares + horaires */}
           {points.map((m, i) => {

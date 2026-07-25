@@ -2957,7 +2957,7 @@ useEffect(() => {
   }, [ftScale, rawEntries, infosLtvFolded]);
 
   const ltvNotesByRowIndex = useMemo(() => {
-    const result = new Map<number, string[]>();
+    const result = new Map<number, Array<{ text: string; pkA: number; pkB: number }>>();
 
     if (isOdd === null || ftLtvRows.length === 0 || rawEntries.length === 0) {
       return result;
@@ -3046,7 +3046,7 @@ const note = observationText
         result.set(targetRowIndex, []);
       }
 
-      result.get(targetRowIndex)!.push(note);
+      result.get(targetRowIndex)!.push({ text: note, pkA: pkIni, pkB: pkFin });
     }
 
     console.log(
@@ -3056,7 +3056,7 @@ const note = observationText
           rowIndex,
           pk: rawEntries[rowIndex]?.pk ?? null,
           dependencia: rawEntries[rowIndex]?.dependencia ?? null,
-          notes,
+          notes: notes.map((n) => n.text),
         }))
       )
     );
@@ -7283,7 +7283,17 @@ const vmaxClassForLtv =
           <td className="ft-td">
             <div className="ft-dependencia-cell">
               {ltvNoteLines.map((line, idx) => (
-                <div key={`ltv-${idx}`}>{renderLtvNoteLine(line)}</div>
+                <div
+                  key={`ltv-${idx}`}
+                  style={{ cursor: "pointer" }}
+                  title="Voir cette LTV dans le tableau"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent("lim:infos-ltv-fold-change", { detail: { folded: false, source: "ltv-click" } }));
+                    window.dispatchEvent(new CustomEvent("lim:ltv-focus", { detail: { pkA: line.pkA, pkB: line.pkB } }));
+                  }}
+                >
+                  {renderLtvNoteLine(line.text)}
+                </div>
               ))}
             </div>
           </td>

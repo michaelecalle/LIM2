@@ -258,6 +258,41 @@ const LTV: React.FC = () => {
   // lignes LTV structurées pour DISPLAY_DIRECT
   const [rows, setRows] = useState<LtvRow[]>([])
 
+  // ─── Surlignage d'une LTV cliquée depuis la fiche train (event lim:ltv-focus) ───
+  const [ltvFocus, setLtvFocus] = useState<{ a: number; b: number } | null>(null)
+  const ltvRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map())
+  const parseFocusPk = (v: unknown): number | null => {
+    const m = String(v ?? "").replace(",", ".").match(/\d+(?:\.\d+)?/)
+    return m ? parseFloat(m[0]) : null
+  }
+  const rowMatchesFocus = (r: LtvRow): boolean => {
+    if (!ltvFocus) return false
+    const a = parseFocusPk(r.kmIni), b = parseFocusPk(r.kmFin)
+    if (a === null || b === null) return false
+    const lo = Math.min(a, b), hi = Math.max(a, b)
+    return Math.max(lo, ltvFocus.a) <= Math.min(hi, ltvFocus.b) + 0.06
+  }
+  useEffect(() => {
+    const h = (e: Event) => {
+      const d = (e as CustomEvent).detail
+      const a = Number(d?.pkA), b = Number(d?.pkB)
+      if (!isFinite(a) || !isFinite(b)) return
+      setLtvFocus({ a: Math.min(a, b), b: Math.max(a, b) })
+    }
+    window.addEventListener("lim:ltv-focus", h as EventListener)
+    return () => window.removeEventListener("lim:ltv-focus", h as EventListener)
+  }, [])
+  useEffect(() => {
+    if (!ltvFocus) return
+    const firstIdx = rows.findIndex((r) => rowMatchesFocus(r))
+    if (firstIdx < 0) return
+    const id = window.setTimeout(() => {
+      ltvRowRefs.current.get(firstIdx)?.scrollIntoView({ block: "center", behavior: "smooth" })
+    }, 60)
+    return () => window.clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ltvFocus, rows])
+
   // Métadonnées d’actualisation LTV envoyées par l’import manuel
   const [ltvDisplayMeta, setLtvDisplayMeta] = useState<LtvDisplayMeta>({
     availableSources: [],
@@ -1051,7 +1086,14 @@ const LTV: React.FC = () => {
           {rows.map((r, idx) => {
             const check = (v: boolean) => (v ? "✓" : "")
             return (
-              <tr key={r.code + "_" + idx}>
+              <tr
+                key={r.code + "_" + idx}
+                ref={(el) => {
+                  if (el) ltvRowRefs.current.set(idx, el)
+                  else ltvRowRefs.current.delete(idx)
+                }}
+                className={rowMatchesFocus(r) ? "ltv-row-focus" : undefined}
+              >
                 {/* (CÓDIGO LTV) Trayecto / Estación */}
                 <td
                   className="ltv-td"
@@ -2243,6 +2285,9 @@ const LTV: React.FC = () => {
 
         /* (CÓDIGO LTV) Trayecto / Estación */
         col.ltv-col-trayecto  { width: 21.43%; } /* (CÓDIGO LTV) Trayecto / Estación */
+
+        /* Ligne LTV surlignée après clic sur sa vitesse dans la fiche train */
+        tr.ltv-row-focus td { background-color: rgba(249, 115, 22, 0.22) !important; }
 
         /* Groupe B : Vía / Km Ini / Km Fin / Veloc. */
         col.ltv-col-via       { width: 2.23%; }  /* Vía */
