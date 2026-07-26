@@ -749,12 +749,22 @@ export default function App() {
             }
           >
 {/* Bloc LTV (TOUJOURS rendu — masqué visuellement si plié) */}
+{/* Clic sur le tableau (zone passive) → repli. En mode 2026 la LTV est toujours
+    un tableau texte ; le garde-fou ci-dessous protège malgré tout d'éventuelles
+    commandes d'import (boutons, images de recadrage). Plié = pointer-events-none,
+    donc ce handler ne s'exécute qu'à l'état ouvert. */}
 <div
   className={
     foldInfosLtv
       ? "block h-0 overflow-hidden pointer-events-none"
-      : "block"
+      : "block cursor-pointer"
   }
+  onClick={(e) => {
+    if ((e.target as HTMLElement)?.closest("button, a, input, img, .crop-edge")) return
+    window.dispatchEvent(
+      new CustomEvent("lim:infos-ltv-fold-change", { detail: { folded: true, source: "table-click" } })
+    )
+  }}
 >
   <LTV />
 </div>

@@ -4,6 +4,7 @@ import { getFtLignePair, getFtLigneImpair, getTrainOrigine, getTrainDestination 
 import type { FTEntry } from "../../data/ligneFT";
 import { useTrainDist } from "../../hooks/useTrainDist";
 import type { TDPoint } from "../../hooks/useTrainDist";
+import { onLtvZoneClick } from "../../lib/ltvFold";
 import { TUNNEL_ZONES_PKINTERNAL } from "../../data/tunnelZones";
 import { LINE_PROFILE } from "../../data/lineProfile";
 
@@ -277,6 +278,8 @@ export default function FTHorizontal() {
     window.addEventListener("lim:infos-ltv-fold-change", h as EventListener);
     return () => window.removeEventListener("lim:infos-ltv-fold-change", h as EventListener);
   }, []);
+  // Dernière LTV ciblée par un clic (bascule replier/recadrer, cf. lib/ltvFold).
+  const ltvZoneFocusRef = useRef<{ a: number; b: number } | null>(null);
 
   // ── LTV (Limitations Temporaires de Vitesse) ─────────────────────────────
   const [ltvRows, setLtvRows] = useState<Array<{ kmIni?: string; kmFin?: string; speed?: string }>>([]);
@@ -815,12 +818,9 @@ export default function FTHorizontal() {
               <g
                 key={`ltv-sl-${i}`}
                 style={{ cursor: "pointer" }}
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent("lim:infos-ltv-fold-change", { detail: { folded: false, source: "ltv-click" } }));
-                  window.dispatchEvent(new CustomEvent("lim:ltv-focus", { detail: { pkA: lbl.pkA, pkB: lbl.pkB } }));
-                }}
+                onClick={() => onLtvZoneClick(folded, ltvZoneFocusRef, lbl.pkA, lbl.pkB)}
               >
-                <title>Voir cette LTV dans le tableau</title>
+                <title>Voir cette LTV dans le tableau (recliquer pour replier)</title>
                 <rect x={lbl.xPx} y={lbl.yPx - lh - 2} width={lw} height={lh} rx={3} className="ft-h-ltv-vbox" />
                 <text className="ft-h-ltv-vlabel" x={lbl.xPx + lw / 2} y={lbl.yPx - 6}>{txt}</text>
               </g>
@@ -854,12 +854,9 @@ export default function FTHorizontal() {
                   height={baseY - yTop}
                   fill="transparent"
                   style={{ cursor: "pointer" }}
-                  onClick={() => {
-                    window.dispatchEvent(new CustomEvent("lim:infos-ltv-fold-change", { detail: { folded: false, source: "ltv-click" } }));
-                    window.dispatchEvent(new CustomEvent("lim:ltv-focus", { detail: { pkA: seg.pkA, pkB: seg.pkB } }));
-                  }}
+                  onClick={() => onLtvZoneClick(folded, ltvZoneFocusRef, seg.pkA, seg.pkB)}
                 >
-                  <title>Voir cette LTV dans le tableau</title>
+                  <title>Voir cette LTV dans le tableau (recliquer pour replier)</title>
                 </rect>
               );
             })}

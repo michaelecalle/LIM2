@@ -8,6 +8,7 @@ import {
 } from "../../data/ligneFT.normalized.adapter";
 import type { FTEntry, CsvSens } from "../../data/ligneFT";
 import { logTestEvent } from "../../lib/testLogger";
+import { onLtvZoneClick } from "../../lib/ltvFold";
 import { getFtFranceHhmm } from "../../data/ftFranceTimes"
 import { tunnelZoneAt } from "../../data/tunnelZones"
 import { empiricalPkAtElapsed, isInEmpiricalZone } from "../../data/empiricalCurve"
@@ -126,6 +127,8 @@ export default function FT({ variant = "classic" }: FTProps) {
     return () =>
       window.removeEventListener("lim:infos-ltv-fold-change", h as EventListener);
   }, []);
+  // Dernière LTV ciblée par un clic (pour la bascule replier/recadrer, cf. lib/ltvFold).
+  const ltvZoneFocusRef = React.useRef<{ a: number; b: number } | null>(null);
 
   // source de référence pour la ligne active : horaire ou GPS
   const [referenceMode, setReferenceMode] = useState<ReferenceMode>("HORAIRE");
@@ -7286,11 +7289,8 @@ const vmaxClassForLtv =
                 <div
                   key={`ltv-${idx}`}
                   style={{ cursor: "pointer" }}
-                  title="Voir cette LTV dans le tableau"
-                  onClick={() => {
-                    window.dispatchEvent(new CustomEvent("lim:infos-ltv-fold-change", { detail: { folded: false, source: "ltv-click" } }));
-                    window.dispatchEvent(new CustomEvent("lim:ltv-focus", { detail: { pkA: line.pkA, pkB: line.pkB } }));
-                  }}
+                  title="Voir cette LTV dans le tableau (recliquer pour replier)"
+                  onClick={() => onLtvZoneClick(infosLtvFolded, ltvZoneFocusRef, line.pkA, line.pkB)}
                 >
                   {renderLtvNoteLine(line.text)}
                 </div>
