@@ -105,6 +105,10 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
   const autoScrollEnabledRef    = useRef(false);
   const standbyIndexRef         = useRef<number | null>(null);
   const initialStandbyDoneRef   = useRef(false);
+  // Drapeau stand-by FIABLE : true dès qu'un stand-by est demandé (Play, arrêt auto,
+  // re-stand-by manuel), même quand aucune branche ne pose standbyIndexRef. Il gèle le
+  // tick SUR PLACE (sans téléporter) → la barre n'avance jamais pendant le stand-by.
+  const inStandbyRef            = useRef(false);
   const lastGpsPkRef            = useRef<number | null>(null);
   const lastGpsSKmRef           = useRef<number | null>(null);
   const lastFrozenDistRef       = useRef<number | null>(null);  // gel tunnel
@@ -163,6 +167,10 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
         pointsLen: points.length,
       });
 
+      // Drapeau stand-by posé AVANT toute branche : même un cas non couvert par ①b/①
+      // (ex. re-Play après reprise, sans pk et initialDone déjà vrai) fige alors le tick.
+      if (enabled && standby) inStandbyRef.current = true;
+
       // Le PK est le SEUL discriminant (pas l'état initialDone, fragile en seek/replay) :
       // - event AVEC pk  → stand-by automatique sur la gare de ce pk (①b)
       // - event SANS pk  → stand-by initial sur le premier point (①)
@@ -204,6 +212,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
 
       // ② Reprise depuis stand-by { enabled: true, standby: false }
       if (enabled && !standby) {
+        inStandbyRef.current = false;       // départ réel : le tick peut de nouveau avancer
         empiricalAnchorRef.current = null;  // départ/reprise : la courbe empirique se ré-ancrera
         horaireOffsetRef.current = null;
         const lockedIdx = standbyIndexRef.current;
@@ -234,6 +243,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
 
       // ③ Pause
       if (!enabled) {
+        inStandbyRef.current      = false;
         autoScrollBaseRef.current = null;
         standbyIndexRef.current   = null;
         setStandbyPointIndex(null);
@@ -273,7 +283,8 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
   useEffect(() => {
     const id = window.setInterval(() => {
       if (!autoScrollEnabledRef.current) return;
-      if (standbyIndexRef.current !== null) return;  // figé en stand-by
+      if (inStandbyRef.current) return;              // stand-by : barre gelée sur place
+      if (standbyIndexRef.current !== null) return;  // figé en stand-by (snap sur gare)
 
       const gs   = gpsStateRef.current;
       // Garde-fou tunnel : bloquer le GPS tant que le dernier s_km est dans une zone tunnel

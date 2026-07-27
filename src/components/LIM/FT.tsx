@@ -4769,6 +4769,13 @@ const isRelock = acceptedMode === "relock";
               const recalageAccuracyTooPoor =
                 accuracyM != null && accuracyM > GPS_RECALAGE_MAX_ACCURACY_M;
 
+              // Garde-fou stand-by/arrêt : ne PAS recaler le delta tant que le train est
+              // à l'arrêt (stand-by initial au Play, ou arrêt détecté). Le delta initial
+              // se calcule au DÉPART réel (chemin gps:arret:departure-confirmed), jamais
+              // à l'entrée en stand-by. Corrige le delta prématuré à l'origine.
+              const blockedByStopOrStandby =
+                standbyLockedRowRef.current != null || stationArretRef.current != null;
+
               if (gpsRecalageBlockedByManual) {
                 logTestEvent("ft:delta:gps-recalage:skip", {
                   rowIndex: idx,
@@ -4786,6 +4793,15 @@ const isRelock = acceptedMode === "relock";
                   reason: "accuracy_too_poor_for_recalage",
                   accuracyM,
                   maxAccuracyM: GPS_RECALAGE_MAX_ACCURACY_M,
+                });
+              } else if (blockedByStopOrStandby) {
+                logTestEvent("ft:delta:gps-recalage:skip", {
+                  rowIndex: idx,
+                  pk: entry?.pk ?? null,
+                  dependencia: entry?.dependencia ?? null,
+                  reason: "train_stopped_or_standby",
+                  standbyLockedRow: standbyLockedRowRef.current,
+                  arretActive: stationArretRef.current != null,
                 });
               } else {
                 // ✅ Définition métier d’un point d’ancrage GPS :

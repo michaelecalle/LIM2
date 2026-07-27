@@ -282,6 +282,16 @@ const LTV: React.FC = () => {
     window.addEventListener("lim:ltv-focus", h as EventListener)
     return () => window.removeEventListener("lim:ltv-focus", h as EventListener)
   }, [])
+  // Dépliage SANS clic sur une LTV (ex. clic sur le n° de train dans la TitleBar) :
+  // on efface tout surlignage. Un clic LTV, lui, ré-émet lim:ltv-focus juste après
+  // ce fold-change, ce qui repose aussitôt le bon surlignage.
+  useEffect(() => {
+    const h = (e: Event) => {
+      if ((e as CustomEvent).detail?.folded === false) setLtvFocus(null)
+    }
+    window.addEventListener("lim:infos-ltv-fold-change", h as EventListener)
+    return () => window.removeEventListener("lim:infos-ltv-fold-change", h as EventListener)
+  }, [])
   useEffect(() => {
     if (!ltvFocus) return
     const firstIdx = rows.findIndex((r) => rowMatchesFocus(r))

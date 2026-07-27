@@ -59,6 +59,9 @@ export default function FTHorizontalSchedule() {
   const [pxPerKm, setPxPerKm] = useState<number>(() => {
     try { const v = parseFloat(localStorage.getItem("lim:fth-scale") ?? String(PX_PER_KM_DEFAULT)); return Number.isFinite(v) && v > 0 ? v : PX_PER_KM_DEFAULT; } catch { return PX_PER_KM_DEFAULT; }
   });
+  // Échelle EFFECTIVE diffusée par FTHorizontal (fit-to-width) : si présente, elle
+  // prime sur le slider pour que la barre horaire garde la même largeur que le graphe.
+  const [effScale, setEffScale] = useState<number | null>(null);
 
   useEffect(() => {
     const onTrain = (e: any) => {
@@ -70,13 +73,19 @@ export default function FTHorizontalSchedule() {
       const v = (e as CustomEvent).detail?.pxPerKm;
       if (typeof v === "number" && v > 0) setPxPerKm(v);
     };
+    const onEffScale = (e: Event) => {
+      const v = (e as CustomEvent).detail?.pxPerKm;
+      if (typeof v === "number" && v > 0) setEffScale(v);
+    };
     window.addEventListener("lim:train",        onTrain as EventListener);
     window.addEventListener("lim:train-change", onTrain as EventListener);
     window.addEventListener("lim:fth-scale",    onScale as EventListener);
+    window.addEventListener("lim:fth-eff-scale", onEffScale as EventListener);
     return () => {
       window.removeEventListener("lim:train",        onTrain as EventListener);
       window.removeEventListener("lim:train-change", onTrain as EventListener);
       window.removeEventListener("lim:fth-scale",    onScale as EventListener);
+      window.removeEventListener("lim:fth-eff-scale", onEffScale as EventListener);
     };
   }, []);
 
@@ -151,9 +160,10 @@ export default function FTHorizontalSchedule() {
   if (stops.length === 0) return null;
 
   const maxDist = Math.max(distEnd, stops[stops.length - 1].dist);
-  const totalW  = MARGIN_LEFT + maxDist * pxPerKm + MARGIN_RIGHT;
+  const scale   = effScale ?? pxPerKm;   // fit-to-width prioritaire sur le slider
+  const totalW  = MARGIN_LEFT + maxDist * scale + MARGIN_RIGHT;
   const rightW  = totalW - MARGIN_LEFT;
-  const x = (dist: number) => MARGIN_LEFT + dist * pxPerKm;
+  const x = (dist: number) => MARGIN_LEFT + dist * scale;
 
   return (
     <div style={{ display: "flex", width: "100%", height: H, overflow: "hidden" }}>

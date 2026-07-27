@@ -5312,16 +5312,25 @@ setAutoScrollStartedOnce(next)
               <button
                 type="button"
                 onClick={() => {
-                  if (stationArretActive && gpsState === 2) {
-                    // Sortie manuelle du mode ARRÊT GPS
-                    window.dispatchEvent(new CustomEvent('ft:station-arret-manual-exit'))
+                  if (stationArretActive) {
+                    if (gpsState === 2) {
+                      // ARRÊT GPS : forcer la reprise (rattrape un départ non détecté par la position)
+                      window.dispatchEvent(new CustomEvent('ft:station-arret-manual-exit'))
+                    } else {
+                      // ARRÊT en mode horaire : sortie manuelle du stand-by (équivaut au clic
+                      // sur la ligne, mais plus intuitif en horizontal). La reprise calcule le
+                      // delta et efface le badge ARRÊT.
+                      window.dispatchEvent(new CustomEvent('ft:auto-scroll-change', {
+                        detail: { enabled: true, standby: false, source: 'arret-badge' },
+                      }))
+                    }
                     return
                   }
                   showGpsPkTemporarily()
                 }}
                 className={`
                   relative h-7 px-3 rounded-full text-xs font-semibold bg-white dark:bg-zinc-900 transition
-                  ${stationArretActive && gpsState === 2 ? 'cursor-pointer' : ''}
+                  ${stationArretActive ? 'cursor-pointer' : ''}
                   ${!stationArretActive && !testModeEnabled && gpsState === 2 && gpsPkDisplay ? 'cursor-pointer' : ''}
                   ${stationArretActive || (!stationArretActive && !testModeEnabled && gpsState !== 2) ? '' : ''}
                   ${stationArretActive ? 'border-[3px] border-sky-500 text-sky-600 dark:text-sky-400' : ''}
@@ -5333,7 +5342,7 @@ setAutoScrollStartedOnce(next)
                   stationArretActive && gpsState === 2
                     ? 'Arrêt détecté (GPS) — appuyer pour forcer la reprise sans recalage'
                     : stationArretActive && gpsState === 0
-                      ? 'Arrêt détecté (mode horaire)'
+                      ? 'Arrêt détecté (mode horaire) — appuyer pour sortir du stand-by'
                       : gpsState === 0
                         ? 'GPS indisponible / non calé'
                         : gpsState === 1
@@ -5899,6 +5908,54 @@ setAutoScrollStartedOnce(next)
 
               <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
 
+              {/* Défilement vertical / horizontal (#28) — déplacé du menu caché */}
+              <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
+                <span>Défilement fiche train</span>
+                <select
+                  value={ftScrollMode}
+                  onChange={(e) => setFtScrollMode(e.target.value === 'horizontal' ? 'horizontal' : 'vertical')}
+                  className="text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-transparent px-1 py-0.5 cursor-pointer"
+                >
+                  <option value="vertical">Vertical</option>
+                  <option value="horizontal">Horizontal (exp.)</option>
+                </select>
+              </label>
+              {ftScrollMode === 'horizontal' && (
+                <div className="pl-2 pb-1 text-xs text-zinc-600 dark:text-zinc-300">
+                  <div className="flex justify-between"><span>Échelle horizontale</span><span>{ftHScale} px/km</span></div>
+                  <input type="range" min={10} max={150} step={1} value={ftHScale}
+                    onChange={(e) => setFtHScale(parseInt(e.target.value, 10))}
+                    className="w-full cursor-pointer accent-blue-600" />
+                </div>
+              )}
+              {/* Mise à l'échelle de la fiche train (#25) — VERTICAL uniquement */}
+              {ftScrollMode === 'vertical' && (
+                <>
+                  <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
+                    <span>Mise à l'échelle de la fiche train</span>
+                    <input
+                      type="checkbox"
+                      checked={ftScaleEnabled}
+                      onChange={() => setFtScaleEnabled(v => !v)}
+                      className="h-4 w-4 cursor-pointer accent-blue-600"
+                    />
+                  </label>
+                  {ftScaleEnabled && (
+                    <div className="pl-2 pb-1 text-xs text-zinc-600 dark:text-zinc-300 space-y-2">
+                      <div>
+                        <div className="flex justify-between"><span>Espacement</span><span>{ftScaleMult.toFixed(1)}×</span></div>
+                        <input type="range" min={0.2} max={3} step={0.1} value={ftScaleMult}
+                          onChange={(e) => setFtScaleMult(parseFloat(e.target.value))}
+                          className="w-full cursor-pointer accent-blue-600" />
+                        <div className="text-[10px] opacity-70 leading-tight">1× = proportionnel exact. En dessous = plus compact à l'écran (moins exact). Jamais de compression sous le contenu réel.</div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
+
 
 
               <button
@@ -6113,56 +6170,6 @@ setAutoScrollStartedOnce(next)
                     className="h-4 w-4 cursor-pointer accent-blue-600"
                   />
                 </label>
-
-                <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
-
-                {/* Défilement vertical / horizontal (#28, expérimental) */}
-                <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
-                  <span>Défilement fiche train</span>
-                  <select
-                    value={ftScrollMode}
-                    onChange={(e) => setFtScrollMode(e.target.value === 'horizontal' ? 'horizontal' : 'vertical')}
-                    className="text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-transparent px-1 py-0.5 cursor-pointer"
-                  >
-                    <option value="vertical">Vertical</option>
-                    <option value="horizontal">Horizontal (exp.)</option>
-                  </select>
-                </label>
-                {ftScrollMode === 'horizontal' && (
-                  <div className="pl-2 pb-1 text-xs text-zinc-600 dark:text-zinc-300">
-                    <div className="flex justify-between"><span>Échelle horizontale</span><span>{ftHScale} px/km</span></div>
-                    <input type="range" min={10} max={150} step={1} value={ftHScale}
-                      onChange={(e) => setFtHScale(parseInt(e.target.value, 10))}
-                      className="w-full cursor-pointer accent-blue-600" />
-                  </div>
-                )}
-
-                {/* Mise à l'échelle de la fiche train (#25) — VERTICAL uniquement
-                    (inutile en défilement horizontal, qui a sa propre échelle). */}
-                {ftScrollMode === 'vertical' && (
-                  <>
-                    <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
-                      <span>Mise à l'échelle de la fiche train</span>
-                      <input
-                        type="checkbox"
-                        checked={ftScaleEnabled}
-                        onChange={() => setFtScaleEnabled(v => !v)}
-                        className="h-4 w-4 cursor-pointer accent-blue-600"
-                      />
-                    </label>
-                    {ftScaleEnabled && (
-                      <div className="pl-2 pb-1 text-xs text-zinc-600 dark:text-zinc-300 space-y-2">
-                        <div>
-                          <div className="flex justify-between"><span>Espacement</span><span>{ftScaleMult.toFixed(1)}×</span></div>
-                          <input type="range" min={0.2} max={3} step={0.1} value={ftScaleMult}
-                            onChange={(e) => setFtScaleMult(parseFloat(e.target.value))}
-                            className="w-full cursor-pointer accent-blue-600" />
-                          <div className="text-[10px] opacity-70 leading-tight">1× = proportionnel exact. En dessous = plus compact à l'écran (moins exact). Jamais de compression sous le contenu réel.</div>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
 
                 <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
 

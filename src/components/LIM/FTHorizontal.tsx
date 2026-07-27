@@ -271,6 +271,26 @@ export default function FTHorizontal() {
     return () => window.removeEventListener("lim:fth-scale", h as EventListener);
   }, []);
 
+  // ── Fit-to-width : échelle EFFECTIVE ──────────────────────────────────────
+  // Sur un parcours plus court que la largeur disponible, on étire l'échelle pour
+  // le faire tenir sur tout l'écran ; on ne compresse jamais un parcours long, ni
+  // n'écrase le réglage utilisateur (plancher). Purement dérivé, NON sauvegardé :
+  // le slider et le localStorage gardent la valeur choisie ; le train suivant, s'il
+  // est assez long, la retrouve. Pas de plafond (le plus court parcours réel de la
+  // ligne, ~6,7 km, atterrit déjà dans la zone de confort).
+  const routeLenKm = points.length ? points[points.length - 1].dist : 0;
+  const effPxPerKm = useMemo(() => {
+    if (!box || routeLenKm <= 0) return pxPerKm;
+    const usable = box.w - MARGIN.left - MARGIN.right;
+    if (usable <= 0) return pxPerKm;
+    return Math.max(pxPerKm, usable / routeLenKm);
+  }, [pxPerKm, box, routeLenKm]);
+  // Diffuse l'échelle EFFECTIVE à la barre horaire (FTHorizontalSchedule) pour qu'elle
+  // conserve exactement la même largeur et les mêmes positions que le graphe.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("lim:fth-eff-scale", { detail: { pxPerKm: effPxPerKm } }));
+  }, [effPxPerKm]);
+
   // ── Pli/dépli ────────────────────────────────────────────────────────────
   const [folded, setFolded] = useState(false);
   useEffect(() => {
@@ -340,8 +360,8 @@ export default function FTHorizontal() {
   useEffect(() => {
     if (trainDist.dist == null) return;
     distRef.current = trainDist.dist;
-    targetScrollLeftRef.current = trainDist.dist * pxPerKm;
-  }, [trainDist.dist, pxPerKm]);
+    targetScrollLeftRef.current = trainDist.dist * effPxPerKm;
+  }, [trainDist.dist, effPxPerKm]);
 
   // Bascule vertical → horizontal : téléportation immédiate sur la position courante.
   // Tant que le bloc est en display:none il n'a aucune mise en page (clientWidth 0), donc
@@ -354,7 +374,7 @@ export default function FTHorizontal() {
       const div = scrollDivRef.current;
       const d   = distRef.current;
       if (!div || d == null) return;
-      const target = d * pxPerKm;
+      const target = d * effPxPerKm;
       targetScrollLeftRef.current     = target;
       displayScrollLeftRef.current    = target;
       isProgrammaticScrollRef.current = true;
@@ -367,17 +387,17 @@ export default function FTHorizontal() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
-  // Téléportation immédiate si pxPerKm change (pas de lerp sur changement d'échelle)
+  // Téléportation immédiate si l'échelle change (slider OU ré-ajustement fit-to-width)
   useEffect(() => {
     if (trainDist.dist == null) return;
-    const newTarget = trainDist.dist * pxPerKm;
+    const newTarget = trainDist.dist * effPxPerKm;
     targetScrollLeftRef.current  = newTarget;
     displayScrollLeftRef.current = newTarget;
     const div = scrollDivRef.current;
     if (div) { isProgrammaticScrollRef.current = true; div.scrollLeft = newTarget; }
-  // intentionnellement : pxPerKm seulement (pas trainDist.dist)
+  // intentionnellement : effPxPerKm seulement (pas trainDist.dist)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pxPerKm]);
+  }, [effPxPerKm]);
 
   // ── Boucle rAF — scroll épinglé ──────────────────────────────────────────
   useEffect(() => {
@@ -411,7 +431,7 @@ export default function FTHorizontal() {
   }, []); // une seule instance, pilotée par refs
 
   // ── Gestion scroll manuel (rubber band) ──────────────────────────────────
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+  const handleScroll = useCallback(() => {
     if (!autoScrollEnabledRef.current) return;
     if (isProgrammaticScrollRef.current) {
       isProgrammaticScrollRef.current = false;
@@ -439,7 +459,7 @@ export default function FTHorizontal() {
 
     const rootRect = root.getBoundingClientRect();
     // coordonnée X dans le système de la FT (distance depuis l'origine)
-    const distClicked = (e.clientX - rootRect.left - pinXPxRef.current + div.scrollLeft) / pxPerKm;
+    const distClicked = (e.clientX - rootRect.left - pinXPxRef.current + div.scrollLeft) / effPxPerKm;
 
     // Filtre Y : tout le bloc qui clignote en stand-by (arrivée baseY−22 → pastille/tick →
     // PK et nom en position basse baseY+68). On accepte donc clic de baseY−28 à baseY+76.
@@ -448,7 +468,7 @@ export default function FTHorizontal() {
     if (clickY < baseYpx - 28 || clickY > baseYpx + 76) return;
 
     // Repère horaire le plus proche dans un rayon ±25px
-    const thresholdKm = 25 / pxPerKm;
+    const thresholdKm = 25 / effPxPerKm;
     let nearestIdx: number | null = null;
     let nearestDelta = Infinity;
     for (let i = 0; i < points.length; i++) {
@@ -467,7 +487,7 @@ export default function FTHorizontal() {
     } else {
       trainDist.setStandbyByIndex(nearestIdx); // entrée / changement de point
     }
-  }, [trainDist, pxPerKm, points]);
+  }, [trainDist, effPxPerKm, points]);
 
   // Refs pour les valeurs calculées au render (accessibles dans les callbacks)
   const pinXPxRef = useRef(MARGIN.left);
@@ -493,8 +513,8 @@ export default function FTHorizontal() {
   // atteindre la barre de position (scrollLeft = maxDist × pxPerKm doit être
   // inférieur ou égal au scrollLeft maximum du div, soit rightW - clientWidth).
   const paddingEnd  = box ? Math.max(0, box.w - pinXPx - MARGIN.right) : 0;
-  const totalW      = MARGIN.left + paddingStart + maxDist * pxPerKm + paddingEnd + MARGIN.right;
-  const x = (dist: number) => MARGIN.left + paddingStart + dist * pxPerKm;
+  const totalW      = MARGIN.left + paddingStart + maxDist * effPxPerKm + paddingEnd + MARGIN.right;
+  const x = (dist: number) => MARGIN.left + paddingStart + dist * effPxPerKm;
   // Bord droit du contenu réel (track + grid s'arrêtent ici, pas dans le padding)
   const contentRight = x(maxDist) + MARGIN.right;
   const y = (v: number)    => MARGIN.top  + (1 - v / V_MAX_AXIS) * chartH;
