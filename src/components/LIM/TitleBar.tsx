@@ -263,6 +263,19 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   // ----- UI fold INFOS/LTV -----
   const [folded, setFolded] = useState(false)
 
+  // ✅ Sync du pli/dépli déclenché AILLEURS (clic sur une LTV de la fiche, clic sur le
+  // tableau, clic sur le numéro de train…). Sans ça, la barre de titre ne se mettait à jour
+  // que via son propre bouton : au clic LTV le tableau se dépliait mais l'en-tête restait
+  // en mode plié (numéro + type + composition au lieu du numéro seul).
+  useEffect(() => {
+    const h = (e: Event) => {
+      const f = (e as CustomEvent).detail?.folded
+      if (typeof f === 'boolean') setFolded(f)
+    }
+    window.addEventListener('lim:infos-ltv-fold-change', h as EventListener)
+    return () => window.removeEventListener('lim:infos-ltv-fold-change', h as EventListener)
+  }, [])
+
   // ✅ Helper unique : forcer dépliage INFOS/LTV + dispatch + logs (1 seul endroit)
   const forceInfosUnfold = (meta: { reason: string; source: string }) => {
     // On force l’état local
