@@ -102,6 +102,14 @@ export default function App() {
     return () => window.removeEventListener("lim:ft-scroll-mode", h as EventListener)
   }, [])
 
+  // Mode « LTV seul » (démarrage LTV) : on n'affiche QUE le bloc LTV (Infos + FT masqués).
+  const [ltvOnlyMode, setLtvOnlyMode] = React.useState(false)
+  React.useEffect(() => {
+    const h = (e: Event) => setLtvOnlyMode(!!(e as CustomEvent).detail?.enabled)
+    window.addEventListener("lim:ltv-only", h as EventListener)
+    return () => window.removeEventListener("lim:ltv-only", h as EventListener)
+  }, [])
+
   const [isDark, setIsDark] = React.useState(() => {
     if (typeof window === "undefined" || typeof document === "undefined") return false
 
@@ -735,10 +743,12 @@ export default function App() {
               : "mt-3 mx-auto max-w-7xl flex-1 min-h-0 flex flex-col hidden"
           }
         >
-          {/* Bloc infos : toujours gardé quel que soit le mode de pliage */}
-          <div className="mt-0">
-            <Infos />
-          </div>
+          {/* Bloc infos : masqué en mode « LTV seul » */}
+          {!ltvOnlyMode && (
+            <div className="mt-0">
+              <Infos />
+            </div>
+          )}
 
           {/* Zone LTV + FT (TOUJOURS rendue) */}
           <div
@@ -816,7 +826,8 @@ export default function App() {
               </div>
             )}
 
-            {/* Bloc FT (toujours visible) */}
+            {/* Bloc FT : masqué en mode « LTV seul » */}
+            {!ltvOnlyMode && (
             <div
               className={
                 (foldInfosLtv
@@ -833,6 +844,7 @@ export default function App() {
                 <FTHorizontal />
               </div>
             </div>
+            )}
 
             {/* Overlay FT France (opaque) — fixé au viewport, top aligné sur la zone LTV/FT */}
             {showFtFranceOverlay && ftAreaRect && (

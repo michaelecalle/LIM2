@@ -39,11 +39,16 @@ type Props = {
   onSelectSdm?: () => void
   // SDM (#27) : train de session fraîchement créé → à pré-sélectionner au retour.
   preselectTrainNumber?: string | null
+  // Mode « LTV seul » : n'affiche QUE l'import du PDF LTV (pas de train ni fiche train),
+  // et confirme via onConfirmLtvOnly. Défaut false → comportement mode 2026 inchangé.
+  ltvOnly?: boolean
+  onConfirmLtvOnly?: (ltvData: NormalizedLtvFile | null, ltvPdfFile: File | null) => void
 }
 
 export default function Mode2026Modal({
   dark, trainOptions, onClose, onConfirm,
   lockedTrainNumber = null, demoPdfFiles, onSelectSdm, preselectTrainNumber = null,
+  ltvOnly = false, onConfirmLtvOnly,
 }: Props) {
   const isDemo = Array.isArray(demoPdfFiles) && demoPdfFiles.length > 0
 
@@ -87,7 +92,10 @@ export default function Mode2026Modal({
   const selectedTrain = trainOptions.find(t => t.trainNumber === selectedTrainNumber) ?? null
 
   // LTV optionnelle : il suffit d’un train sélectionné (et de ne pas être en cours de parsing).
-  const canConfirm = selectedTrain !== null && !parsing
+  // Mode « LTV seul » : pas de train ; il faut un PDF LTV importé OU le dernier connu.
+  const canConfirm = ltvOnly
+    ? (!parsing && (ltvData !== null || (!isDemo && storedLtv !== null)))
+    : (selectedTrain !== null && !parsing)
 
   const handlePdfSelect = async (file: File) => {
     setPdfFile(file)
@@ -114,6 +122,7 @@ export default function Mode2026Modal({
     if (!canConfirm) return
     // Secours : aucun PDF importé (hors démo) → utiliser le dernier normalisé connu.
     const effectiveLtv = ltvData ?? (!isDemo ? storedLtv : null)
+    if (ltvOnly) { onConfirmLtvOnly?.(effectiveLtv, pdfFile); return }
     onConfirm(selectedTrain!, effectiveLtv, pdfFile, ftPdfFile)
   }
 
@@ -131,8 +140,8 @@ export default function Mode2026Modal({
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-base font-semibold">Mode 2026</div>
-            <div className="text-[11px] opacity-60 mt-0.5">Train requis ; PDF LTV et fiche train optionnels</div>
+            <div className="text-base font-semibold">{ltvOnly ? 'Mode LTV seul' : 'Mode 2026'}</div>
+            <div className="text-[11px] opacity-60 mt-0.5">{ltvOnly ? 'Import du seul PDF LTV — LTV du parcours (PK ≥ 616)' : 'Train requis ; PDF LTV et fiche train optionnels'}</div>
           </div>
           <button type="button" onClick={onClose}
             className="h-8 px-3 text-xs rounded-md bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100 font-semibold">
@@ -140,7 +149,8 @@ export default function Mode2026Modal({
           </button>
         </div>
 
-        {/* Etape 1 : selection du train */}
+        {/* Etape 1 : selection du train (masquée en mode LTV seul) */}
+        {!ltvOnly && (
         <div>
           <div className="text-xs font-semibold opacity-70 mb-1">1 — Train</div>
           <select
@@ -169,6 +179,7 @@ export default function Mode2026Modal({
             {!isDemo && <option value="SDM">Créer un train</option>}
           </select>
         </div>
+        )}
 
         {/* Etape 2 : import du PDF LTV */}
         <div>
@@ -230,7 +241,8 @@ export default function Mode2026Modal({
           )}
         </div>
 
-        {/* Etape 3 : import du PDF fiche train (secours) — optionnel */}
+        {/* Etape 3 : import du PDF fiche train (masquée en mode LTV seul) */}
+        {!ltvOnly && (
         <div>
           <div className="text-xs font-semibold opacity-70 mb-1">
             3 — PDF fiche train <span className="opacity-60 font-normal">(secours, optionnel)</span>
@@ -265,6 +277,7 @@ export default function Mode2026Modal({
             </div>
           )}
         </div>
+        )}
 
         {/* Bouton Demarrer */}
         <button type="button"
@@ -276,7 +289,7 @@ export default function Mode2026Modal({
             color: canConfirm ? '#ffffff' : fg,
           }}
         >
-          Demarrer en mode 2026
+          {ltvOnly ? 'Démarrer en mode LTV seul' : 'Demarrer en mode 2026'}
         </button>
       </div>
     </div>

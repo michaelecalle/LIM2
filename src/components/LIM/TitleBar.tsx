@@ -129,7 +129,9 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const [standbyMode, setStandbyMode] = useState(false)
   const [pdfMode, setPdfMode] = useState<'blue' | 'green' | 'red'>('blue')
 
-  type StartupMode = 'mixed' | 'manual' | 'pdf' | '2026'
+  // 'ltv' = mode « LTV seul » : import du seul PDF LTV, pas de train ni de parcours,
+  // affichage du seul bloc LTV (Infos + fiche train masqués). Fichier canonique partagé.
+  type StartupMode = 'mixed' | 'manual' | 'pdf' | '2026' | 'ltv'
 
   const STARTUP_MODE_STORAGE_KEY = 'lim:startup-mode-default'
 
@@ -137,7 +139,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     try {
       const value = localStorage.getItem(STARTUP_MODE_STORAGE_KEY)
 
-      return value === 'mixed' || value === 'manual' || value === 'pdf' || value === '2026'
+      return value === 'mixed' || value === 'manual' || value === 'pdf' || value === '2026' || value === 'ltv'
         ? value
         : null
     } catch {
@@ -168,6 +170,9 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
 
     // Mode 2026 : une seule source LTV → pas de bascule, pas de flèches dans le bandeau.
     if (mode === '2026') return ['pdf-ltv']
+
+    // Mode « LTV seul » : même source unique que le 2026.
+    if (mode === 'ltv') return ['pdf-ltv']
 
     return []
   }
@@ -1210,6 +1215,63 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       // partager avec l’éditeur. Fire-and-forget, non bloquant.
       void uploadNormalizedLtvToGitHub(ltvData)
     }
+  }
+
+  // Démarrage « LTV seul » : pas de train ni de parcours. On charge les LTV du
+  // segment Barcelone→Perpignan (PK ≥ 616, plage FIXE — pas le parcours d'un train)
+  // et on n'affiche que le bloc LTV (App masque Infos + fiche train via lim:ltv-only).
+  const handleLtvOnlyConfirm = (
+    ltvData: NormalizedLtvFile | null,
+    ltvPdfFile: File | null
+  ) => {
+    setMode2026Open(false)
+    setMode2026LtvOnly(false)
+
+    ltvPdfDataRef.current = ltvData
+    currentLtvPdfFileRef.current = ltvPdfFile
+    startupLaunchModeRef.current = 'ltv'
+    setActiveStartupMode('ltv')
+
+    // Fichier canonique partagé (comme le mode 2026 / le viewer). Fire-and-forget.
+    if (ltvData) void uploadNormalizedLtvToGitHub(ltvData)
+
+    const ltvOnlyRange: ManualFtRoutePkRange = {
+      trainNumber: 0,
+      firstPk: 616,
+      lastPk: Number.POSITIVE_INFINITY,
+      minPk: 616,
+      maxPk: Number.POSITIVE_INFINITY,
+      source: 'ltv-only',
+    }
+    const result = loadPdfLtvRows(ltvData ?? {}, ltvOnlyRange)
+    const ltvMeta = { ...result.meta, source: 'pdf-ltv' as const }
+    currentLtvSourceRef.current = 'pdf-ltv'
+
+    window.dispatchEvent(
+      new CustomEvent('ltv:parsed', {
+        detail: {
+          mode: result.rows.length > 0 ? 'DISPLAY_DIRECT' : 'NO_LTV',
+          rows: result.rows,
+          source: 'ltv_only',
+          ltvSource: 'pdf-ltv',
+          availableSources: getAvailableLtvSourcesForMode('ltv'),
+          trainNumber: null,
+          meta: ltvMeta,
+          fetchedAt: ltvMeta.fetchedAt,
+          sourceUpdatedAt: ltvMeta.sourceUpdatedAt,
+        },
+      })
+    )
+
+    // Affiche la zone verte + active le flag « LTV seul » (App masque Infos + FT).
+    window.dispatchEvent(new CustomEvent('lim:ltv-only', { detail: { enabled: true } }))
+    setPdfMode('green')
+
+    logTestEvent('ui:ltv-only:start', {
+      source: 'ltv_only_modal',
+      rowsCount: result.rows.length,
+      hasPdf: ltvPdfFile != null,
+    })
   }
 
   const buildCurrentZipBundle = async (): Promise<{ blob: Blob; filename: string } | null> => {
@@ -2387,6 +2449,8 @@ ${coords}
 
   // ----- MODE 2026 -----
   const [mode2026Open, setMode2026Open] = useState(false)
+  // Variante « LTV seul » de la modale mode 2026 (import PDF LTV uniquement).
+  const [mode2026LtvOnly, setMode2026LtvOnly] = useState(false)
   const ltvPdfDataRef = useRef<NormalizedLtvFile | null>(null)
   // Mode 2026 en contexte DÉMO : train verrouillé + PDF issus du ZIP
   const [mode2026LockedTrain, setMode2026LockedTrain] = useState<string | null>(null)
@@ -2837,6 +2901,12 @@ ${coords}
     }
 
     if (mode === '2026') {
+      setMode2026Open(true)
+      return
+    }
+
+    if (mode === 'ltv') {
+      setMode2026LtvOnly(true)
       setMode2026Open(true)
       return
     }
@@ -5108,6 +5178,33 @@ style={{
                   </div>
                 </div>
               </label>
+
+              <label className="block rounded-xl border p-3 cursor-pointer"
+style={{
+  backgroundColor: dark ? "#27272a" : "#fafafa",
+  color: dark ? "#f4f4f5" : "#18181b",
+  borderColor: dark ? "#52525b" : "#e4e4e7",
+}}>
+                <div className="flex items-start gap-3">
+                  <input
+                    type="radio"
+                    name="startup-mode"
+                    checked={startupModeChoice === 'ltv'}
+                    onChange={() => setStartupModeChoice('ltv')}
+                    className="mt-1 h-4 w-4 cursor-pointer accent-blue-600"
+                  />
+                  <div>
+                    <div className="text-sm font-semibold">
+                      Mode LTV seul <span className="opacity-70">(consultation)</span>
+                    </div>
+<div className="text-xs opacity-75 mt-1">
+  Le conducteur importe uniquement le PDF LTV — pas de train ni de fiche train.
+  <br />
+  Seul le tableau des LTV du parcours (PK ≥ 616) est affiché.
+</div>
+                  </div>
+                </div>
+              </label>
             </div>
 
             <div className="flex justify-end gap-2 pt-4">
@@ -5646,7 +5743,9 @@ setAutoScrollStartedOnce(next)
                       ? '🧩'
                       : storedStartupMode === '2026'
                         ? '📋'
-                        : null
+                        : storedStartupMode === 'ltv'
+                          ? 'LTV'
+                          : null
 
               const startupModeTitle =
                 storedStartupMode === 'manual'
@@ -5657,12 +5756,16 @@ setAutoScrollStartedOnce(next)
                       ? 'Mode de démarrage sélectionné : mixte'
                       : storedStartupMode === '2026'
                         ? 'Mode de démarrage sélectionné : 2026'
-                        : 'Aucun mode de démarrage enregistré'
+                        : storedStartupMode === 'ltv'
+                          ? 'Mode de démarrage sélectionné : LTV seul'
+                          : 'Aucun mode de démarrage enregistré'
 
               const startupModeIconClassName =
                 storedStartupMode === 'pdf'
                   ? 'h-8 w-8 rounded-md bg-red-600 text-white flex items-center justify-center text-[10px] font-bold select-none cursor-pointer'
-                  : 'h-8 w-8 rounded-md bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100 flex items-center justify-center text-sm select-none cursor-pointer'
+                  : storedStartupMode === 'ltv'
+                    ? 'h-8 w-8 rounded-md bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold select-none cursor-pointer'
+                    : 'h-8 w-8 rounded-md bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100 flex items-center justify-center text-sm select-none cursor-pointer'
 
               const openStartupModeChoice = () => {
                 if (simulationEnabled) {
@@ -6318,6 +6421,7 @@ setAutoScrollStartedOnce(next)
               preselectTrainNumber={sdmTrain?.trainNumber ?? null}
               onClose={() => {
                 setMode2026Open(false)
+                setMode2026LtvOnly(false)
                 // Fermer sans démarrer = annuler la démo armée (retour état normal)
                 demoCtxRef.current = null
                 setDemoArmed(false)
@@ -6325,6 +6429,8 @@ setAutoScrollStartedOnce(next)
                 setMode2026DemoPdfs([])
               }}
               onConfirm={handleMode2026Confirm}
+              ltvOnly={mode2026LtvOnly}
+              onConfirmLtvOnly={handleLtvOnlyConfirm}
               lockedTrainNumber={mode2026LockedTrain}
               demoPdfFiles={mode2026DemoPdfs.length > 0 ? mode2026DemoPdfs : undefined}
               onSelectSdm={() => setSdmOpen(true)}
