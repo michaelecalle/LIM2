@@ -2527,6 +2527,23 @@ ${coords}
   const [swUpdateAvailable, setSwUpdateAvailable] = useState(false)
   const swRegRef = useRef<ServiceWorkerRegistration | null>(null)
 
+  // Attend qu'un service worker en cours d'installation atteigne un état terminal
+  // ('installed' = waiting, 'activated' ou 'redundant'). Garde-fou 4 s pour ne jamais
+  // bloquer si aucune nouvelle version ne s'installe.
+  const waitForSwInstalled = (nw: ServiceWorker) => new Promise<void>((resolve) => {
+    const isDone = () => nw.state === 'installed' || nw.state === 'activated' || nw.state === 'redundant'
+    if (isDone()) { resolve(); return }
+    const to = window.setTimeout(() => { nw.removeEventListener('statechange', on); resolve() }, 4000)
+    const on = () => {
+      if (isDone()) {
+        window.clearTimeout(to)
+        nw.removeEventListener('statechange', on)
+        resolve()
+      }
+    }
+    nw.addEventListener('statechange', on)
+  })
+
   const applySwUpdate = async () => {
     try {
       if (!('serviceWorker' in navigator)) return
@@ -2557,6 +2574,11 @@ ${coords}
 
         if (reg) {
           await reg.update()
+
+          // Laisser le nouveau SW finir de s'installer AVANT de tester reg.waiting :
+          // juste après update() il est encore 'installing' (reg.waiting = null), d'où
+          // l'ancien bug qui obligeait à appuyer plusieurs fois pour activer la maj.
+          if (reg.installing) await waitForSwInstalled(reg.installing)
 
           if (reg.waiting) {
             await applySwUpdate()
