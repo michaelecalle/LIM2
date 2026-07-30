@@ -942,18 +942,28 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
         ? new Date(pdfFile.lastModified)
         : new Date()
 
-    const zipBlob = await buildZipBlob([
-      {
-        filename: logFilename,
-        blob: builtLog.blob,
-        modifiedAt: new Date(),
-      },
-      {
-        filename: pdfFilename,
-        blob: pdfFile,
-        modifiedAt: pdfModifiedAt,
-      },
-    ])
+    const zipEntries: ZipEntryInput[] = [
+      { filename: logFilename, blob: builtLog.blob, modifiedAt: new Date() },
+      { filename: pdfFilename, blob: pdfFile, modifiedAt: pdfModifiedAt },
+    ]
+
+    // PDF LTV importé (mode 2026) — inclus lui aussi, nom rendu distinct si collision.
+    const ltvPdfFile = currentLtvPdfFileRef.current
+    if (ltvPdfFile) {
+      const used = new Set(zipEntries.map((e) => e.filename))
+      let ltvFilename = sanitizeArchiveEntryFilename(ltvPdfFile.name)
+      if (used.has(ltvFilename)) ltvFilename = `LTV_${ltvFilename}`
+      zipEntries.push({
+        filename: ltvFilename,
+        blob: ltvPdfFile,
+        modifiedAt:
+          typeof ltvPdfFile.lastModified === 'number' && Number.isFinite(ltvPdfFile.lastModified)
+            ? new Date(ltvPdfFile.lastModified)
+            : new Date(),
+      })
+    }
+
+    const zipBlob = await buildZipBlob(zipEntries)
 
     try {
       const navAny = typeof navigator !== 'undefined' ? (navigator as any) : null
@@ -1133,11 +1143,13 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const handleMode2026Confirm = (
     train: ManualTrainOption,
     ltvData: NormalizedLtvFile | null,
-    _ltvPdfFile: File | null,
+    ltvPdfFile: File | null,
     ftPdfFile: File | null
   ) => {
     setMode2026Open(false)
     ltvPdfDataRef.current = ltvData
+    // Conserver le PDF LTV importé pour l'inclure dans le ZIP au STOP.
+    currentLtvPdfFileRef.current = ltvPdfFile
 
     const demoCtx = demoCtxRef.current  // non-null si on démarre depuis le mode démo
 
@@ -1191,23 +1203,39 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     const builtLog = buildTestLogFile()
     if (!builtLog.ok || !builtLog.blob) return null
 
-    const pdfFile = currentPdfFileRef.current
     const naming = getCurrentTestExportNaming()
     const logFilename = naming?.logFilename ?? builtLog.filename ?? 'LIM_testlog.log'
     const zipFilename = naming?.zipFilename ?? 'LIM_export_test.zip'
 
-    if (!pdfFile) return { blob: builtLog.blob, filename: logFilename }
-
-    const pdfFilename = naming?.pdfFilename ?? sanitizeArchiveEntryFilename(pdfFile.name)
-    const pdfModifiedAt =
-      typeof pdfFile.lastModified === 'number' && Number.isFinite(pdfFile.lastModified)
-        ? new Date(pdfFile.lastModified)
+    const modAt = (f: File): Date =>
+      typeof f.lastModified === 'number' && Number.isFinite(f.lastModified)
+        ? new Date(f.lastModified)
         : new Date()
 
-    const zipBlob = await buildZipBlob([
+    const entries: ZipEntryInput[] = [
       { filename: logFilename, blob: builtLog.blob, modifiedAt: new Date() },
-      { filename: pdfFilename, blob: pdfFile, modifiedAt: pdfModifiedAt },
-    ])
+    ]
+
+    // PDF fiche train importé (secours).
+    const pdfFile = currentPdfFileRef.current
+    if (pdfFile) {
+      const pdfFilename = naming?.pdfFilename ?? sanitizeArchiveEntryFilename(pdfFile.name)
+      entries.push({ filename: pdfFilename, blob: pdfFile, modifiedAt: modAt(pdfFile) })
+    }
+
+    // PDF LTV importé (mode 2026) — inclus lui aussi. Nom rendu distinct si collision.
+    const ltvPdfFile = currentLtvPdfFileRef.current
+    if (ltvPdfFile) {
+      const used = new Set(entries.map((e) => e.filename))
+      let ltvFilename = sanitizeArchiveEntryFilename(ltvPdfFile.name)
+      if (used.has(ltvFilename)) ltvFilename = `LTV_${ltvFilename}`
+      entries.push({ filename: ltvFilename, blob: ltvPdfFile, modifiedAt: modAt(ltvPdfFile) })
+    }
+
+    // Aucun PDF → on renvoie juste le log (pas de ZIP), comme avant.
+    if (entries.length === 1) return { blob: builtLog.blob, filename: logFilename }
+
+    const zipBlob = await buildZipBlob(entries)
     return { blob: zipBlob, filename: zipFilename }
   }
 
@@ -2731,6 +2759,9 @@ ${coords}
   // ----- IMPORT PDF -----
   const inputRef = useRef<HTMLInputElement>(null)
   const currentPdfFileRef = useRef<File | null>(null)
+  // PDF LTV importé (mode 2026) — conservé pour être inclus dans le ZIP au STOP,
+  // au même titre que le PDF fiche train. Remis à null aux mêmes points de reset.
+  const currentLtvPdfFileRef = useRef<File | null>(null)
   const currentPdfIdRef = useRef<string | null>(null)
   const currentPdfReplayKeyRef = useRef<string | null>(null)
 
@@ -2924,6 +2955,7 @@ ${coords}
 
     if (!options.keepPdf) {
       currentPdfFileRef.current = null
+      currentLtvPdfFileRef.current = null
       currentPdfIdRef.current = null
       currentPdfReplayKeyRef.current = null
     }
@@ -3815,6 +3847,7 @@ ${coords}
       })
 
       currentPdfFileRef.current = file
+      currentLtvPdfFileRef.current = null
       currentPdfIdRef.current = pdfId
       currentPdfReplayKeyRef.current = replayKey
 
@@ -4646,6 +4679,7 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
     setTrainComposition(undefined)
 
     currentPdfFileRef.current = null
+    currentLtvPdfFileRef.current = null
     currentPdfIdRef.current = null
     currentPdfReplayKeyRef.current = null
 
@@ -5810,6 +5844,7 @@ setAutoScrollStartedOnce(next)
                   setPdfLoading(false)
                   stopPdfLoadingGuard()
                   currentPdfFileRef.current = null
+                  currentLtvPdfFileRef.current = null
                   currentPdfIdRef.current = null
                   currentPdfReplayKeyRef.current = null
                   window.dispatchEvent(new CustomEvent('lim:clear-pdf'))
