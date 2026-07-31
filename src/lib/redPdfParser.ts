@@ -28,23 +28,30 @@ async function renderPageToDataUrl(page: PDFPageProxy, scale = 1.5): Promise<str
   return canvas.toDataURL("image/png")
 }
 
+// Rend un PDF (octets) en une image (dataURL) par page. Réutilisable hors mode rouge
+// (ex. affichage du LTV en mode secours, qui ne peut PAS passer par une iframe sur iOS).
+export async function renderPdfDataToImages(data: ArrayBuffer, scale = 1.6): Promise<string[]> {
+  const loadingTask = pdfjsLib.getDocument({ data })
+  const pdf: PDFDocumentProxy = await Promise.race([
+    loadingTask.promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => { loadingTask.destroy(); reject(new Error('PDF worker timeout')) }, 15_000)
+    ),
+  ])
+
+  const images: string[] = []
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const dataUrl = await renderPageToDataUrl(page, scale)
+    if (dataUrl) images.push(dataUrl)
+  }
+  return images
+}
+
 async function handleRedPdf(file: File) {
   try {
     const buf = await file.arrayBuffer()
-    const loadingTask = pdfjsLib.getDocument({ data: buf })
-    const pdf: PDFDocumentProxy = await Promise.race([
-      loadingTask.promise,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => { loadingTask.destroy(); reject(new Error('PDF worker timeout')) }, 15_000)
-      ),
-    ])
-
-    const images: string[] = []
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const dataUrl = await renderPageToDataUrl(page, 1.6)
-      if (dataUrl) images.push(dataUrl)
-    }
+    const images = await renderPdfDataToImages(buf, 1.6)
 
     // on garde la compat avec ce qu’écoute App.tsx
     const evt = new CustomEvent("lim:pdf-page-images", {

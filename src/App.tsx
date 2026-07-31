@@ -61,7 +61,8 @@ import FT from "./components/LIM/FT"
 import FTHorizontal from "./components/LIM/FTHorizontal"
 import ReplayOverlay from "./components/Replay/ReplayOverlay"
 import { APP_VERSION } from "./components/version"
-import { fetchLtvSourcePdfBlobUrl } from "./lib/managedDocs"
+import { fetchLtvSourcePdfBytes } from "./lib/managedDocs"
+import { renderPdfDataToImages } from "./lib/redPdfParser"
 
 /**
  * App.tsx — version propre de l'écran LIM.
@@ -153,13 +154,14 @@ export default function App() {
   const [pdfPageImages, setPdfPageImages] = React.useState<string[]>([])
 
   // Mode secours (rouge) — bascule fiche train ↔ LTV.
-  // ltvSessionUrl : PDF LTV importé dans la session courante (le plus frais).
-  // ltvRemoteUrl  : PDF LTV le plus récent récupéré depuis lim-logs (repli, y compris
-  //                 si aucun LTV n'a été importé dans la session).
+  // Le LTV est RENDU en images de pages (comme la fiche train), jamais en iframe :
+  // sur iOS une iframe PDF n'affiche que le haut de la 1re page et ne défile pas.
+  // Priorité : le LTV importé dans la session (le plus frais) sinon celui de lim-logs
+  // (repli, y compris si aucun LTV n'a été importé dans la session).
   const [secoursDoc, setSecoursDoc] = React.useState<"ft" | "ltv">("ft")
-  const [ltvSessionUrl, setLtvSessionUrl] = React.useState<string | null>(null)
-  const [ltvRemoteUrl, setLtvRemoteUrl] = React.useState<string | null>(null)
-  const ltvEffectiveUrl = ltvSessionUrl ?? ltvRemoteUrl
+  const [ltvPageImages, setLtvPageImages] = React.useState<string[]>([])
+  const ltvSessionLoadedRef = React.useRef(false)
+  const ltvAvailable = ltvPageImages.length > 0
   const secoursTouchXRef = React.useRef<number | null>(null)
 
   const onSecoursTouchStart = (e: React.TouchEvent) => {
@@ -172,7 +174,7 @@ export default function App() {
     const dx = (e.changedTouches[0]?.clientX ?? x0) - x0
     if (Math.abs(dx) < 60) return // seuil anti-faux-positif
     // glisser vers la gauche → LTV ; vers la droite → fiche train.
-    if (ltvEffectiveUrl) setSecoursDoc(dx < 0 ? "ltv" : "ft")
+    if (ltvAvailable) setSecoursDoc(dx < 0 ? "ltv" : "ft")
   }
 
   // ============================================================
@@ -521,33 +523,41 @@ export default function App() {
   }, [])
 
   // Mode secours — PDF source LTV importé dans la session courante (le plus frais).
+  // On le rend en images de pages (défilables, compatibles iOS).
   React.useEffect(() => {
     const handler = (e: Event) => {
       const file = (e as CustomEvent).detail?.file as File | undefined
-      if (file) {
-        setLtvSessionUrl((old) => {
-          if (old) URL.revokeObjectURL(old)
-          return URL.createObjectURL(file)
+      if (!file) return
+      file.arrayBuffer()
+        .then((buf) => renderPdfDataToImages(buf))
+        .then((imgs) => {
+          if (imgs.length === 0) return
+          ltvSessionLoadedRef.current = true // la session prime sur le repli distant
+          setLtvPageImages(imgs)
         })
-      }
+        .catch((err) => console.warn("[App] rendu LTV (session) échoué", err))
     }
     window.addEventListener("lim:ltv-pdf-raw", handler as EventListener)
     return () => window.removeEventListener("lim:ltv-pdf-raw", handler as EventListener)
   }, [])
 
   // Mode secours — à l'entrée en mode rouge, si aucun LTV de session, récupérer le
-  // PDF source LTV le plus récent depuis lim-logs (repli, y compris hors session).
+  // PDF source LTV le plus récent depuis lim-logs (repli, y compris hors session)
+  // et le rendre en images.
   React.useEffect(() => {
     if (pdfMode !== "red") return
-    if (ltvSessionUrl || ltvRemoteUrl) return
+    if (ltvSessionLoadedRef.current || ltvPageImages.length > 0) return
     let cancelled = false
-    fetchLtvSourcePdfBlobUrl().then((u) => {
-      if (!u) return
-      if (cancelled) { URL.revokeObjectURL(u); return }
-      setLtvRemoteUrl(u)
-    })
+    fetchLtvSourcePdfBytes()
+      .then((buf) => (buf ? renderPdfDataToImages(buf) : []))
+      .then((imgs) => {
+        if (cancelled || imgs.length === 0) return
+        if (ltvSessionLoadedRef.current) return // une session est arrivée entre-temps
+        setLtvPageImages(imgs)
+      })
+      .catch((err) => console.warn("[App] rendu LTV (lim-logs) échoué", err))
     return () => { cancelled = true }
-  }, [pdfMode, ltvSessionUrl, ltvRemoteUrl])
+  }, [pdfMode, ltvPageImages.length])
 
   // changement de mode (blue/green/red)
   React.useEffect(() => {
@@ -749,7 +759,7 @@ export default function App() {
             L'entête n'apparaît que si un PDF LTV est disponible. */}
         {pdfMode === "red" && (
           <div className="mt-3 flex-1 min-h-0 flex flex-col">
-            {ltvEffectiveUrl && (
+            {ltvAvailable && (
               <div className="mb-2 flex items-center justify-center gap-2 select-none">
                 <button
                   type="button"
@@ -794,12 +804,25 @@ export default function App() {
                     : "h-full rounded-2xl bg-zinc-100 overflow-auto"
                 }
               >
-                {secoursDoc === "ltv" && ltvEffectiveUrl ? (
-                  <iframe
-                    src={ltvEffectiveUrl}
-                    className="w-full h-full rounded-2xl"
-                    title="LTV importé"
-                  />
+                {secoursDoc === "ltv" && ltvAvailable ? (
+                  <div className="flex flex-col gap-4 p-4">
+                    {ltvPageImages.map((src, idx) => (
+                      <img
+                        key={idx}
+                        src={src}
+                        alt={`Page LTV ${idx + 1}`}
+                        className="w-full h-auto rounded-lg shadow"
+                        style={
+                          isDark
+                            ? {
+                                filter: "invert(1) hue-rotate(180deg)",
+                                backgroundColor: "black",
+                              }
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </div>
                 ) : pdfPageImages.length > 0 ? (
                   <div className="flex flex-col gap-4 p-4">
                     {pdfPageImages.map((src, idx) => (

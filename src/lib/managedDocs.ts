@@ -40,12 +40,12 @@ export async function fetchManagedDocBlobUrl(docKey: string): Promise<string | n
 }
 
 /**
- * Charge le PDF SOURCE LTV le plus récent (déposé dans lim-logs à côté du normalisé,
- * par LIM / l'éditeur / le visualisateur) et renvoie une object-URL (blob PDF).
- * Renvoie null si indisponible (pas encore déposé, pas de token, réseau).
- * ⚠️ L'appelant doit révoquer l'URL (URL.revokeObjectURL) au démontage.
+ * Charge les OCTETS du PDF SOURCE LTV le plus récent (déposé dans lim-logs à côté du
+ * normalisé, par LIM / l'éditeur / le visualisateur). Renvoie null si indisponible.
+ * On renvoie les octets (et non une iframe/URL) car le mode secours doit RENDRE le PDF
+ * en images : une iframe PDF n'affiche que le haut de la 1re page sur iOS.
  */
-export async function fetchLtvSourcePdfBlobUrl(): Promise<string | null> {
+export async function fetchLtvSourcePdfBytes(): Promise<ArrayBuffer | null> {
   const token = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined
   if (!token) return null
   const owner = (import.meta.env.VITE_GITHUB_LOG_OWNER as string | undefined) ?? 'michaelecalle'
@@ -61,10 +61,7 @@ export async function fetchLtvSourcePdfBlobUrl(): Promise<string | null> {
       }
     )
     if (!res.ok) return null
-    const blob = await res.blob()
-    const pdfBlob =
-      blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' })
-    return URL.createObjectURL(pdfBlob)
+    return await res.arrayBuffer()
   } catch {
     return null
   }
