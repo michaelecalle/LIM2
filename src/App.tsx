@@ -61,6 +61,7 @@ import FT from "./components/LIM/FT"
 import FTHorizontal from "./components/LIM/FTHorizontal"
 import ReplayOverlay from "./components/Replay/ReplayOverlay"
 import { APP_VERSION } from "./components/version"
+import { fetchLtvSourcePdfBlobUrl } from "./lib/managedDocs"
 
 /**
  * App.tsx — version propre de l'écran LIM.
@@ -150,6 +151,29 @@ export default function App() {
   const [pdfUrl, setPdfUrl] = React.useState<string | null>(null)
   const [rawPdfFile, setRawPdfFile] = React.useState<File | null>(null)
   const [pdfPageImages, setPdfPageImages] = React.useState<string[]>([])
+
+  // Mode secours (rouge) — bascule fiche train ↔ LTV.
+  // ltvSessionUrl : PDF LTV importé dans la session courante (le plus frais).
+  // ltvRemoteUrl  : PDF LTV le plus récent récupéré depuis lim-logs (repli, y compris
+  //                 si aucun LTV n'a été importé dans la session).
+  const [secoursDoc, setSecoursDoc] = React.useState<"ft" | "ltv">("ft")
+  const [ltvSessionUrl, setLtvSessionUrl] = React.useState<string | null>(null)
+  const [ltvRemoteUrl, setLtvRemoteUrl] = React.useState<string | null>(null)
+  const ltvEffectiveUrl = ltvSessionUrl ?? ltvRemoteUrl
+  const secoursTouchXRef = React.useRef<number | null>(null)
+
+  const onSecoursTouchStart = (e: React.TouchEvent) => {
+    secoursTouchXRef.current = e.changedTouches[0]?.clientX ?? null
+  }
+  const onSecoursTouchEnd = (e: React.TouchEvent) => {
+    const x0 = secoursTouchXRef.current
+    secoursTouchXRef.current = null
+    if (x0 == null) return
+    const dx = (e.changedTouches[0]?.clientX ?? x0) - x0
+    if (Math.abs(dx) < 60) return // seuil anti-faux-positif
+    // glisser vers la gauche → LTV ; vers la droite → fiche train.
+    if (ltvEffectiveUrl) setSecoursDoc(dx < 0 ? "ltv" : "ft")
+  }
 
   // ============================================================
   // FT VIEW MODE + OVERLAY FT FRANCE (opaque)
@@ -496,6 +520,35 @@ export default function App() {
     return () => window.removeEventListener("lim:pdf-raw", handler as EventListener)
   }, [])
 
+  // Mode secours — PDF source LTV importé dans la session courante (le plus frais).
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const file = (e as CustomEvent).detail?.file as File | undefined
+      if (file) {
+        setLtvSessionUrl((old) => {
+          if (old) URL.revokeObjectURL(old)
+          return URL.createObjectURL(file)
+        })
+      }
+    }
+    window.addEventListener("lim:ltv-pdf-raw", handler as EventListener)
+    return () => window.removeEventListener("lim:ltv-pdf-raw", handler as EventListener)
+  }, [])
+
+  // Mode secours — à l'entrée en mode rouge, si aucun LTV de session, récupérer le
+  // PDF source LTV le plus récent depuis lim-logs (repli, y compris hors session).
+  React.useEffect(() => {
+    if (pdfMode !== "red") return
+    if (ltvSessionUrl || ltvRemoteUrl) return
+    let cancelled = false
+    fetchLtvSourcePdfBlobUrl().then((u) => {
+      if (!u) return
+      if (cancelled) { URL.revokeObjectURL(u); return }
+      setLtvRemoteUrl(u)
+    })
+    return () => { cancelled = true }
+  }, [pdfMode, ltvSessionUrl, ltvRemoteUrl])
+
   // changement de mode (blue/green/red)
   React.useEffect(() => {
     const handler = (e: Event) => {
@@ -691,46 +744,93 @@ export default function App() {
           </div>
         )}
 
-        {/* MODE ROUGE : rendu dédié */}
+        {/* MODE ROUGE : rendu dédié (secours) — fiche train OU LTV.
+            Bascule par boutons dans l'entête ET par glissement horizontal.
+            L'entête n'apparaît que si un PDF LTV est disponible. */}
         {pdfMode === "red" && (
-          <div className="mt-3 flex-1 min-h-0">
+          <div className="mt-3 flex-1 min-h-0 flex flex-col">
+            {ltvEffectiveUrl && (
+              <div className="mb-2 flex items-center justify-center gap-2 select-none">
+                <button
+                  type="button"
+                  onClick={() => setSecoursDoc("ft")}
+                  className={
+                    "px-4 py-1.5 rounded-full text-sm font-semibold transition-colors " +
+                    (secoursDoc === "ft"
+                      ? "bg-sky-600 text-white"
+                      : isDark
+                        ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                        : "bg-zinc-200 text-zinc-700 hover:bg-zinc-300")
+                  }
+                >
+                  Fiche train
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSecoursDoc("ltv")}
+                  className={
+                    "px-4 py-1.5 rounded-full text-sm font-semibold transition-colors " +
+                    (secoursDoc === "ltv"
+                      ? "bg-sky-600 text-white"
+                      : isDark
+                        ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                        : "bg-zinc-200 text-zinc-700 hover:bg-zinc-300")
+                  }
+                >
+                  LTV
+                </button>
+              </div>
+            )}
+
             <div
-              className={
-                isDark
-                  ? "h-full rounded-2xl bg-black/80 overflow-auto"
-                  : "h-full rounded-2xl bg-zinc-100 overflow-auto"
-              }
+              className="flex-1 min-h-0"
+              onTouchStart={onSecoursTouchStart}
+              onTouchEnd={onSecoursTouchEnd}
             >
-              {pdfPageImages.length > 0 ? (
-                <div className="flex flex-col gap-4 p-4">
-                  {pdfPageImages.map((src, idx) => (
-                    <img
-                      key={idx}
-                      src={src}
-                      alt={`Page PDF ${idx + 1}`}
-                      className="w-full h-auto rounded-lg shadow"
-                      style={
-                        isDark
-                          ? {
-                              filter: "invert(1) hue-rotate(180deg)",
-                              backgroundColor: "black",
-                            }
-                          : undefined
-                      }
-                    />
-                  ))}
-                </div>
-              ) : pdfUrl ? (
-                <iframe
-                  src={pdfUrl}
-                  className="w-full h-full rounded-2xl"
-                  title="PDF importé"
-                />
-              ) : (
-                <div className="h-full flex items-center justify-center text-sm text-zinc-400 dark:text-zinc-500">
-                  Aucun PDF chargé. Importez un PDF puis passez en mode secours.
-                </div>
-              )}
+              <div
+                className={
+                  isDark
+                    ? "h-full rounded-2xl bg-black/80 overflow-auto"
+                    : "h-full rounded-2xl bg-zinc-100 overflow-auto"
+                }
+              >
+                {secoursDoc === "ltv" && ltvEffectiveUrl ? (
+                  <iframe
+                    src={ltvEffectiveUrl}
+                    className="w-full h-full rounded-2xl"
+                    title="LTV importé"
+                  />
+                ) : pdfPageImages.length > 0 ? (
+                  <div className="flex flex-col gap-4 p-4">
+                    {pdfPageImages.map((src, idx) => (
+                      <img
+                        key={idx}
+                        src={src}
+                        alt={`Page PDF ${idx + 1}`}
+                        className="w-full h-auto rounded-lg shadow"
+                        style={
+                          isDark
+                            ? {
+                                filter: "invert(1) hue-rotate(180deg)",
+                                backgroundColor: "black",
+                              }
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </div>
+                ) : pdfUrl ? (
+                  <iframe
+                    src={pdfUrl}
+                    className="w-full h-full rounded-2xl"
+                    title="PDF importé"
+                  />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-sm text-zinc-400 dark:text-zinc-500">
+                    Aucun PDF chargé. Importez un PDF puis passez en mode secours.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

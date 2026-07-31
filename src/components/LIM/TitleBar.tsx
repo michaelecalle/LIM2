@@ -1120,6 +1120,59 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     }
   }
 
+  // Upload (arrière-plan, silencieux, NON bloquant) du PDF SOURCE LTV vers lim-logs,
+  // à côté du normalisé (ltv-normalized/current.pdf). Permet au mode secours d'afficher
+  // le LTV même s'il n'a pas été importé dans la session courante. Jamais en démo.
+  const uploadLtvSourcePdfToGitHub = async (pdf: File): Promise<void> => {
+    const token = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined
+    if (!token) return
+    const owner = (import.meta.env.VITE_GITHUB_LOG_OWNER as string | undefined) ?? 'michaelecalle'
+    const repo = (import.meta.env.VITE_GITHUB_LOG_REPO as string | undefined) ?? 'lim-logs'
+    const path = 'ltv-normalized/current.pdf'
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`
+
+    // Binaire → base64 (même style que utf8ToBase64 ci-dessus).
+    const bytesToBase64 = (bytes: Uint8Array) => {
+      let bin = ''
+      bytes.forEach(b => (bin += String.fromCharCode(b)))
+      return btoa(bin)
+    }
+
+    try {
+      const content = bytesToBase64(new Uint8Array(await pdf.arrayBuffer()))
+
+      // sha de l'existant (pour écraser) + dédup simple par taille.
+      let sha: string | undefined
+      try {
+        const getRes = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+        if (getRes.ok) {
+          const existing = await getRes.json()
+          sha = existing.sha
+          if (typeof existing.size === 'number' && existing.size === pdf.size) {
+            console.log('[ltv-upload] PDF source LTV identique (taille) → upload ignoré')
+            return
+          }
+        }
+      } catch {}
+
+      const body: Record<string, unknown> = {
+        message: `ltv-source-pdf: ${new Date().toISOString()}`,
+        content,
+      }
+      if (sha) body.sha = sha
+
+      const putRes = await fetch(url, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (putRes.ok) console.log('[ltv-upload] PDF source LTV partagé (secours)')
+      else console.warn('[ltv-upload] échec upload PDF', putRes.status)
+    } catch (e) {
+      console.warn('[ltv-upload] erreur PDF (non bloquant)', e)
+    }
+  }
+
   // Construit le ZIP (log + PDF) sans l’exporter ni l’uploader.
   // Traitement du ZIP de demo : parse le log, demarre le mode mixte sans GPS reel
   const handleDemoLoaded = (data: DemoData) => {
@@ -1168,6 +1221,9 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     ltvPdfDataRef.current = ltvData
     // Conserver le PDF LTV importé pour l'inclure dans le ZIP au STOP.
     currentLtvPdfFileRef.current = ltvPdfFile
+    // Rendre le PDF source LTV disponible au mode secours pour la session courante.
+    if (ltvPdfFile)
+      window.dispatchEvent(new CustomEvent('lim:ltv-pdf-raw', { detail: { file: ltvPdfFile } }))
 
     const demoCtx = demoCtxRef.current  // non-null si on démarre depuis le mode démo
 
@@ -1214,6 +1270,9 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       // Usage réel uniquement (PAS en démo) et seulement s’il y a un normalisé LTV :
       // partager avec l’éditeur. Fire-and-forget, non bloquant.
       void uploadNormalizedLtvToGitHub(ltvData)
+      // Déposer aussi le PDF source LTV pour l'affichage en mode secours.
+      const ltvPdf = currentLtvPdfFileRef.current
+      if (ltvPdf) void uploadLtvSourcePdfToGitHub(ltvPdf)
     }
   }
 
@@ -1231,9 +1290,14 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     currentLtvPdfFileRef.current = ltvPdfFile
     startupLaunchModeRef.current = 'ltv'
     setActiveStartupMode('ltv')
+    // Rendre le PDF source LTV disponible au mode secours pour la session courante.
+    if (ltvPdfFile)
+      window.dispatchEvent(new CustomEvent('lim:ltv-pdf-raw', { detail: { file: ltvPdfFile } }))
 
     // Fichier canonique partagé (comme le mode 2026 / le viewer). Fire-and-forget.
     if (ltvData) void uploadNormalizedLtvToGitHub(ltvData)
+    // Déposer aussi le PDF source LTV pour l'affichage en mode secours.
+    if (ltvPdfFile) void uploadLtvSourcePdfToGitHub(ltvPdfFile)
 
     const ltvOnlyRange: ManualFtRoutePkRange = {
       trainNumber: 0,
@@ -5398,7 +5462,9 @@ style={{
             </span>
           )}
 
-          {pdfMode === 'green' && (
+          {/* Mode « LTV seul » : pas de train ni de parcours → Play + indicateurs
+              GPS/horaire (et sens attendu) sont sans objet, on masque tout le groupe. */}
+          {pdfMode === 'green' && activeStartupMode !== 'ltv' && (
             <>
               <button
                 type="button"

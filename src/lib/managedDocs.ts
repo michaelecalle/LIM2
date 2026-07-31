@@ -38,3 +38,34 @@ export async function fetchManagedDocBlobUrl(docKey: string): Promise<string | n
     return null
   }
 }
+
+/**
+ * Charge le PDF SOURCE LTV le plus récent (déposé dans lim-logs à côté du normalisé,
+ * par LIM / l'éditeur / le visualisateur) et renvoie une object-URL (blob PDF).
+ * Renvoie null si indisponible (pas encore déposé, pas de token, réseau).
+ * ⚠️ L'appelant doit révoquer l'URL (URL.revokeObjectURL) au démontage.
+ */
+export async function fetchLtvSourcePdfBlobUrl(): Promise<string | null> {
+  const token = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined
+  if (!token) return null
+  const owner = (import.meta.env.VITE_GITHUB_LOG_OWNER as string | undefined) ?? 'michaelecalle'
+  const repo = (import.meta.env.VITE_GITHUB_LOG_REPO as string | undefined) ?? 'lim-logs'
+  const path = 'ltv-normalized/current.pdf'
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/contents/${path}?t=${Date.now()}`,
+      {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.raw' },
+        cache: 'no-store',
+      }
+    )
+    if (!res.ok) return null
+    const blob = await res.blob()
+    const pdfBlob =
+      blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' })
+    return URL.createObjectURL(pdfBlob)
+  } catch {
+    return null
+  }
+}
