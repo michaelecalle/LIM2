@@ -1059,9 +1059,13 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   // Upload (arrière-plan, silencieux, NON bloquant) du normalisé LTV vers GitHub
   // pour que l’éditeur puisse y accéder. Garde seulement le plus récent
   // (comparaison meta.publishedAt). Jamais appelé en mode démo.
-  const uploadNormalizedLtvToGitHub = async (ltvData: NormalizedLtvFile): Promise<void> => {
+  // Renvoie true si le normalisé a été (ré)écrit parce que la Fecha Vigor entrante est
+  // STRICTEMENT plus récente (ou qu'aucun normalisé n'existait). Le dépôt du PDF source
+  // suit cette décision (cf. uploadLtvSourcePdfToGitHub) → « le plus récent par date de
+  // contenu », jamais « le plus récemment envoyé ».
+  const uploadNormalizedLtvToGitHub = async (ltvData: NormalizedLtvFile): Promise<boolean> => {
     const token = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined
-    if (!token) return
+    if (!token) return false
     const owner = (import.meta.env.VITE_GITHUB_LOG_OWNER as string | undefined) ?? 'michaelecalle'
     const repo = (import.meta.env.VITE_GITHUB_LOG_REPO as string | undefined) ?? 'lim-logs'
     const path = 'ltv-normalized/current.json'
@@ -1096,7 +1100,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
             // des données identiques (ex. démarrage sur le normalisé de secours).
             if (newDate > 0 && existingDate > 0 && newDate <= existingDate) {
               console.log('[ltv-upload] normalisé en ligne à jour → upload ignoré')
-              return
+              return false
             }
           } catch {}
         }
@@ -1115,15 +1119,20 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       })
       if (putRes.ok) console.log('[ltv-upload] normalisé LTV partagé avec l\'éditeur')
       else console.warn('[ltv-upload] échec upload', putRes.status)
+      return putRes.ok
     } catch (e) {
       console.warn('[ltv-upload] erreur (non bloquant)', e)
+      return false
     }
   }
 
   // Upload (arrière-plan, silencieux, NON bloquant) du PDF SOURCE LTV vers lim-logs,
   // à côté du normalisé (ltv-normalized/current.pdf). Permet au mode secours d'afficher
   // le LTV même s'il n'a pas été importé dans la session courante. Jamais en démo.
-  const uploadLtvSourcePdfToGitHub = async (pdf: File): Promise<void> => {
+  // `newer` = le normalisé vient d'être écrit car la Fecha Vigor entrante est plus
+  // récente. On (ré)écrit le PDF si `newer` OU si aucun PDF n'existe encore (rattrapage
+  // après déploiement). Sinon on ne touche pas au PDF stocké (« le plus récent » gagne).
+  const uploadLtvSourcePdfToGitHub = async (pdf: File, opts: { newer: boolean }): Promise<void> => {
     const token = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined
     if (!token) return
     const owner = (import.meta.env.VITE_GITHUB_LOG_OWNER as string | undefined) ?? 'michaelecalle'
@@ -1139,22 +1148,25 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     }
 
     try {
-      const content = bytesToBase64(new Uint8Array(await pdf.arrayBuffer()))
-
-      // sha de l'existant (pour écraser) + dédup simple par taille.
+      // sha de l'existant (pour écraser) + savoir s'il existe (rattrapage).
       let sha: string | undefined
+      let exists = false
       try {
         const getRes = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
         if (getRes.ok) {
           const existing = await getRes.json()
           sha = existing.sha
-          if (typeof existing.size === 'number' && existing.size === pdf.size) {
-            console.log('[ltv-upload] PDF source LTV identique (taille) → upload ignoré')
-            return
-          }
+          exists = true
         }
       } catch {}
 
+      // Le normalisé n'a pas changé et le PDF est déjà là → rien à faire.
+      if (!opts.newer && exists) {
+        console.log('[ltv-upload] PDF source LTV déjà à jour → upload ignoré')
+        return
+      }
+
+      const content = bytesToBase64(new Uint8Array(await pdf.arrayBuffer()))
       const body: Record<string, unknown> = {
         message: `ltv-source-pdf: ${new Date().toISOString()}`,
         content,
@@ -1269,10 +1281,11 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     } else if (ltvData) {
       // Usage réel uniquement (PAS en démo) et seulement s’il y a un normalisé LTV :
       // partager avec l’éditeur. Fire-and-forget, non bloquant.
-      void uploadNormalizedLtvToGitHub(ltvData)
-      // Déposer aussi le PDF source LTV pour l'affichage en mode secours.
+      // Le PDF source suit la décision de date du normalisé (plus récent = on écrit).
       const ltvPdf = currentLtvPdfFileRef.current
-      if (ltvPdf) void uploadLtvSourcePdfToGitHub(ltvPdf)
+      void uploadNormalizedLtvToGitHub(ltvData).then((newer) => {
+        if (ltvPdf) void uploadLtvSourcePdfToGitHub(ltvPdf, { newer })
+      })
     }
   }
 
@@ -1295,9 +1308,15 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       window.dispatchEvent(new CustomEvent('lim:ltv-pdf-raw', { detail: { file: ltvPdfFile } }))
 
     // Fichier canonique partagé (comme le mode 2026 / le viewer). Fire-and-forget.
-    if (ltvData) void uploadNormalizedLtvToGitHub(ltvData)
-    // Déposer aussi le PDF source LTV pour l'affichage en mode secours.
-    if (ltvPdfFile) void uploadLtvSourcePdfToGitHub(ltvPdfFile)
+    // Le PDF source suit la décision de date du normalisé (plus récent = on écrit).
+    if (ltvData) {
+      void uploadNormalizedLtvToGitHub(ltvData).then((newer) => {
+        if (ltvPdfFile) void uploadLtvSourcePdfToGitHub(ltvPdfFile, { newer })
+      })
+    } else if (ltvPdfFile) {
+      // Pas de normalisé : on ne dépose le PDF que s'il manque (rattrapage).
+      void uploadLtvSourcePdfToGitHub(ltvPdfFile, { newer: false })
+    }
 
     const ltvOnlyRange: ManualFtRoutePkRange = {
       trainNumber: 0,
