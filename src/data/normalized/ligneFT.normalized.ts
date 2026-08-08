@@ -15,7 +15,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "30",
         "sitKm": "615.9",
-        "dependencia": "CAN TUNIS AV",
+        "dependencia": "CAN TUNIS-AV",
         "radio": "◯ GSMR",
         "rampCaract": "25",
         "csv": true,
@@ -34,7 +34,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "30",
         "sitKm": "616.0",
-        "dependencia": "BIF CAN TUNIS AV",
+        "dependencia": "BIF CAN TUNIS-AV",
         "radio": "◯ GSMR",
         "rampCaract": "25",
         "csv": true,
@@ -226,7 +226,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "45",
         "sitKm": "627.7",
-        "dependencia": "LA SAGRERA AV",
+        "dependencia": "LA SAGRERA",
         "radio": "◯ GSMR",
         "rampCaract": "28",
         "csv": true,
@@ -291,44 +291,6 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
-        "id": "ns-data-0016",
-        "rowKey": "ns-data-0016",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "634.5",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "634.5",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "28",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "ns-data-0017",
-        "rowKey": "ns-data-0017",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "636.6",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "636.6",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "28",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
         "id": "ns-data-0018",
         "rowKey": "ns-data-0018",
         "type": "data",
@@ -359,7 +321,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "640.9",
-        "dependencia": "BIF. MOLLET",
+        "dependencia": "Bif. MOLLET",
         "radio": "◯ GSMR",
         "rampCaract": "28",
         "csv": false,
@@ -378,7 +340,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "641.3",
-        "dependencia": "BIF. MOLLET-AGUJA KM. 641,3",
+        "dependencia": "Bif. MOLLET- AG KM 641.3",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -435,7 +397,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "644.3",
-        "dependencia": "BIF. MOLLET-AG.KM. 644.3",
+        "dependencia": "Bif. MOLLET - AG KM 644.3",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -443,113 +405,18 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
-        "id": "ns-data-0024",
-        "rowKey": "ns-data-0024",
+        "id": "ns-data-0056",
+        "rowKey": "ns-data-0056",
         "type": "data",
         "reseau": "",
-        "pkInterne": "654.4",
+        "pkInterne": "654.1",
         "pkAdif": "",
         "pkLfp": "",
         "pkRfn": "",
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
-        "sitKm": "654.4",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "ns-data-0025",
-        "rowKey": "ns-data-0025",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "655.6",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "655.6",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "ns-data-0026",
-        "rowKey": "ns-data-0026",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "655.8",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "655.8",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "ns-data-0027",
-        "rowKey": "ns-data-0027",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "660.8",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "660.8",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "ns-data-0028",
-        "rowKey": "ns-data-0028",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "661.5",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "661.5",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "ns-data-0029",
-        "rowKey": "ns-data-0029",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "662.0",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "662.0",
-        "dependencia": "",
+        "sitKm": "654.1",
+        "dependencia": "PCA LA ROCA",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -568,7 +435,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "662.5",
-        "dependencia": "LLINARS-A. V",
+        "dependencia": "LLINARS",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -576,18 +443,18 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
-        "id": "ns-data-0031",
-        "rowKey": "ns-data-0031",
+        "id": "ns-data-0057",
+        "rowKey": "ns-data-0057",
         "type": "data",
         "reseau": "",
-        "pkInterne": "673.5",
+        "pkInterne": "670.5",
         "pkAdif": "",
         "pkLfp": "",
         "pkRfn": "",
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
-        "sitKm": "673.5",
-        "dependencia": "",
+        "sitKm": "670.5",
+        "dependencia": "PCA SANT CELONI",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -606,26 +473,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "679.3",
-        "dependencia": "RIELLS-A. V",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "ns-data-0033",
-        "rowKey": "ns-data-0033",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "680.2",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "680.2",
-        "dependencia": "",
+        "dependencia": "RIELLS",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -644,7 +492,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "682.0",
-        "dependencia": "BASE MTO. RIELLS",
+        "dependencia": "BASE MTO RIELLS",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -652,18 +500,18 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
-        "id": "ns-data-0035",
-        "rowKey": "ns-data-0035",
+        "id": "ns-data-0058",
+        "rowKey": "ns-data-0058",
         "type": "data",
         "reseau": "",
-        "pkInterne": "684.0",
+        "pkInterne": "691.9",
         "pkAdif": "",
         "pkLfp": "",
         "pkRfn": "",
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
-        "sitKm": "684.0",
-        "dependencia": "",
+        "sitKm": "691.9",
+        "dependencia": "PCA RIUDARENES",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -683,25 +531,6 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "vmax": "",
         "sitKm": "703.5",
         "dependencia": "VILOBI D'ONYAR",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "ns-data-0037",
-        "rowKey": "ns-data-0037",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "707.1",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "707.1",
-        "dependencia": "",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -739,7 +568,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "710.7",
-        "dependencia": "BIF. GIRONA-MERCADERIES",
+        "dependencia": "Bif. GIRONA-MERCADERIES",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -823,18 +652,18 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
-        "id": "ns-data-0044",
-        "rowKey": "ns-data-0044",
+        "id": "ns-data-0059",
+        "rowKey": "ns-data-0059",
         "type": "data",
         "reseau": "",
-        "pkInterne": "720.0",
+        "pkInterne": "726.2",
         "pkAdif": "",
         "pkLfp": "",
         "pkRfn": "",
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
-        "sitKm": "720.0",
-        "dependencia": "",
+        "sitKm": "726.2",
+        "dependencia": "PCA VILADEMULS",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -842,18 +671,18 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
-        "id": "ns-data-0045",
-        "rowKey": "ns-data-0045",
+        "id": "ns-data-0060",
+        "rowKey": "ns-data-0060",
         "type": "data",
         "reseau": "",
-        "pkInterne": "723.7",
+        "pkInterne": "738.2",
         "pkAdif": "",
         "pkLfp": "",
         "pkRfn": "",
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
-        "sitKm": "723.7",
-        "dependencia": "",
+        "sitKm": "738.2",
+        "dependencia": "PCA PONTOS",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -913,7 +742,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "ERTMS Niv. 1",
         "vmax": "200",
         "sitKm": "752.4",
-        "dependencia": "LIMITE ADIF - LFPSA",
+        "dependencia": "Limite ADIF-LFPSA",
         "radio": "◯ GSMR",
         "rampCaract": "13",
         "csv": false,
@@ -932,7 +761,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "ERTMS Niv. 1",
         "vmax": "300",
         "sitKm": "771.2",
-        "dependencia": "TETE SUD TUNNEL",
+        "dependencia": "Tunnel du Perthus - Tête sud",
         "radio": "◯ GSMR",
         "rampCaract": "13",
         "csv": false,
@@ -951,7 +780,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "ERTMS Niv. 1",
         "vmax": "300",
         "sitKm": "772.2",
-        "dependencia": "FRONTIERE",
+        "dependencia": "Frontière Espagne France",
         "radio": "◯ GSMR",
         "rampCaract": "13",
         "csv": false,
@@ -970,7 +799,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "ERTMS Niv. 1",
         "vmax": "300",
         "sitKm": "779.7",
-        "dependencia": "TETE NORD TUNNEL",
+        "dependencia": "Tunnel du Perthus - Tête nord",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -989,7 +818,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "ERTMS Niv. 1",
         "vmax": "300",
         "sitKm": "783.9",
-        "dependencia": "SAUT DE MOUTON",
+        "dependencia": "Saut de Mouton",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1008,7 +837,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "BAL KVB",
         "vmax": "300",
         "sitKm": "799.7",
-        "dependencia": "LIMITE RFN - LFPSA",
+        "dependencia": "Limite LGV-RAC",
         "radio": "◯ GSMR",
         "rampCaract": "10",
         "csv": false,
@@ -1027,7 +856,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "BAL KVB",
         "vmax": "160",
         "sitKm": "802.0",
-        "dependencia": "LIMITE RAC - LFP-FRR",
+        "dependencia": "Limite RAC LFP-RFF",
         "radio": "◯ GSMR",
         "rampCaract": "10",
         "csv": false,
@@ -1046,7 +875,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "BAL KVB",
         "vmax": "160",
         "sitKm": "805.5",
-        "dependencia": "PERPIGNAN",
+        "dependencia": "PERPIGNAN BV",
         "radio": "◯ GSMR",
         "rampCaract": "10",
         "csv": false,
@@ -1069,7 +898,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "30",
         "sitKm": "615.9",
-        "dependencia": "CAN TUNIS AV",
+        "dependencia": "CAN TUNIS-AV",
         "radio": "◯ GSMR",
         "rampCaract": "25",
         "csv": false,
@@ -1088,7 +917,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "95",
         "sitKm": "616.0",
-        "dependencia": "BIF CAN TUNIS AV",
+        "dependencia": "BIF CAN TUNIS-AV",
         "radio": "◯ GSMR",
         "rampCaract": "25",
         "csv": false,
@@ -1280,7 +1109,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "45",
         "sitKm": "627.7",
-        "dependencia": "LA SAGRERA AV",
+        "dependencia": "LA SAGRERA",
         "radio": "◯ GSMR",
         "rampCaract": "28",
         "csv": true,
@@ -1345,44 +1174,6 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
-        "id": "sn-data-0016",
-        "rowKey": "sn-data-0016",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "634.5",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "634.5",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "28",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "sn-data-0017",
-        "rowKey": "sn-data-0017",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "636.6",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "636.6",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "28",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
         "id": "sn-data-0018",
         "rowKey": "sn-data-0018",
         "type": "data",
@@ -1413,7 +1204,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "640.9",
-        "dependencia": "BIF. MOLLET",
+        "dependencia": "Bif. MOLLET",
         "radio": "◯ GSMR",
         "rampCaract": "28",
         "csv": false,
@@ -1432,7 +1223,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "641.3",
-        "dependencia": "BIF. MOLLET-AGUJA KM. 641,3",
+        "dependencia": "Bif. MOLLET- AG KM 641.3",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1489,7 +1280,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "644.3",
-        "dependencia": "BIF. MOLLET-AG.KM. 644.3",
+        "dependencia": "Bif. MOLLET - AG KM 644.3",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1497,113 +1288,18 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
-        "id": "sn-data-0024",
-        "rowKey": "sn-data-0024",
+        "id": "sn-data-0056",
+        "rowKey": "sn-data-0056",
         "type": "data",
         "reseau": "",
-        "pkInterne": "654.4",
+        "pkInterne": "654.1",
         "pkAdif": "",
         "pkLfp": "",
         "pkRfn": "",
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
-        "sitKm": "654.4",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "sn-data-0025",
-        "rowKey": "sn-data-0025",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "655.6",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "655.6",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "sn-data-0026",
-        "rowKey": "sn-data-0026",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "655.8",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "655.8",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "sn-data-0027",
-        "rowKey": "sn-data-0027",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "660.8",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "660.8",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "sn-data-0028",
-        "rowKey": "sn-data-0028",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "661.5",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "661.5",
-        "dependencia": "",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "sn-data-0029",
-        "rowKey": "sn-data-0029",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "662.0",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "662.0",
-        "dependencia": "",
+        "sitKm": "654.1",
+        "dependencia": "PCA LA ROCA",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1622,7 +1318,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "662.5",
-        "dependencia": "LLINARS-A. V",
+        "dependencia": "LLINARS",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1630,18 +1326,18 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
-        "id": "sn-data-0031",
-        "rowKey": "sn-data-0031",
+        "id": "sn-data-0057",
+        "rowKey": "sn-data-0057",
         "type": "data",
         "reseau": "",
-        "pkInterne": "673.5",
+        "pkInterne": "670.5",
         "pkAdif": "",
         "pkLfp": "",
         "pkRfn": "",
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
-        "sitKm": "673.5",
-        "dependencia": "",
+        "sitKm": "670.5",
+        "dependencia": "PCA SANT CELONI",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1660,26 +1356,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "679.3",
-        "dependencia": "RIELLS-A. V",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "sn-data-0033",
-        "rowKey": "sn-data-0033",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "680.2",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "680.2",
-        "dependencia": "",
+        "dependencia": "RIELLS",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1698,7 +1375,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
         "sitKm": "682.0",
-        "dependencia": "BASE MTO. RIELLS",
+        "dependencia": "BASE MTO RIELLS",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1706,18 +1383,18 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
-        "id": "sn-data-0035",
-        "rowKey": "sn-data-0035",
+        "id": "sn-data-0058",
+        "rowKey": "sn-data-0058",
         "type": "data",
         "reseau": "",
-        "pkInterne": "684.0",
+        "pkInterne": "691.9",
         "pkAdif": "",
         "pkLfp": "",
         "pkRfn": "",
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
-        "sitKm": "684.0",
-        "dependencia": "",
+        "sitKm": "691.9",
+        "dependencia": "PCA RIUDARENES",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1737,25 +1414,6 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "vmax": "",
         "sitKm": "703.5",
         "dependencia": "VILOBI D'ONYAR",
-        "radio": "◯ GSMR",
-        "rampCaract": "18",
-        "csv": false,
-        "notes": [],
-        "etcs": "①"
-      },
-      {
-        "id": "sn-data-0037",
-        "rowKey": "sn-data-0037",
-        "type": "data",
-        "reseau": "",
-        "pkInterne": "707.1",
-        "pkAdif": "",
-        "pkLfp": "",
-        "pkRfn": "",
-        "bloqueo": "↓ BCA ↓",
-        "vmax": "",
-        "sitKm": "707.1",
-        "dependencia": "",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1793,7 +1451,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "125",
         "sitKm": "710.7",
-        "dependencia": "BIF. GIRONA-MERCADERIES",
+        "dependencia": "Bif. GIRONA-MERCADERIES",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": true,
@@ -1877,18 +1535,18 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
-        "id": "sn-data-0044",
-        "rowKey": "sn-data-0044",
+        "id": "sn-data-0059",
+        "rowKey": "sn-data-0059",
         "type": "data",
         "reseau": "",
-        "pkInterne": "720.0",
+        "pkInterne": "726.2",
         "pkAdif": "",
         "pkLfp": "",
         "pkRfn": "",
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
-        "sitKm": "720.0",
-        "dependencia": "",
+        "sitKm": "726.2",
+        "dependencia": "PCA VILADEMULS",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1896,18 +1554,18 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "etcs": "①"
       },
       {
-        "id": "sn-data-0045",
-        "rowKey": "sn-data-0045",
+        "id": "sn-data-0060",
+        "rowKey": "sn-data-0060",
         "type": "data",
         "reseau": "",
-        "pkInterne": "723.7",
+        "pkInterne": "738.2",
         "pkAdif": "",
         "pkLfp": "",
         "pkRfn": "",
         "bloqueo": "↓ BCA ↓",
         "vmax": "",
-        "sitKm": "723.7",
-        "dependencia": "",
+        "sitKm": "738.2",
+        "dependencia": "PCA PONTOS",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1967,7 +1625,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "↓ BCA ↓",
         "vmax": "300",
         "sitKm": "752.4",
-        "dependencia": "LIMITE ADIF - LFPSA",
+        "dependencia": "Limite ADIF-LFPSA",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -1986,7 +1644,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "ERTMS Niv. 1",
         "vmax": "",
         "sitKm": "771.2",
-        "dependencia": "TETE SUD TUNNEL",
+        "dependencia": "Tunnel du Perthus - Tête sud",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -2005,7 +1663,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "ERTMS Niv. 1",
         "vmax": "",
         "sitKm": "772.2",
-        "dependencia": "FRONTIERE",
+        "dependencia": "Frontière Espagne France",
         "radio": "◯ GSMR",
         "rampCaract": "18",
         "csv": false,
@@ -2024,7 +1682,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "ERTMS Niv. 1",
         "vmax": "",
         "sitKm": "779.7",
-        "dependencia": "TETE NORD TUNNEL",
+        "dependencia": "Tunnel du Perthus - Tête nord",
         "radio": "◯ GSMR",
         "rampCaract": "12",
         "csv": false,
@@ -2043,7 +1701,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "ERTMS Niv. 1",
         "vmax": "",
         "sitKm": "783.9",
-        "dependencia": "SAUT DE MOUTON",
+        "dependencia": "Saut de Mouton",
         "radio": "◯ GSMR",
         "rampCaract": "12",
         "csv": false,
@@ -2062,7 +1720,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "ERTMS Niv. 1",
         "vmax": "160",
         "sitKm": "799.7",
-        "dependencia": "LIMITE RFN - LFPSA",
+        "dependencia": "Limite LGV-RAC",
         "radio": "◯ GSMR",
         "rampCaract": "0",
         "csv": false,
@@ -2081,7 +1739,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "BAL KVB",
         "vmax": "160",
         "sitKm": "802.0",
-        "dependencia": "LIMITE RAC - LFP-FRR",
+        "dependencia": "Limite RAC LFP-RFF",
         "radio": "◯ GSMR",
         "rampCaract": "0",
         "csv": false,
@@ -2100,7 +1758,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "bloqueo": "BAL KVB",
         "vmax": "160",
         "sitKm": "805.5",
-        "dependencia": "PERPIGNAN",
+        "dependencia": "PERPIGNAN BV",
         "radio": "◯ GSMR",
         "rampCaract": "0",
         "csv": false,
@@ -2113,7 +1771,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     "9705": {
       "meta": {
         "origine": "BARCELONA SANTS",
-        "destination": "PERPIGNAN",
+        "destination": "PERPIGNAN BV",
         "ligne": "050",
         "numeroEspagne": "",
         "numeroFrance": "9704",
@@ -2130,13 +1788,9 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "hora": "15:23",
           "conc": "6"
         },
-        "sn-data-0019": {
-          "hora": "15:32",
-          "conc": "9"
-        },
         "sn-data-0020": {
           "hora": "15:32",
-          "conc": "0"
+          "conc": "9"
         },
         "sn-data-0023": {
           "hora": "15:34",
@@ -2144,11 +1798,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "sn-data-0030": {
           "hora": "15:39",
-          "conc": "5"
+          "conc": "2"
         },
         "sn-data-0032": {
           "hora": "15:45",
-          "conc": "6"
+          "conc": "3"
         },
         "sn-data-0034": {
           "hora": "15:46",
@@ -2156,7 +1810,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "sn-data-0036": {
           "hora": "15:53",
-          "conc": "7"
+          "conc": "4"
         },
         "sn-data-0039": {
           "hora": "15:55",
@@ -2170,7 +1824,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "sn-data-0047": {
           "hora": "16:19",
           "com": "3",
-          "conc": "15"
+          "conc": "5"
         },
         "sn-data-0048": {
           "hora": "16:24",
@@ -2178,7 +1832,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "sn-data-0055": {
           "hora": "16:43",
-          "conc": "19"
+          "conc": "6"
         },
         "sn-data-0049": {
           "hora": "16:28",
@@ -2199,13 +1853,33 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "sn-data-0053": {
           "hora": "16:37",
           "conc": "5"
+        },
+        "sn-data-0056": {
+          "hora": "15:37",
+          "conc": "3"
+        },
+        "sn-data-0057": {
+          "hora": "15:42",
+          "conc": "3"
+        },
+        "sn-data-0058": {
+          "hora": "15:49",
+          "conc": "3"
+        },
+        "sn-data-0059": {
+          "hora": "16:07",
+          "conc": "6"
+        },
+        "sn-data-0060": {
+          "hora": "16:11",
+          "conc": "4"
         }
       },
       "variants": [
         {
           "meta": {
             "origine": "BARCELONA SANTS",
-            "destination": "PERPIGNAN",
+            "destination": "PERPIGNAN BV",
             "ligne": "050",
             "numeroEspagne": "",
             "numeroFrance": "9704",
@@ -2235,13 +1909,9 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
               "hora": "15:23",
               "conc": "6"
             },
-            "sn-data-0019": {
-              "hora": "15:32",
-              "conc": "9"
-            },
             "sn-data-0020": {
               "hora": "15:32",
-              "conc": "0"
+              "conc": "9"
             },
             "sn-data-0023": {
               "hora": "15:34",
@@ -2249,11 +1919,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0030": {
               "hora": "15:39",
-              "conc": "5"
+              "conc": "2"
             },
             "sn-data-0032": {
               "hora": "15:45",
-              "conc": "6"
+              "conc": "3"
             },
             "sn-data-0034": {
               "hora": "15:46",
@@ -2261,7 +1931,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0036": {
               "hora": "15:53",
-              "conc": "7"
+              "conc": "4"
             },
             "sn-data-0039": {
               "hora": "15:55",
@@ -2275,7 +1945,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "sn-data-0047": {
               "hora": "16:19",
               "com": "3",
-              "conc": "15"
+              "conc": "5"
             },
             "sn-data-0048": {
               "hora": "16:24",
@@ -2283,7 +1953,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0055": {
               "hora": "16:43",
-              "conc": "19"
+              "conc": "6"
             },
             "sn-data-0049": {
               "hora": "16:28",
@@ -2304,6 +1974,26 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "sn-data-0053": {
               "hora": "16:37",
               "conc": "5"
+            },
+            "sn-data-0056": {
+              "hora": "15:37",
+              "conc": "3"
+            },
+            "sn-data-0057": {
+              "hora": "15:42",
+              "conc": "3"
+            },
+            "sn-data-0058": {
+              "hora": "15:49",
+              "conc": "3"
+            },
+            "sn-data-0059": {
+              "hora": "16:07",
+              "conc": "6"
+            },
+            "sn-data-0060": {
+              "hora": "16:11",
+              "conc": "4"
             }
           }
         }
@@ -2312,7 +2002,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     "9707": {
       "meta": {
         "origine": "BARCELONA SANTS",
-        "destination": "PERPIGNAN",
+        "destination": "PERPIGNAN BV",
         "ligne": "050",
         "numeroEspagne": "",
         "numeroFrance": "9706",
@@ -2329,13 +2019,9 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "hora": "16:30",
           "conc": "6"
         },
-        "sn-data-0019": {
-          "hora": "16:39",
-          "conc": "9"
-        },
         "sn-data-0020": {
           "hora": "16:39",
-          "conc": "0"
+          "conc": "9"
         },
         "sn-data-0023": {
           "hora": "16:41",
@@ -2343,11 +2029,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "sn-data-0030": {
           "hora": "16:46",
-          "conc": "5"
+          "conc": "2"
         },
         "sn-data-0032": {
           "hora": "16:52",
-          "conc": "6"
+          "conc": "3"
         },
         "sn-data-0034": {
           "hora": "16:53",
@@ -2355,7 +2041,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "sn-data-0036": {
           "hora": "17:00",
-          "conc": "7"
+          "conc": "4"
         },
         "sn-data-0039": {
           "hora": "17:02",
@@ -2364,11 +2050,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "sn-data-0041": {
           "hora": "17:08",
           "com": "3",
-          "conc": "6"
+          "conc": "3"
         },
         "sn-data-0047": {
           "hora": "17:26",
-          "conc": "15",
+          "conc": "5",
           "com": "3"
         },
         "sn-data-0048": {
@@ -2393,14 +2079,38 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "sn-data-0055": {
           "hora": "17:50",
-          "conc": "11"
+          "conc": "6"
+        },
+        "sn-data-0056": {
+          "hora": "16:44",
+          "conc": "3"
+        },
+        "sn-data-0057": {
+          "hora": "16:49",
+          "conc": "3"
+        },
+        "sn-data-0058": {
+          "hora": "16:56",
+          "conc": "3"
+        },
+        "sn-data-0059": {
+          "hora": "17:14",
+          "conc": "6"
+        },
+        "sn-data-0060": {
+          "hora": "17:18",
+          "conc": "4"
+        },
+        "sn-data-0053": {
+          "hora": "17:44",
+          "conc": "5"
         }
       },
       "variants": [
         {
           "meta": {
             "origine": "BARCELONA SANTS",
-            "destination": "PERPIGNAN",
+            "destination": "PERPIGNAN BV",
             "ligne": "050",
             "numeroEspagne": "",
             "numeroFrance": "9706",
@@ -2430,13 +2140,9 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
               "hora": "16:30",
               "conc": "6"
             },
-            "sn-data-0019": {
-              "hora": "16:39",
-              "conc": "9"
-            },
             "sn-data-0020": {
               "hora": "16:39",
-              "conc": "0"
+              "conc": "9"
             },
             "sn-data-0023": {
               "hora": "16:41",
@@ -2444,11 +2150,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0030": {
               "hora": "16:46",
-              "conc": "5"
+              "conc": "2"
             },
             "sn-data-0032": {
               "hora": "16:52",
-              "conc": "6"
+              "conc": "3"
             },
             "sn-data-0034": {
               "hora": "16:53",
@@ -2456,7 +2162,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0036": {
               "hora": "17:00",
-              "conc": "7"
+              "conc": "4"
             },
             "sn-data-0039": {
               "hora": "17:02",
@@ -2465,11 +2171,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "sn-data-0041": {
               "hora": "17:08",
               "com": "3",
-              "conc": "6"
+              "conc": "3"
             },
             "sn-data-0047": {
               "hora": "17:26",
-              "conc": "15",
+              "conc": "5",
               "com": "3"
             },
             "sn-data-0048": {
@@ -2494,14 +2200,38 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0055": {
               "hora": "17:50",
-              "conc": "11"
+              "conc": "6"
+            },
+            "sn-data-0056": {
+              "hora": "16:44",
+              "conc": "3"
+            },
+            "sn-data-0057": {
+              "hora": "16:49",
+              "conc": "3"
+            },
+            "sn-data-0058": {
+              "hora": "16:56",
+              "conc": "3"
+            },
+            "sn-data-0059": {
+              "hora": "17:14",
+              "conc": "6"
+            },
+            "sn-data-0060": {
+              "hora": "17:18",
+              "conc": "4"
+            },
+            "sn-data-0053": {
+              "hora": "17:44",
+              "conc": "5"
             }
           }
         },
         {
           "meta": {
             "origine": "BARCELONA SANTS",
-            "destination": "PERPIGNAN",
+            "destination": "PERPIGNAN BV",
             "ligne": "050",
             "numeroEspagne": "",
             "numeroFrance": "9706",
@@ -2537,13 +2267,9 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
               "hora": "16:30",
               "conc": "6"
             },
-            "sn-data-0019": {
-              "hora": "16:39",
-              "conc": "9"
-            },
             "sn-data-0020": {
               "hora": "16:39",
-              "conc": "0"
+              "conc": "9"
             },
             "sn-data-0023": {
               "hora": "16:41",
@@ -2551,11 +2277,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0030": {
               "hora": "16:46",
-              "conc": "5"
+              "conc": "2"
             },
             "sn-data-0032": {
               "hora": "16:52",
-              "conc": "6"
+              "conc": "3"
             },
             "sn-data-0034": {
               "hora": "16:53",
@@ -2563,7 +2289,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0036": {
               "hora": "17:00",
-              "conc": "7"
+              "conc": "4"
             },
             "sn-data-0039": {
               "hora": "17:02",
@@ -2572,11 +2298,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "sn-data-0041": {
               "hora": "17:08",
               "com": "3",
-              "conc": "6"
+              "conc": "3"
             },
             "sn-data-0047": {
               "hora": "17:26",
-              "conc": "15",
+              "conc": "5",
               "com": "3"
             },
             "sn-data-0048": {
@@ -2601,7 +2327,31 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0055": {
               "hora": "17:50",
-              "conc": "11"
+              "conc": "6"
+            },
+            "sn-data-0056": {
+              "hora": "16:44",
+              "conc": "3"
+            },
+            "sn-data-0057": {
+              "hora": "16:49",
+              "conc": "3"
+            },
+            "sn-data-0058": {
+              "hora": "16:56",
+              "conc": "3"
+            },
+            "sn-data-0059": {
+              "hora": "17:14",
+              "conc": "6"
+            },
+            "sn-data-0060": {
+              "hora": "17:18",
+              "conc": "4"
+            },
+            "sn-data-0053": {
+              "hora": "17:44",
+              "conc": "5"
             }
           }
         }
@@ -2610,7 +2360,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     "9709": {
       "meta": {
         "origine": "BARCELONA SANTS",
-        "destination": "PERPIGNAN",
+        "destination": "PERPIGNAN BV",
         "ligne": "050",
         "numeroEspagne": "",
         "numeroFrance": "9708",
@@ -2627,13 +2377,9 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
           "hora": "9:32",
           "conc": "6"
         },
-        "sn-data-0019": {
-          "hora": "9:41",
-          "conc": "9"
-        },
         "sn-data-0020": {
           "hora": "9:41",
-          "conc": "0"
+          "conc": "9"
         },
         "sn-data-0023": {
           "hora": "9:43",
@@ -2641,11 +2387,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "sn-data-0030": {
           "hora": "9:48",
-          "conc": "5"
+          "conc": "2"
         },
         "sn-data-0032": {
           "hora": "9:54",
-          "conc": "6"
+          "conc": "3"
         },
         "sn-data-0034": {
           "hora": "9:55",
@@ -2653,7 +2399,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "sn-data-0036": {
           "hora": "10:02",
-          "conc": "7"
+          "conc": "4"
         },
         "sn-data-0039": {
           "hora": "10:04",
@@ -2661,12 +2407,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "sn-data-0041": {
           "hora": "10:10",
-          "conc": "6",
+          "conc": "3",
           "com": "3"
         },
         "sn-data-0047": {
           "hora": "10:28",
-          "conc": "18",
+          "conc": "5",
           "com": "3"
         },
         "sn-data-0048": {
@@ -2691,14 +2437,38 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "sn-data-0055": {
           "hora": "10:52",
-          "conc": "11"
+          "conc": "6"
+        },
+        "sn-data-0056": {
+          "hora": "9:46",
+          "conc": "3"
+        },
+        "sn-data-0057": {
+          "hora": "9:51",
+          "conc": "3"
+        },
+        "sn-data-0058": {
+          "hora": "9:58",
+          "conc": "3"
+        },
+        "sn-data-0059": {
+          "hora": "10:16",
+          "conc": "6"
+        },
+        "sn-data-0060": {
+          "hora": "10:20",
+          "conc": "4"
+        },
+        "sn-data-0053": {
+          "hora": "10:46",
+          "conc": "5"
         }
       },
       "variants": [
         {
           "meta": {
             "origine": "BARCELONA SANTS",
-            "destination": "PERPIGNAN",
+            "destination": "PERPIGNAN BV",
             "ligne": "050",
             "numeroEspagne": "",
             "numeroFrance": "9708",
@@ -2728,13 +2498,9 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
               "hora": "9:32",
               "conc": "6"
             },
-            "sn-data-0019": {
-              "hora": "9:41",
-              "conc": "9"
-            },
             "sn-data-0020": {
               "hora": "9:41",
-              "conc": "0"
+              "conc": "9"
             },
             "sn-data-0023": {
               "hora": "9:43",
@@ -2742,11 +2508,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0030": {
               "hora": "9:48",
-              "conc": "5"
+              "conc": "2"
             },
             "sn-data-0032": {
               "hora": "9:54",
-              "conc": "6"
+              "conc": "3"
             },
             "sn-data-0034": {
               "hora": "9:55",
@@ -2754,7 +2520,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0036": {
               "hora": "10:02",
-              "conc": "7"
+              "conc": "4"
             },
             "sn-data-0039": {
               "hora": "10:04",
@@ -2762,12 +2528,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0041": {
               "hora": "10:10",
-              "conc": "6",
+              "conc": "3",
               "com": "3"
             },
             "sn-data-0047": {
               "hora": "10:28",
-              "conc": "18",
+              "conc": "5",
               "com": "3"
             },
             "sn-data-0048": {
@@ -2792,7 +2558,31 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "sn-data-0055": {
               "hora": "10:52",
-              "conc": "11"
+              "conc": "6"
+            },
+            "sn-data-0056": {
+              "hora": "9:46",
+              "conc": "3"
+            },
+            "sn-data-0057": {
+              "hora": "9:51",
+              "conc": "3"
+            },
+            "sn-data-0058": {
+              "hora": "9:58",
+              "conc": "3"
+            },
+            "sn-data-0059": {
+              "hora": "10:16",
+              "conc": "6"
+            },
+            "sn-data-0060": {
+              "hora": "10:20",
+              "conc": "4"
+            },
+            "sn-data-0053": {
+              "hora": "10:46",
+              "conc": "5"
             }
           }
         }
@@ -2800,7 +2590,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     },
     "9710": {
       "meta": {
-        "origine": "PERPIGNAN",
+        "origine": "PERPIGNAN BV",
         "destination": "BARCELONA SANTS",
         "ligne": "050",
         "numeroEspagne": "",
@@ -2816,7 +2606,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "ns-data-0048": {
           "hora": "12:24",
-          "conc": "18"
+          "conc": "5"
         },
         "ns-data-0047": {
           "hora": "12:30",
@@ -2826,7 +2616,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "ns-data-0041": {
           "com": "3",
           "hora": "12:47",
-          "conc": "14"
+          "conc": "5"
         },
         "ns-data-0039": {
           "hora": "12:50",
@@ -2838,7 +2628,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "ns-data-0034": {
           "hora": "13:00",
-          "conc": "7"
+          "conc": "3"
         },
         "ns-data-0032": {
           "hora": "13:01",
@@ -2846,11 +2636,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "ns-data-0030": {
           "hora": "13:06",
-          "conc": "5"
+          "conc": "2"
         },
         "ns-data-0023": {
           "hora": "13:12",
-          "conc": "6"
+          "conc": "3"
         },
         "ns-data-0020": {
           "hora": "13:14",
@@ -2883,12 +2673,36 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "ns-data-0050": {
           "hora": "12:18",
           "conc": "2"
+        },
+        "ns-data-0049": {
+          "hora": "12:19",
+          "conc": "1"
+        },
+        "ns-data-0060": {
+          "hora": "12:35",
+          "conc": "5"
+        },
+        "ns-data-0059": {
+          "hora": "12:39",
+          "conc": "4"
+        },
+        "ns-data-0058": {
+          "hora": "12:57",
+          "conc": "4"
+        },
+        "ns-data-0057": {
+          "hora": "13:04",
+          "conc": "3"
+        },
+        "ns-data-0056": {
+          "hora": "13:09",
+          "conc": "3"
         }
       },
       "variants": [
         {
           "meta": {
-            "origine": "PERPIGNAN",
+            "origine": "PERPIGNAN BV",
             "destination": "BARCELONA SANTS",
             "ligne": "050",
             "numeroEspagne": "",
@@ -2917,7 +2731,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0048": {
               "hora": "12:24",
-              "conc": "18"
+              "conc": "5"
             },
             "ns-data-0047": {
               "hora": "12:30",
@@ -2927,7 +2741,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "ns-data-0041": {
               "com": "3",
               "hora": "12:47",
-              "conc": "14"
+              "conc": "5"
             },
             "ns-data-0039": {
               "hora": "12:50",
@@ -2939,7 +2753,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0034": {
               "hora": "13:00",
-              "conc": "7"
+              "conc": "3"
             },
             "ns-data-0032": {
               "hora": "13:01",
@@ -2947,11 +2761,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0030": {
               "hora": "13:06",
-              "conc": "5"
+              "conc": "2"
             },
             "ns-data-0023": {
               "hora": "13:12",
-              "conc": "6"
+              "conc": "3"
             },
             "ns-data-0020": {
               "hora": "13:14",
@@ -2984,6 +2798,30 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "ns-data-0050": {
               "hora": "12:18",
               "conc": "2"
+            },
+            "ns-data-0049": {
+              "hora": "12:19",
+              "conc": "1"
+            },
+            "ns-data-0060": {
+              "hora": "12:35",
+              "conc": "5"
+            },
+            "ns-data-0059": {
+              "hora": "12:39",
+              "conc": "4"
+            },
+            "ns-data-0058": {
+              "hora": "12:57",
+              "conc": "4"
+            },
+            "ns-data-0057": {
+              "hora": "13:04",
+              "conc": "3"
+            },
+            "ns-data-0056": {
+              "hora": "13:09",
+              "conc": "3"
             }
           }
         }
@@ -2991,7 +2829,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     },
     "9712": {
       "meta": {
-        "origine": "PERPIGNAN",
+        "origine": "PERPIGNAN BV",
         "destination": "BARCELONA SANTS",
         "ligne": "050",
         "numeroEspagne": "",
@@ -3007,7 +2845,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "ns-data-0052": {
           "hora": "13:16",
-          "conc": "10"
+          "conc": "4"
         },
         "ns-data-0051": {
           "hora": "13:17",
@@ -3028,12 +2866,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "ns-data-0047": {
           "hora": "13:33",
           "com": "3",
-          "conc": "8"
+          "conc": "5"
         },
         "ns-data-0041": {
           "hora": "13:50",
           "com": "3",
-          "conc": "17"
+          "conc": "5"
         },
         "ns-data-0039": {
           "hora": "13:53",
@@ -3045,7 +2883,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "ns-data-0034": {
           "hora": "14:03",
-          "conc": "7"
+          "conc": "3"
         },
         "ns-data-0032": {
           "hora": "14:04",
@@ -3053,11 +2891,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "ns-data-0030": {
           "hora": "14:09",
-          "conc": "5"
+          "conc": "2"
         },
         "ns-data-0023": {
           "hora": "14:15",
-          "conc": "6"
+          "conc": "3"
         },
         "ns-data-0020": {
           "hora": "14:17",
@@ -3074,12 +2912,36 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "ns-data-0006": {
           "hora": "14:32",
           "conc": "7"
+        },
+        "ns-data-0060": {
+          "hora": "13:38",
+          "conc": "5"
+        },
+        "ns-data-0059": {
+          "hora": "13:42",
+          "conc": "4"
+        },
+        "ns-data-0058": {
+          "hora": "14:00",
+          "conc": "4"
+        },
+        "ns-data-0057": {
+          "hora": "14:07",
+          "conc": "3"
+        },
+        "ns-data-0056": {
+          "hora": "14:12",
+          "conc": "3"
+        },
+        "ns-data-0053": {
+          "hora": "13:12",
+          "conc": "6"
         }
       },
       "variants": [
         {
           "meta": {
-            "origine": "PERPIGNAN",
+            "origine": "PERPIGNAN BV",
             "destination": "BARCELONA SANTS",
             "ligne": "050",
             "numeroEspagne": "",
@@ -3108,7 +2970,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0052": {
               "hora": "13:16",
-              "conc": "10"
+              "conc": "4"
             },
             "ns-data-0051": {
               "hora": "13:17",
@@ -3129,12 +2991,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "ns-data-0047": {
               "hora": "13:33",
               "com": "3",
-              "conc": "8"
+              "conc": "5"
             },
             "ns-data-0041": {
               "hora": "13:50",
               "com": "3",
-              "conc": "17"
+              "conc": "5"
             },
             "ns-data-0039": {
               "hora": "13:53",
@@ -3146,7 +3008,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0034": {
               "hora": "14:03",
-              "conc": "7"
+              "conc": "3"
             },
             "ns-data-0032": {
               "hora": "14:04",
@@ -3154,11 +3016,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0030": {
               "hora": "14:09",
-              "conc": "5"
+              "conc": "2"
             },
             "ns-data-0023": {
               "hora": "14:15",
-              "conc": "6"
+              "conc": "3"
             },
             "ns-data-0020": {
               "hora": "14:17",
@@ -3175,12 +3037,36 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "ns-data-0006": {
               "hora": "14:32",
               "conc": "7"
+            },
+            "ns-data-0060": {
+              "hora": "13:38",
+              "conc": "5"
+            },
+            "ns-data-0059": {
+              "hora": "13:42",
+              "conc": "4"
+            },
+            "ns-data-0058": {
+              "hora": "14:00",
+              "conc": "4"
+            },
+            "ns-data-0057": {
+              "hora": "14:07",
+              "conc": "3"
+            },
+            "ns-data-0056": {
+              "hora": "14:12",
+              "conc": "3"
+            },
+            "ns-data-0053": {
+              "hora": "13:12",
+              "conc": "6"
             }
           }
         },
         {
           "meta": {
-            "origine": "PERPIGNAN",
+            "origine": "PERPIGNAN BV",
             "destination": "BARCELONA SANTS",
             "ligne": "050",
             "numeroEspagne": "",
@@ -3215,7 +3101,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0052": {
               "hora": "13:16",
-              "conc": "10"
+              "conc": "4"
             },
             "ns-data-0051": {
               "hora": "13:17",
@@ -3236,12 +3122,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "ns-data-0047": {
               "hora": "13:33",
               "com": "3",
-              "conc": "8"
+              "conc": "5"
             },
             "ns-data-0041": {
               "hora": "13:50",
               "com": "3",
-              "conc": "17"
+              "conc": "5"
             },
             "ns-data-0039": {
               "hora": "13:53",
@@ -3253,7 +3139,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0034": {
               "hora": "14:03",
-              "conc": "7"
+              "conc": "3"
             },
             "ns-data-0032": {
               "hora": "14:04",
@@ -3261,11 +3147,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0030": {
               "hora": "14:09",
-              "conc": "5"
+              "conc": "2"
             },
             "ns-data-0023": {
               "hora": "14:15",
-              "conc": "6"
+              "conc": "3"
             },
             "ns-data-0020": {
               "hora": "14:17",
@@ -3282,6 +3168,30 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "ns-data-0006": {
               "hora": "14:32",
               "conc": "7"
+            },
+            "ns-data-0060": {
+              "hora": "13:38",
+              "conc": "5"
+            },
+            "ns-data-0059": {
+              "hora": "13:42",
+              "conc": "4"
+            },
+            "ns-data-0058": {
+              "hora": "14:00",
+              "conc": "4"
+            },
+            "ns-data-0057": {
+              "hora": "14:07",
+              "conc": "3"
+            },
+            "ns-data-0056": {
+              "hora": "14:12",
+              "conc": "3"
+            },
+            "ns-data-0053": {
+              "hora": "13:12",
+              "conc": "6"
             }
           }
         }
@@ -3289,7 +3199,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     },
     "9714": {
       "meta": {
-        "origine": "PERPIGNAN",
+        "origine": "PERPIGNAN BV",
         "destination": "BARCELONA SANTS",
         "ligne": "050",
         "numeroEspagne": "",
@@ -3305,7 +3215,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "ns-data-0052": {
           "hora": "20:16",
-          "conc": "9"
+          "conc": "4"
         },
         "ns-data-0051": {
           "hora": "20:17",
@@ -3326,12 +3236,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "ns-data-0047": {
           "hora": "20:33",
           "com": "3",
-          "conc": "8"
+          "conc": "5"
         },
         "ns-data-0041": {
           "hora": "20:50",
           "com": "3",
-          "conc": "17"
+          "conc": "5"
         },
         "ns-data-0039": {
           "hora": "20:53",
@@ -3343,7 +3253,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "ns-data-0034": {
           "hora": "21:03",
-          "conc": "7"
+          "conc": "3"
         },
         "ns-data-0032": {
           "hora": "21:04",
@@ -3351,11 +3261,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         },
         "ns-data-0030": {
           "hora": "21:09",
-          "conc": "5"
+          "conc": "2"
         },
         "ns-data-0023": {
           "hora": "21:15",
-          "conc": "6"
+          "conc": "3"
         },
         "ns-data-0020": {
           "hora": "21:17",
@@ -3372,12 +3282,36 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         "ns-data-0006": {
           "hora": "21:32",
           "conc": "7"
+        },
+        "ns-data-0060": {
+          "hora": "20:38",
+          "conc": "5"
+        },
+        "ns-data-0059": {
+          "hora": "20:42",
+          "conc": "4"
+        },
+        "ns-data-0058": {
+          "hora": "21:00",
+          "conc": "4"
+        },
+        "ns-data-0057": {
+          "hora": "21:07",
+          "conc": "3"
+        },
+        "ns-data-0056": {
+          "hora": "21:12",
+          "conc": "3"
+        },
+        "ns-data-0053": {
+          "hora": "20:12",
+          "conc": "5"
         }
       },
       "variants": [
         {
           "meta": {
-            "origine": "PERPIGNAN",
+            "origine": "PERPIGNAN BV",
             "destination": "BARCELONA SANTS",
             "ligne": "050",
             "numeroEspagne": "",
@@ -3406,7 +3340,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0052": {
               "hora": "20:16",
-              "conc": "9"
+              "conc": "4"
             },
             "ns-data-0051": {
               "hora": "20:17",
@@ -3427,12 +3361,12 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "ns-data-0047": {
               "hora": "20:33",
               "com": "3",
-              "conc": "8"
+              "conc": "5"
             },
             "ns-data-0041": {
               "hora": "20:50",
               "com": "3",
-              "conc": "17"
+              "conc": "5"
             },
             "ns-data-0039": {
               "hora": "20:53",
@@ -3444,7 +3378,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0034": {
               "hora": "21:03",
-              "conc": "7"
+              "conc": "3"
             },
             "ns-data-0032": {
               "hora": "21:04",
@@ -3452,11 +3386,11 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             },
             "ns-data-0030": {
               "hora": "21:09",
-              "conc": "5"
+              "conc": "2"
             },
             "ns-data-0023": {
               "hora": "21:15",
-              "conc": "6"
+              "conc": "3"
             },
             "ns-data-0020": {
               "hora": "21:17",
@@ -3473,6 +3407,30 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
             "ns-data-0006": {
               "hora": "21:32",
               "conc": "7"
+            },
+            "ns-data-0060": {
+              "hora": "20:38",
+              "conc": "5"
+            },
+            "ns-data-0059": {
+              "hora": "20:42",
+              "conc": "4"
+            },
+            "ns-data-0058": {
+              "hora": "21:00",
+              "conc": "4"
+            },
+            "ns-data-0057": {
+              "hora": "21:07",
+              "conc": "3"
+            },
+            "ns-data-0056": {
+              "hora": "21:12",
+              "conc": "3"
+            },
+            "ns-data-0053": {
+              "hora": "20:12",
+              "conc": "5"
             }
           }
         }
@@ -3481,7 +3439,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     "38510": {
       "meta": {
         "origine": "BARCELONA SANTS",
-        "destination": "CAN TUNIS AV",
+        "destination": "CAN TUNIS-AV",
         "ligne": "050 - 066",
         "numeroEspagne": "",
         "numeroFrance": "",
@@ -3507,7 +3465,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
         {
           "meta": {
             "origine": "BARCELONA SANTS",
-            "destination": "CAN TUNIS AV",
+            "destination": "CAN TUNIS-AV",
             "ligne": "050 - 066",
             "numeroEspagne": "",
             "numeroFrance": "",
@@ -3547,7 +3505,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
     },
     "39819": {
       "meta": {
-        "origine": "CAN TUNIS AV",
+        "origine": "CAN TUNIS-AV",
         "destination": "BARCELONA SANTS",
         "ligne": "050 - 066",
         "numeroEspagne": "",
@@ -3573,7 +3531,7 @@ export const LIGNE_FT_NORMALIZED: LigneFTNormalized = {
       "variants": [
         {
           "meta": {
-            "origine": "CAN TUNIS AV",
+            "origine": "CAN TUNIS-AV",
             "destination": "BARCELONA SANTS",
             "ligne": "050 - 066",
             "numeroEspagne": "",
