@@ -74,6 +74,7 @@ import {
   getTrainRelation,
   setSdmSessionTrain,
 } from '../../data/ligneFT.normalized.adapter'
+import { useLigneFt2026TrainOptions } from '../../data/ligneFT2026.adapter'
 
 // ⚠️ FT France = fonctionnalité ABANDONNÉE (on a fusionné FR+ES). Neutralisée le 2026-06-08 :
 // l'auto-switch "zone Figueres" réveillait l'overlay FT France quand le train restait vert/stable
@@ -192,22 +193,29 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       })
   }, [])
 
-  // SDM (#27) : ajoute le train de session cree en fin de liste (pour l'afficher selectionne au retour).
-  const effectiveTrainOptions = useMemo<ManualTrainOption[]>(
+  // Mode 2026 : liste de trains proposée = le normalisé 2026 PUBLIÉ (lecture
+  // réseau), plus l'éventuel train SDM de session — PAS l'ancien fichier
+  // statique embarqué (demande utilisateur, 10/08 : "les trains proposés
+  // doivent être ceux du nouveau normalisé"). Mapping best-effort vers
+  // ManualTrainOption (cf. ligneFT2026.adapter.ts) : certains champs de
+  // l'ancien format (ligne, composition US/UM) n'ont pas d'équivalent 2026
+  // et restent vides — volontaire, sert à voir ce qui reste à adapter.
+  const ligneFt2026 = useLigneFt2026TrainOptions()
+  const effective2026TrainOptions = useMemo<ManualTrainOption[]>(
     () =>
       sdmTrain
         ? [
-            ...manualImportTrainOptions,
+            ...ligneFt2026.options,
             {
               trainNumber: sdmTrain.trainNumber,
               relation: `${sdmTrain.origine} - ${sdmTrain.destination}`,
               categorieEspagne: sdmTrain.type || undefined,
-              composition: 'US',       // defaut SDM (modifiable en cabine par appui long)
-              materiel: 'TGV 2N2',     // seul materiel autorise sur la ligne
+              composition: 'US',
+              materiel: 'TGV 2N2',
             },
           ]
-        : manualImportTrainOptions,
-    [manualImportTrainOptions, sdmTrain]
+        : ligneFt2026.options,
+    [ligneFt2026.options, sdmTrain]
   )
 
   // ----- FT VIEW MODE (ES / FR / AUTO) -----
@@ -5274,7 +5282,7 @@ setAutoScrollStartedOnce(next)
           {mode2026Open && (
             <Mode2026Modal
               dark={dark}
-              trainOptions={effectiveTrainOptions}
+              trainOptions={effective2026TrainOptions}
               preselectTrainNumber={sdmTrain?.trainNumber ?? null}
               onClose={() => {
                 setMode2026Open(false)
