@@ -222,6 +222,17 @@ function pkRefFromS(s_km: number | null | undefined): PkRef | null {
   return "RFN"
 }
 
+// Réseau « métier » (ADIF / LFP / RFN) déduit de s_km, en réutilisant les frontières
+// de zone du moteur (pkRefFromS) — LFP_MAIN et LFP_LINK regroupés en 'LFP'. Sert au
+// bloc info (catégorie qui suit le réseau). Renvoie null si s_km indisponible.
+export function networkFromSkm(s_km: number | null | undefined): "ADIF" | "LFP" | "RFN" | null {
+  const ref = pkRefFromS(s_km)
+  if (ref === "ADIF") return "ADIF"
+  if (ref === "LFP_MAIN" || ref === "LFP_LINK") return "LFP"
+  if (ref === "RFN") return "RFN"
+  return null
+}
+
 const REF_SWITCH_BACKTRACK_HYSTERESIS_KM = 0.35
 
 type RibbonTravelDir = 1 | -1 | 0
