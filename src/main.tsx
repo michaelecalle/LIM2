@@ -4,6 +4,7 @@ import "./lib/safariStreamAsyncIteratorPolyfill"
 import "./lib/ftParser"
 // tout en haut (dev uniquement)
 import "./lib/setTitleFromTrain"
+import "./lib/ligneFt2026DebugPreview"
 // import "./lib/limDebugClient" // désactivé temporairement pour supprimer l'affichage FT de debug
 import './index.css'
 import React from 'react'
