@@ -1,13 +1,12 @@
 import React from "react"
 import ClassicInfoPanel from "./ClassicInfoPanel"
 import {
-  getTrainCategorieEspagne,
-  getTrainCategorieFrance,
   getTrainComposition,
   getTrainLigne,
   getTrainMateriel,
   getTrainRelation,
 } from "../../data/ligneFT.normalized.adapter"
+import type { CategoriesByNetwork } from "./titleBarTrainUtils"
 type LIMData = {
 
   train?: string
@@ -21,6 +20,8 @@ type LIMData = {
   massTons?: number
   ouigoLogoUrl?: string
   // Enrichissements éventuels
+  categoriesByNetwork?: CategoriesByNetwork
+  originNetwork?: 'ADIF' | 'LFP' | 'RFN'
   tren?: string
   origenDestino?: string
   fecha?: string
@@ -130,6 +131,37 @@ export default function Infos() {
       )
     }
   }, [])
+  // Réseau courant (ADIF/LFP/RFN) déduit du GPS par FT.tsx et diffusé via
+  // 'lim:network-change'. En mode horaire, FT.tsx n'émet pas → la valeur reste gelée
+  // jusqu'au retour du GPS (comportement voulu de la case « catégorie »).
+  const [currentNetwork, setCurrentNetwork] = React.useState<'ADIF' | 'LFP' | 'RFN' | null>(() => {
+    const w = window as any
+    return (w.__limCurrentNetwork ?? null) as 'ADIF' | 'LFP' | 'RFN' | null
+  })
+  React.useEffect(() => {
+    const onNet = (e: Event) => {
+      const n = (e as CustomEvent).detail?.network
+      if (n === 'ADIF' || n === 'LFP' || n === 'RFN') {
+        ;(window as any).__limCurrentNetwork = n
+        setCurrentNetwork(n)
+      }
+    }
+    window.addEventListener('lim:network-change', onNet as EventListener)
+    return () => window.removeEventListener('lim:network-change', onNet as EventListener)
+  }, [])
+
+  // À chaque nouveau train (lim:parsed), on OUBLIE le réseau GPS mémorisé : le nouveau
+  // train doit repartir de SON réseau d'origine (raw.originNetwork) au chargement, pas
+  // hériter du réseau du train précédent. Le GPS reprendra la main dès qu'il émettra.
+  React.useEffect(() => {
+    const onNewTrain = () => {
+      ;(window as any).__limCurrentNetwork = null
+      setCurrentNetwork(null)
+    }
+    window.addEventListener('lim:parsed', onNewTrain as EventListener)
+    return () => window.removeEventListener('lim:parsed', onNewTrain as EventListener)
+  }, [])
+
   const panelBaseData = buildPanelData(raw)
 
   const currentTrainNumber = raw?.tren ?? raw?.train
@@ -137,13 +169,14 @@ export default function Infos() {
   const normalizedLigne = getTrainLigne(currentTrainNumber)
   const normalizedMateriel = getTrainMateriel(currentTrainNumber)
   const normalizedComposition = getTrainComposition(currentTrainNumber)
-  const normalizedTypeEs = getTrainCategorieEspagne(currentTrainNumber)
-  const normalizedTypeFr = getTrainCategorieFrance(currentTrainNumber)
 
-  const normalizedDisplayedType =
-    displayedTrainNumberState?.displayedSide === 'FR'
-      ? normalizedTypeFr ?? normalizedTypeEs
-      : normalizedTypeEs ?? normalizedTypeFr
+  // Catégorie (migration 2026) = celle du RÉSEAU courant, lue dans le normalisé 2026
+  // (raw.categoriesByNetwork). Avant tout signal GPS (chargement / avant départ), on
+  // prend le réseau de l'ORIGINE (raw.originNetwork). Repli ultime sur panelBaseData.type.
+  const effectiveNetwork = currentNetwork ?? raw?.originNetwork ?? null
+  const displayedCategory =
+    (effectiveNetwork ? raw?.categoriesByNetwork?.[effectiveNetwork] : undefined) ??
+    panelBaseData.type
 
   const displayedComposition =
     displayedCompositionState?.displayedComposition ??
@@ -190,7 +223,7 @@ export default function Infos() {
 
   const panelData = {
     ...panelBaseData,
-    type: normalizedDisplayedType ?? panelBaseData.type,
+    type: displayedCategory,
     origenDestino: normalizedRelation ?? panelBaseData.origenDestino,
     composicion: displayedComposition,
     material: normalizedMateriel ?? panelBaseData.material,

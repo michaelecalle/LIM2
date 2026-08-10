@@ -21,6 +21,7 @@ type LigneFt2026TrainMeta = {
   categorieLFP?: unknown
   categorieADIF?: unknown
   materiel?: unknown
+  direction?: unknown
 }
 
 function str(v: unknown): string | undefined {
@@ -44,6 +45,17 @@ function mapLigneFt2026DocToOptions(data: unknown): ManualTrainOption[] {
         // "ligne" (libellé descriptif de l'ancien format) : pas d'équivalent 2026.
         categorieEspagne: str(meta.categorieADIF),
         categorieFrance: str(meta.categorieSNCF),
+        // Les 3 catégories 2026, indexées par réseau (le bloc info affiche celle du
+        // réseau courant déduit du GPS : ADIF / LFP / RFN=SNCF).
+        categoriesByNetwork: {
+          ADIF: str(meta.categorieADIF),
+          LFP: str(meta.categorieLFP),
+          RFN: str(meta.categorieSNCF),
+        },
+        // Réseau de l'origine (pour la catégorie affichée AVANT tout signal GPS).
+        // Les origines sont toujours en Espagne (sudNord) ou en France (nordSud) —
+        // jamais en zone LFP (vérifié sur les 9 trains 2026).
+        originNetwork: str(meta.direction) === 'nordSud' ? 'RFN' : 'ADIF',
         // "composition" (US/UM, ancien format) : pas d'équivalent 2026 (catalogue
         // matériel direct, sans notion de composition séparée).
         materiel: str(meta.materiel),

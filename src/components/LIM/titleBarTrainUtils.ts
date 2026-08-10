@@ -10,6 +10,12 @@ export type LIMFields = {
   unit?: string
 }
 
+export type CategoriesByNetwork = {
+  ADIF?: string
+  LFP?: string
+  RFN?: string
+}
+
 export type ManualTrainOption = {
   trainNumber: string
   numeroFrance?: string
@@ -17,6 +23,11 @@ export type ManualTrainOption = {
   ligne?: string
   categorieEspagne?: string
   categorieFrance?: string
+  // Catégories 2026 indexées par réseau (ADIF / LFP / RFN=SNCF). Le bloc info affiche
+  // celle du réseau courant déduit du GPS. Absent pour l'ancien format.
+  categoriesByNetwork?: CategoriesByNetwork
+  // Réseau de l'origine du train (catégorie affichée avant tout signal GPS).
+  originNetwork?: 'ADIF' | 'LFP' | 'RFN'
   composition?: string
   materiel?: string
 }
@@ -70,6 +81,9 @@ export function buildManualParsedFields(train: ManualTrainOption): LIMFields & R
     tren: train.trainNumber,
     trenPadded: train.trainNumber,
     type: train.categorieEspagne,
+    // Catégories 2026 par réseau, transportées jusqu'au bloc info (case catégorie).
+    categoriesByNetwork: train.categoriesByNetwork,
+    originNetwork: train.originNetwork,
     relation: train.relation,
     origenDestino: train.relation,
     rawDate: today,

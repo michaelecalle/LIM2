@@ -767,6 +767,10 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   // --- Continuité ORANGE -> RED (ancrage visuel) + anti-retour arrière en RED ---
   const lastTrainPosYpxRef = React.useRef<number | null>(null);
   const prevGpsStateUiRef = React.useRef<GpsStateUi>("RED");
+  // Réseau (ADIF/LFP/RFN) déduit du GPS, diffusé au bloc info (catégorie). On ne
+  // (ré)émet qu'au changement, et UNIQUEMENT depuis le chemin GPS → en horaire, pas
+  // d'émission = catégorie gelée sur la dernière valeur, réévaluée au retour du GPS.
+  const lastEmittedNetworkRef = React.useRef<"ADIF" | "LFP" | "RFN" | null>(null);
 
   // Courbe empirique : ancre STABLE {pk, heure}. Posée à la reprise (départ/gare), re-synchronisée
   // sur les bons fix GPS (≤ seuil), jamais re-posée sur un clignotement/fix douteux. La courbe se
@@ -944,6 +948,16 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
           // GPS -> U
           const netGps = guessNetFromPk(pkTrain);
           const targetU = pkToU(pkTrain, netGps);
+
+          // Diffuse le réseau courant au bloc info (catégorie), au changement seulement.
+          // Ici on est forcément en mode GPS (cf. garde ci-dessus) → en horaire, aucune
+          // émission, donc la catégorie reste gelée jusqu'au retour du GPS.
+          if (lastEmittedNetworkRef.current !== netGps) {
+            lastEmittedNetworkRef.current = netGps;
+            window.dispatchEvent(
+              new CustomEvent("lim:network-change", { detail: { network: netGps } })
+            );
+          }
 
           // Re-synchronisation de l'ancre empirique sur une position GPS FIABLE (acc ≤ seuil),
           // en coordonnée U (= pkInternal, cohérent avec les segments, valable aussi en LFP/Perthus).
