@@ -18,10 +18,6 @@ import {
 import { RIBBON_POINTS } from '../../lib/ligne050_ribbon_dense'
 
 import { getOcrOnlineEnabled, setOcrOnlineEnabled } from '../../lib/ocrSettings'
-import { ocrFallback as ocrFallbackRouter } from '../../lib/ocrRouter'
-import { ocrFallback as ocrFallbackLocal } from '../../lib/ocrLocalFallback'
-import { extractFields, readPdfFirstPageText } from '../../lib/limParser'
-import { initLtvPageFromFile } from '../../lib/ltvParser'
 
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -40,9 +36,6 @@ import { loadPdfLtvRows } from './titleBarLtvUtils'
 import {
   type LIMFields,
   type ManualTrainOption,
-  type MixedTrainIdentificationMethod,
-  type MixedTrainIdentificationResult,
-  MIXED_TRAIN_OCR_TIMEOUT_MS,
   toTitleNumber,
   formatTodayForManualImport,
   getCompositionMetrics,
@@ -50,7 +43,6 @@ import {
   normalizeKnownTrainNumber,
   buildDetectedTrainTokenVariants,
   detectedTokenMatchesKnownTrain,
-  findUniqueTrainInText,
 } from './titleBarTrainUtils'
 import {
   type ManualLtvApiEntry,
@@ -131,7 +123,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
 
   // 'ltv' = mode « LTV seul » : import du seul PDF LTV, pas de train ni de parcours,
   // affichage du seul bloc LTV (Infos + fiche train masqués). Fichier canonique partagé.
-  type StartupMode = 'mixed' | 'manual' | 'pdf' | '2026' | 'ltv'
+  type StartupMode = '2026' | 'ltv'
 
   const STARTUP_MODE_STORAGE_KEY = 'lim:startup-mode-default'
 
@@ -139,7 +131,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     try {
       const value = localStorage.getItem(STARTUP_MODE_STORAGE_KEY)
 
-      return value === 'mixed' || value === 'manual' || value === 'pdf' || value === '2026' || value === 'ltv'
+      return value === '2026' || value === 'ltv'
         ? value
         : null
     } catch {
@@ -148,14 +140,13 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   }
 
   const [startupModeChoiceOpen, setStartupModeChoiceOpen] = useState(false)
-  const [startupModeChoice, setStartupModeChoice] = useState<StartupMode>('mixed')
+  const [startupModeChoice, setStartupModeChoice] = useState<StartupMode>('2026')
   const [startupModeChoiceIntent, setStartupModeChoiceIntent] =
     useState<'start' | 'settings'>('start')
   const [activeStartupMode, setActiveStartupMode] = useState<StartupMode | null>(null)
   const startupLaunchModeRef = useRef<StartupMode | null>(null)
 
   type LtvRuntimeSource = 'normalized' | 'adif' | 'pdf' | 'pdf-ltv'
-  type LtvSourceSwitchDirection = 'previous' | 'next'
 
   const currentLtvSourceRef = useRef<LtvRuntimeSource>('normalized')
   const [ltvCountForTitle, setLtvCountForTitle] = useState<number | null>(null)
@@ -164,10 +155,6 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const getAvailableLtvSourcesForMode = (
     mode: StartupMode | null
   ): LtvRuntimeSource[] => {
-    if (mode === 'manual') return ['normalized', 'adif']
-
-    if (mode === 'mixed') return ['normalized', 'adif', 'pdf']
-
     // Mode 2026 : une seule source LTV → pas de bascule, pas de flèches dans le bandeau.
     if (mode === '2026') return ['pdf-ltv']
 
@@ -177,27 +164,10 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     return []
   }
 
-  const [manualImportOpen, setManualImportOpen] = useState(false)
   // SDM (#27) : modale de creation d'un sillon de derniere minute (par-dessus la modale de demarrage).
   const [sdmOpen, setSdmOpen] = useState(false)
   // Train de session cree via « Creer un train » (brouillon). Non persiste.
   const [sdmTrain, setSdmTrain] = useState<SdmDraft | null>(null)
-  const [manualImportContext, setManualImportContext] =
-    useState<'manual' | 'mixed_fallback'>('manual')
-  const [manualImportSelectedTrain, setManualImportSelectedTrain] = useState('')
-
-  // Replay : ouverture du mode manuel avec le numéro de train pré-rempli
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const ce = e as CustomEvent
-      const trainNumber = String(ce?.detail?.trainNumber ?? '')
-      setManualImportContext('manual')
-      setManualImportSelectedTrain(trainNumber)
-      setManualImportOpen(true)
-    }
-    window.addEventListener('replay:start-manual', handler as EventListener)
-    return () => window.removeEventListener('replay:start-manual', handler as EventListener)
-  }, [])
 
   const manualImportTrainOptions = useMemo<ManualTrainOption[]>(() => {
     const trains = (LIGNE_FT_NORMALIZED as any)?.trains ?? {}
@@ -238,14 +208,6 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
           ]
         : manualImportTrainOptions,
     [manualImportTrainOptions, sdmTrain]
-  )
-
-  const selectedManualImportTrain = useMemo(
-    () =>
-      effectiveTrainOptions.find(
-        (train) => train.trainNumber === manualImportSelectedTrain
-      ),
-    [effectiveTrainOptions, manualImportSelectedTrain]
   )
 
   // ----- FT VIEW MODE (ES / FR / AUTO) -----
@@ -702,41 +664,11 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
 
   const pdfLoadingTimerRef = useRef<number | null>(null)
 
-  const PDF_LOADING_TIMEOUT_MS = 45_000
-  const buildPdfLoadingFailMessage = () => {
-    const file = currentPdfFileRef.current
-    const lastParsed = (window as any).__limLastParsed
-
-    return [
-      "Le traitement du PDF n’a pas abouti (délai dépassé).",
-      "",
-      "Diagnostic :",
-      `- PDF : ${file?.name ?? "inconnu"}`,
-      `- Taille : ${file ? `${Math.round(file.size / 1024)} Ko` : "inconnue"}`,
-      `- Mode de démarrage : ${startupLaunchModeRef.current ?? "inconnu"}`,
-      `- lim:parsed reçu : ${lastParsed ? "OUI" : "NON"}`,
-      `- Train détecté : ${lastParsed?.trenPadded ?? lastParsed?.tren ?? "NON"}`,
-      "",
-      "Si lim:parsed = NON, le blocage est probablement dans le parsing principal du PDF.",
-      "",
-      "Réessayez ou passez en mode SECOURS (affichage PDF brut).",
-    ].join("\n")
-  }
-
   const stopPdfLoadingGuard = () => {
     if (pdfLoadingTimerRef.current != null) {
       window.clearTimeout(pdfLoadingTimerRef.current)
       pdfLoadingTimerRef.current = null
     }
-  }
-
-  const startPdfLoadingGuard = () => {
-    stopPdfLoadingGuard()
-    pdfLoadingTimerRef.current = window.setTimeout(() => {
-      pdfLoadingTimerRef.current = null
-      setPdfLoading(false)
-      window.alert(buildPdfLoadingFailMessage())
-    }, PDF_LOADING_TIMEOUT_MS)
   }
 
   const testAutoStartedRef = useRef(false)
@@ -2939,34 +2871,12 @@ ${coords}
   const brightnessPct = useMemo(() => Math.round(brightness * 100), [brightness])
 
   // ----- IMPORT PDF -----
-  const inputRef = useRef<HTMLInputElement>(null)
   const currentPdfFileRef = useRef<File | null>(null)
   // PDF LTV importé (mode 2026) — conservé pour être inclus dans le ZIP au STOP,
   // au même titre que le PDF fiche train. Remis à null aux mêmes points de reset.
   const currentLtvPdfFileRef = useRef<File | null>(null)
   const currentPdfIdRef = useRef<string | null>(null)
   const currentPdfReplayKeyRef = useRef<string | null>(null)
-
-  const handleImportClick = () => {
-    inputRef.current?.click()
-  }
-
-  const handleManualImportClick = () => {
-    if (simulationEnabled) {
-      logTestEvent('ui:blocked', { control: 'manualImportButton', source: 'titlebar' })
-      return
-    }
-
-    logTestEvent('ui:manual-import:click', {
-      source: 'titlebar',
-      pdfMode,
-      train: trainDisplay ?? null,
-    })
-
-    setManualImportContext('manual')
-    setManualImportSelectedTrain('')
-    setManualImportOpen(true)
-  }
 
   const launchStartupMode = (mode: StartupMode, source: string) => {
     startupLaunchModeRef.current = mode
@@ -2978,11 +2888,6 @@ ${coords}
       pdfMode,
     })
 
-    if (mode === 'manual') {
-      handleManualImportClick()
-      return
-    }
-
     if (mode === '2026') {
       setMode2026Open(true)
       return
@@ -2993,11 +2898,6 @@ ${coords}
       setMode2026Open(true)
       return
     }
-
-    // Mode PDF historique et mode mixte ouvrent tous les deux
-    // le sélecteur PDF. Le traitement spécifique du mode mixte
-    // sera branché dans une étape suivante.
-    handleImportClick()
   }
 
   const handleStartClick = () => {
@@ -3019,7 +2919,7 @@ ${coords}
       return
     }
 
-    setStartupModeChoice('mixed')
+    setStartupModeChoice('2026')
     setStartupModeChoiceIntent('start')
     setStartupModeChoiceOpen(true)
 
@@ -3182,11 +3082,6 @@ ${coords}
       startGpsWatch()
     }
 
-    if (options.closeManualImport) {
-      setManualImportOpen(false)
-      setManualImportContext('manual')
-    }
-
     ;(window as any).__limLastParsed = parsedFields
 
     logTestEvent('ui:manual-import:train-selected', {
@@ -3272,856 +3167,6 @@ ${coords}
     })
   }
 
-    const runMixedFirstPageOcr = async (
-    file: File
-  ): Promise<{ text: string; route: 'local' | 'router' | 'none' }> => {
-    try {
-      logTestEvent('mixed:train-identification:ocr-start', {
-        source: 'titlebar',
-        route: 'local',
-        pdfName: file.name,
-        timeoutMs: MIXED_TRAIN_OCR_TIMEOUT_MS,
-      })
-
-      const localText = await Promise.race<string>([
-        ocrFallbackLocal(file),
-        new Promise<string>((_, reject) =>
-          window.setTimeout(
-            () => reject(new Error('Local OCR timeout')),
-            MIXED_TRAIN_OCR_TIMEOUT_MS
-          )
-        ),
-      ])
-
-      if (localText && localText.trim().length > 0) {
-        return {
-          text: localText,
-          route: 'local',
-        }
-      }
-
-      logTestEvent('mixed:train-identification:ocr-empty', {
-        source: 'titlebar',
-        route: 'local',
-        pdfName: file.name,
-      })
-    } catch (err: any) {
-      console.warn('[TitleBar] OCR local mode mixte impossible', err)
-
-      logTestEvent('mixed:train-identification:ocr-failed', {
-        source: 'titlebar',
-        route: 'local',
-        pdfName: file.name,
-        error: err?.message ?? String(err),
-      })
-    }
-
-    if (!getOcrOnlineEnabled()) {
-      return {
-        text: '',
-        route: 'none',
-      }
-    }
-
-    try {
-      logTestEvent('mixed:train-identification:ocr-start', {
-        source: 'titlebar',
-        route: 'router',
-        pdfName: file.name,
-        timeoutMs: MIXED_TRAIN_OCR_TIMEOUT_MS,
-      })
-
-      const routedText = await Promise.race<string>([
-        ocrFallbackRouter(file),
-        new Promise<string>((_, reject) =>
-          window.setTimeout(
-            () => reject(new Error('Router OCR timeout')),
-            MIXED_TRAIN_OCR_TIMEOUT_MS
-          )
-        ),
-      ])
-
-      return {
-        text: routedText ?? '',
-        route: 'router',
-      }
-    } catch (err: any) {
-      console.warn('[TitleBar] OCR router mode mixte impossible', err)
-
-      logTestEvent('mixed:train-identification:ocr-failed', {
-        source: 'titlebar',
-        route: 'router',
-        pdfName: file.name,
-        error: err?.message ?? String(err),
-      })
-
-      return {
-        text: '',
-        route: 'none',
-      }
-    }
-  }
-
-  const identifyMixedTrainFromPdf = async (
-    file: File
-  ): Promise<MixedTrainIdentificationResult | null> => {
-    const byFilename = findUniqueTrainInText(file.name, manualImportTrainOptions)
-
-    if (byFilename) {
-      return {
-        train: byFilename,
-        method: 'filename',
-      }
-    }
-
-    const firstPageText = await readPdfFirstPageText(file)
-    const firstPageFields = extractFields(firstPageText)
-
-    const byExtractedFields = findUniqueTrainInText(
-      [
-        firstPageFields.tren,
-        firstPageFields.trenPadded,
-        (firstPageFields as any).train,
-      ]
-        .filter(Boolean)
-        .join(' '),
-      manualImportTrainOptions
-    )
-
-    if (byExtractedFields) {
-      return {
-        train: byExtractedFields,
-        method: 'pdf_first_page_fields',
-      }
-    }
-
-    const byFirstPageText = findUniqueTrainInText(
-      firstPageText,
-      manualImportTrainOptions
-    )
-
-    if (byFirstPageText) {
-      return {
-        train: byFirstPageText,
-        method: 'pdf_first_page_text',
-      }
-    }
-
-    try {
-      const ocrResult = await runMixedFirstPageOcr(file)
-      const ocrText = ocrResult.text
-
-      console.log('[MIXED OCR DIAG]', {
-        pdfName: file.name,
-        route: ocrResult.route,
-        textLength: typeof ocrText === 'string' ? ocrText.length : null,
-        textPreview:
-          typeof ocrText === 'string'
-            ? ocrText.slice(0, 1000)
-            : ocrText,
-      })
-
-      const ocrFields = extractFields(ocrText || '')
-
-      const byOcrFields = findUniqueTrainInText(
-        [
-          ocrFields.tren,
-          ocrFields.trenPadded,
-          (ocrFields as any).train,
-        ]
-          .filter(Boolean)
-          .join(' '),
-        manualImportTrainOptions
-      )
-
-      if (byOcrFields) {
-        return {
-          train: byOcrFields,
-          method: 'pdf_first_page_ocr_fields',
-        }
-      }
-
-      const byOcrText = findUniqueTrainInText(
-        ocrText,
-        manualImportTrainOptions
-      )
-
-      if (byOcrText) {
-        return {
-          train: byOcrText,
-          method: 'pdf_first_page_ocr_text',
-        }
-      }
-
-      logTestEvent('mixed:train-identification:ocr-no-match', {
-        source: 'titlebar',
-        pdfName: file.name,
-      })
-    } catch (err: any) {
-      console.warn('[TitleBar] OCR mode mixte impossible', err)
-
-      logTestEvent('mixed:train-identification:ocr-failed', {
-        source: 'titlebar',
-        pdfName: file.name,
-        error: err?.message ?? String(err),
-      })
-    }
-
-    return null
-  }
-
-  const openMixedFallbackTrainSelection = () => {
-    stopPdfLoadingGuard()
-    setPdfLoading(false)
-
-    setManualImportContext('mixed_fallback')
-    setManualImportSelectedTrain('')
-    setManualImportOpen(true)
-  }
-
-  const validateManualImport = () => {
-    if (!selectedManualImportTrain) return
-
-    const isMixedFallback = manualImportContext === 'mixed_fallback'
-
-    startNormalizedJourneyFromTrain(selectedManualImportTrain, {
-      source: isMixedFallback ? 'mixed_import_manual_fallback' : 'manual_import',
-      activeMode: isMixedFallback ? 'mixed' : 'manual',
-      keepPdf: isMixedFallback,
-      closeManualImport: true,
-    })
-  }
-
-  useEffect(() => {
-    const onLtvSourceSwitchRequest = async (event: Event) => {
-      const ce = event as CustomEvent<{
-        direction?: LtvSourceSwitchDirection
-        requestedSource?: LtvRuntimeSource
-        currentSource?: LtvRuntimeSource
-      }>
-
-      if (simulationEnabled) {
-        logTestEvent('ui:blocked', {
-          control: 'ltvSourceSwitch',
-          source: 'titlebar',
-        })
-        return
-      }
-
-      const mode = activeStartupMode
-      if (mode !== 'manual' && mode !== 'mixed') return
-
-      const trainNumber = trainDisplay
-      if (!trainNumber) return
-
-      const availableSources = getAvailableLtvSourcesForMode(mode)
-      if (availableSources.length <= 1) return
-
-      const detail = ce.detail ?? {}
-
-      const currentSource =
-        detail.currentSource && availableSources.includes(detail.currentSource)
-          ? detail.currentSource
-          : currentLtvSourceRef.current
-
-      const requestedSource =
-        detail.requestedSource && availableSources.includes(detail.requestedSource)
-          ? detail.requestedSource
-          : null
-
-      const currentIndex = Math.max(0, availableSources.indexOf(currentSource))
-
-      const nextSource =
-        requestedSource ??
-        availableSources[
-          detail.direction === 'previous'
-            ? (currentIndex - 1 + availableSources.length) % availableSources.length
-            : (currentIndex + 1) % availableSources.length
-        ]
-
-      if (nextSource === 'pdf') {
-        const pdfFile = currentPdfFileRef.current
-
-        if (!pdfFile) {
-          console.warn('[TitleBar] Source PDF LTV demandée mais aucun PDF disponible')
-
-          logTestEvent('ltv:source:switch:failed', {
-            source: 'titlebar',
-            activeMode: mode,
-            trainNumber,
-            requestedSource: 'pdf',
-            reason: 'missing_pdf_file',
-          })
-
-          return
-        }
-
-        try {
-          const preview = await buildMixedPdfLtvPreview(pdfFile)
-          const availableSourcesForPdf = getAvailableLtvSourcesForMode(mode)
-
-          currentLtvSourceRef.current = 'pdf'
-
-          window.dispatchEvent(
-            new CustomEvent('ltv:parsed', {
-              detail: {
-                mode: 'DISPLAY_DIRECT',
-                rows: [],
-                previewImageDataUrl: preview.dataUrl,
-                debugBands: [
-                  {
-                    dataUrl: preview.fullPageDataUrl,
-                    topPct: 0,
-                    bottomPct: 1,
-                    chosen: true,
-                  },
-                ],
-                source: mode === 'mixed' ? 'mixed_import' : 'manual_import',
-                ltvSource: 'pdf',
-                availableSources: availableSourcesForPdf,
-                trainNumber,
-                meta: {
-                  source: 'pdf',
-                  sourceUpdatedAt: preview.sourceUpdatedAt,
-                  displayedCount: 0,
-                },
-                sourceUpdatedAt: preview.sourceUpdatedAt,
-                displayedCount: 0,
-              },
-            })
-          )
-
-          logTestEvent('ltv:source:loaded', {
-            source: 'titlebar',
-            mode: mode === 'mixed' ? 'mixed_import' : 'manual_import',
-            activeMode: mode,
-            ltvSource: 'pdf',
-            trainNumber,
-            rowsCount: 0,
-            sourceUpdatedAt: preview.sourceUpdatedAt ?? null,
-            displayedCount: 0,
-            reason: 'user_source_switch',
-          })
-        } catch (error) {
-          console.warn('[TitleBar] Aperçu PDF LTV impossible', error)
-
-          logTestEvent('ltv:source:switch:failed', {
-            source: 'titlebar',
-            activeMode: mode,
-            trainNumber,
-            requestedSource: 'pdf',
-            error: error instanceof Error ? error.message : String(error),
-          })
-        }
-
-        return
-      }
-
-      const lastParsed = ((window as any).__limLastParsed ?? {}) as any
-
-      const journeySource =
-        typeof lastParsed.source === 'string' && lastParsed.source.trim().length > 0
-          ? lastParsed.source
-          : mode === 'mixed'
-            ? 'mixed_import'
-            : 'manual_import'
-
-      void dispatchLtvRowsForSource({
-        ltvSource: nextSource,
-        trainNumber,
-        journeySource,
-        activeMode: mode,
-        reason: 'user_source_switch',
-      }).catch((error) => {
-        console.warn('[TitleBar] Bascule source LTV impossible', error)
-
-        logTestEvent('ltv:source:switch:failed', {
-          source: 'titlebar',
-          activeMode: mode,
-          trainNumber,
-          requestedSource: nextSource,
-          error: error instanceof Error ? error.message : String(error),
-        })
-      })
-    }
-
-    window.addEventListener(
-      'ltv:source-switch-request',
-      onLtvSourceSwitchRequest as EventListener
-    )
-
-    return () => {
-      window.removeEventListener(
-        'ltv:source-switch-request',
-        onLtvSourceSwitchRequest as EventListener
-      )
-    }
-  }, [activeStartupMode, trainDisplay, simulationEnabled])
-
-  const computePdfId = async (file: File): Promise<string> => {
-    const buf = await file.arrayBuffer()
-    const hashBuf = await crypto.subtle.digest('SHA-256', buf)
-    const hashArr = Array.from(new Uint8Array(hashBuf))
-    return hashArr.map((b) => b.toString(16).padStart(2, '0')).join('')
-  }
-
-  const storePdfForReplay = async (pdfId: string, file: File): Promise<string> => {
-    const cache = await caches.open('limgpt-pdf-replay')
-    const key = `/replay/pdf/${pdfId}`
-    const req = new Request(key)
-    const res = new Response(file, {
-      headers: {
-        'Content-Type': file.type || 'application/pdf',
-        'X-File-Name': file.name,
-      },
-    })
-    await cache.put(req, res)
-    return key
-  }
-
-    const buildMixedPdfLtvPreview = async (
-    file: File,
-    verticalShiftPct = 0
-  ): Promise<{ dataUrl: string; fullPageDataUrl: string; sourceUpdatedAt?: string }> => {
-    const arrayBuffer = await file.arrayBuffer()
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) })
-    const pdfDoc = await loadingTask.promise
-
-    try {
-      const page = await pdfDoc.getPage(1)
-      const baseViewport = page.getViewport({ scale: 1 })
-
-      const scale = Math.max(
-        1,
-        Math.min(2, 1400 / Math.max(1, baseViewport.width))
-      )
-
-      const viewport = page.getViewport({ scale })
-
-      const fullCanvas = document.createElement('canvas')
-      const fullContext = fullCanvas.getContext('2d')
-
-      if (!fullContext) {
-        throw new Error('Canvas PDF indisponible')
-      }
-
-      fullCanvas.width = Math.floor(viewport.width)
-      fullCanvas.height = Math.floor(viewport.height)
-
-      const renderTask = page.render({
-        canvasContext: fullContext,
-        viewport,
-      })
-
-      await renderTask.promise
-
-      // Aperçu volontairement simple :
-      // on cible la zone LTV habituelle, située dans la partie haute de la page 1.
-      // verticalShiftPct permet seulement de monter/descendre cette bande.
-      const cropHeight = Math.floor(fullCanvas.height * 0.23)
-      const baseTopPct = 0.18
-      const requestedTopPct = baseTopPct + verticalShiftPct
-      const maxTopPct = Math.max(0, 1 - cropHeight / Math.max(1, fullCanvas.height))
-
-      const cropTop = Math.floor(
-        fullCanvas.height * Math.max(0, Math.min(maxTopPct, requestedTopPct))
-      )
-      const cropLeft = Math.floor(fullCanvas.width * 0.02)
-      const cropWidth = Math.floor(fullCanvas.width * 0.96)
-
-      const previewCanvas = document.createElement('canvas')
-      const previewContext = previewCanvas.getContext('2d')
-
-      if (!previewContext) {
-        throw new Error('Canvas aperçu PDF indisponible')
-      }
-
-      previewCanvas.width = cropWidth
-      previewCanvas.height = cropHeight
-
-      previewContext.drawImage(
-        fullCanvas,
-        cropLeft,
-        cropTop,
-        cropWidth,
-        cropHeight,
-        0,
-        0,
-        cropWidth,
-        cropHeight
-      )
-
-      // Image pleine page (utilisée comme base pour le recadrage manuel)
-      const fullPageDataUrl = fullCanvas.toDataURL('image/png')
-
-      return {
-        dataUrl: previewCanvas.toDataURL('image/png'),
-        fullPageDataUrl,
-        sourceUpdatedAt:
-          typeof file.lastModified === 'number' && Number.isFinite(file.lastModified)
-            ? new Date(file.lastModified).toISOString()
-            : undefined,
-      }
-    } finally {
-      try {
-        await pdfDoc.destroy?.()
-      } catch {}
-    }
-  }
-
-  useEffect(() => {
-    const onPdfPreviewShiftRequest = async (event: Event) => {
-      const ce = event as CustomEvent<{
-        direction?: 'up' | 'down'
-      }>
-
-      if (simulationEnabled) {
-        logTestEvent('ui:blocked', {
-          control: 'ltvPdfPreviewShift',
-          source: 'titlebar',
-        })
-        return
-      }
-
-      if (activeStartupMode !== 'mixed') return
-      if (currentLtvSourceRef.current !== 'pdf') return
-
-      const pdfFile = currentPdfFileRef.current
-      if (!pdfFile) return
-
-      const trainNumber = trainDisplay
-      if (!trainNumber) return
-
-      const direction = ce.detail?.direction === 'up' ? 'up' : 'down'
-      const currentShiftRaw = (window as any).__limMixedPdfLtvPreviewShiftPct
-      const currentShift =
-        typeof currentShiftRaw === 'number' && Number.isFinite(currentShiftRaw)
-          ? currentShiftRaw
-          : 0
-
-      const STEP = 0.06
-
-      // On autorise une plage large.
-      // La fonction buildMixedPdfLtvPreview protège déjà contre les dépassements
-      // en limitant réellement le recadrage entre le haut et le bas de la page.
-      const SHIFT_LIMIT = 0.60
-
-      const nextShift =
-        direction === 'up'
-          ? Math.max(-SHIFT_LIMIT, currentShift - STEP)
-          : Math.min(SHIFT_LIMIT, currentShift + STEP)
-
-      ;(window as any).__limMixedPdfLtvPreviewShiftPct = nextShift
-
-      try {
-        const preview = await buildMixedPdfLtvPreview(pdfFile, nextShift)
-        const availableSourcesForPdf = getAvailableLtvSourcesForMode('mixed')
-
-        currentLtvSourceRef.current = 'pdf'
-
-        window.dispatchEvent(
-          new CustomEvent('ltv:parsed', {
-            detail: {
-              mode: 'DISPLAY_DIRECT',
-              rows: [],
-              previewImageDataUrl: preview.dataUrl,
-              debugBands: [
-                {
-                  dataUrl: preview.fullPageDataUrl,
-                  topPct: 0,
-                  bottomPct: 1,
-                  chosen: true,
-                },
-              ],
-              source: 'mixed_import',
-              ltvSource: 'pdf',
-              availableSources: availableSourcesForPdf,
-              trainNumber,
-              meta: {
-                source: 'pdf',
-                sourceUpdatedAt: preview.sourceUpdatedAt,
-                displayedCount: 0,
-              },
-              sourceUpdatedAt: preview.sourceUpdatedAt,
-              displayedCount: 0,
-            },
-          })
-        )
-
-        logTestEvent('ltv:pdf-preview:shift', {
-          source: 'titlebar',
-          direction,
-          shiftPct: nextShift,
-          trainNumber,
-        })
-      } catch (error) {
-        console.warn('[TitleBar] Déplacement aperçu PDF LTV impossible', error)
-
-        logTestEvent('ltv:pdf-preview:shift:failed', {
-          source: 'titlebar',
-          direction,
-          trainNumber,
-          error: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-
-    window.addEventListener(
-      'ltv:pdf-preview-shift-request',
-      onPdfPreviewShiftRequest as EventListener
-    )
-
-    return () => {
-      window.removeEventListener(
-        'ltv:pdf-preview-shift-request',
-        onPdfPreviewShiftRequest as EventListener
-      )
-    }
-  }, [activeStartupMode, trainDisplay, simulationEnabled])
-
-    useEffect(() => {
-    const onLtvPdfHistoryRequest = (event: Event) => {
-      const ce = event as CustomEvent<{
-        source?: string
-      }>
-
-      if (simulationEnabled) {
-        logTestEvent('ui:blocked', {
-          control: 'ltvUsePdf',
-          source: 'titlebar',
-        })
-        return
-      }
-
-      if (activeStartupMode !== 'mixed') {
-        logTestEvent('ltv:pdf-history-request:ignored', {
-          source: 'titlebar',
-          reason: 'not_mixed_mode',
-          activeStartupMode,
-        })
-        return
-      }
-
-      const file = currentPdfFileRef.current
-
-      if (!file) {
-        console.warn('[TitleBar] Utiliser le PDF demandé mais aucun PDF disponible')
-
-        logTestEvent('ltv:pdf-history-request:failed', {
-          source: 'titlebar',
-          reason: 'missing_pdf_file',
-          requestSource: ce.detail?.source ?? null,
-        })
-
-        return
-      }
-
-      logTestEvent('ltv:pdf-history-request:dispatch', {
-        source: 'titlebar',
-        requestSource: ce.detail?.source ?? null,
-        activeStartupMode,
-        pdfName: file.name,
-        pdfId: currentPdfIdRef.current,
-        replayKey: currentPdfReplayKeyRef.current,
-      })
-
-      // Initialise la référence de page dans ltvParser pour que ltv:request-band fonctionne
-      void initLtvPageFromFile(file)
-
-      // Génère le bandeau PDF et bascule le LTV en mode NEEDS_CROP
-      void buildMixedPdfLtvPreview(file).then((preview) => {
-        const availableSources = getAvailableLtvSourcesForMode('mixed')
-        currentLtvSourceRef.current = 'pdf'
-
-        window.dispatchEvent(
-          new CustomEvent('ltv:parsed', {
-            detail: {
-              mode: 'NEEDS_CROP',
-              previewImageDataUrl: preview.dataUrl,
-              rows: [],
-              source: 'mixed_import',
-              ltvSource: 'pdf',
-              availableSources,
-              trainNumber: trainDisplay,
-              meta: {
-                source: 'pdf',
-                sourceUpdatedAt: preview.sourceUpdatedAt,
-                displayedCount: 0,
-              },
-              sourceUpdatedAt: preview.sourceUpdatedAt,
-              displayedCount: 0,
-            },
-          })
-        )
-      }).catch((err) => {
-        console.warn('[TitleBar] Utiliser le PDF LTV impossible', err)
-      })
-    }
-
-    window.addEventListener(
-      'ltv:pdf-history-request',
-      onLtvPdfHistoryRequest as EventListener
-    )
-
-    return () => {
-      window.removeEventListener(
-        'ltv:pdf-history-request',
-        onLtvPdfHistoryRequest as EventListener
-      )
-    }
-  }, [activeStartupMode, simulationEnabled])
-
-  const onPickPdf: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
-    const file = e.target.files?.[0]
-    if (file) {
-            setPdfLoadingErrorMessage(null)
-      setPdfLoading(true)
-      startPdfLoadingGuard()
-
-      let pdfId: string | null = null
-      let replayKey: string | null = null
-      try {
-        pdfId = await computePdfId(file)
-        replayKey = await storePdfForReplay(pdfId, file)
-      } catch (err) {
-        console.warn('[TitleBar] Impossible de préparer le PDF pour replay (local)', err)
-        pdfId = null
-        replayKey = null
-      }
-
-      const pickedStartupMode: StartupMode =
-        startupLaunchModeRef.current === 'mixed'
-          ? 'mixed'
-          : startupLaunchModeRef.current === 'pdf'
-            ? 'pdf'
-            : 'pdf'
-
-      setActiveStartupMode(pickedStartupMode)
-
-      const importSource =
-        pickedStartupMode === 'mixed' ? 'mixed_import' : 'pdf_import'
-
-      if (!testRecording) {
-        const labelParts: string[] = []
-        labelParts.push('silent')
-        labelParts.push(importSource)
-        if (pdfId) labelParts.push(pdfId.slice(0, 8))
-
-        const label = labelParts.join('_')
-
-        startTestSession(label)
-        setTestRecording(true)
-
-        logTestEvent('testlog:silent-start', {
-          source: importSource,
-          label,
-          pdfName: file.name,
-          pdfId,
-          replayKey,
-          testModeEnabled,
-        })
-      }
-
-      logTestEvent('import:pdf', {
-        name: file.name,
-        size: file.size,
-        type: file.type || null,
-        lastModified: typeof file.lastModified === 'number' ? file.lastModified : null,
-        source: pickedStartupMode === 'mixed' ? 'mixed-file-picker' : 'file-picker',
-        startupMode: pickedStartupMode,
-        pdfId,
-        replayKey,
-        storage: 'local',
-      })
-
-      currentPdfFileRef.current = file
-      currentLtvPdfFileRef.current = null
-      currentPdfIdRef.current = pdfId
-      currentPdfReplayKeyRef.current = replayKey
-
-      if (!simulationEnabled) {
-        startGpsWatch()
-      }
-
-      if (pickedStartupMode === 'mixed') {
-        // En mode mixte, on conserve le PDF pour le mode SECOURS,
-        // mais on ne déclenche pas le parsing PDF historique.
-        window.dispatchEvent(
-          new CustomEvent('lim:pdf-raw', {
-            detail: { file, pdfId, replayKey, storage: 'local' },
-          })
-        )
-
-        setPdfMode('green')
-
-        try {
-          const identified = await identifyMixedTrainFromPdf(file)
-
-          if (identified) {
-            logTestEvent('mixed:train-identification:ok', {
-              source: 'titlebar',
-              method: identified.method,
-              trainNumber: identified.train.trainNumber,
-              numeroFrance: identified.train.numeroFrance ?? null,
-              pdfName: file.name,
-              pdfId,
-              replayKey,
-            })
-
-            startNormalizedJourneyFromTrain(identified.train, {
-              source: 'mixed_import',
-              activeMode: 'mixed',
-              keepPdf: true,
-              closeManualImport: false,
-            })
-          } else {
-            logTestEvent('mixed:train-identification:failed', {
-              source: 'titlebar',
-              reason: 'no_unique_normalized_train_match',
-              pdfName: file.name,
-              pdfId,
-              replayKey,
-            })
-
-            openMixedFallbackTrainSelection()
-          }
-        } catch (err: any) {
-          logTestEvent('mixed:train-identification:failed', {
-            source: 'titlebar',
-            reason: err?.message ?? String(err),
-            pdfName: file.name,
-            pdfId,
-            replayKey,
-          })
-
-          openMixedFallbackTrainSelection()
-        }
-
-        return
-      }
-
-      window.dispatchEvent(
-        new CustomEvent('lim:import-pdf', {
-          detail: { file, pdfId, replayKey, storage: 'local' },
-        })
-      )
-      window.dispatchEvent(
-        new CustomEvent('ft:import-pdf', {
-          detail: { file, pdfId, replayKey, storage: 'local' },
-        })
-      )
-      window.dispatchEvent(
-        new CustomEvent('lim:pdf-raw', {
-          detail: { file, pdfId, replayKey, storage: 'local' },
-        })
-      )
-
-      setPdfMode('green')
-    }
-
-    if (inputRef.current) inputRef.current.value = ''
-  }
-
   useEffect(() => {
     const onParsed = (e: Event) => {
       const ce = e as CustomEvent
@@ -4137,28 +3182,6 @@ ${coords}
 
       stopPdfLoadingGuard()
       setPdfLoading(false)
-
-      try {
-        const missingTrain =
-          !String((detail as any)?.trenPadded ?? (detail as any)?.tren ?? '').trim()
-
-        if (startupLaunchModeRef.current === 'pdf' && missingTrain) {
-          setPdfLoadingErrorMessage(
-            [
-              'Le PDF a été partiellement analysé, mais le numéro de train n’a pas été identifié.',
-              '',
-              'Diagnostic lim:parsed :',
-              `- tren : ${(detail as any)?.tren ?? 'NON'}`,
-              `- trenPadded : ${(detail as any)?.trenPadded ?? 'NON'}`,
-              `- fecha : ${(detail as any)?.fecha ?? 'NON'}`,
-              `- origenDestino : ${(detail as any)?.origenDestino ?? 'NON'}`,
-              `- composicion : ${(detail as any)?.composicion ?? (detail as any)?.unit ?? 'NON'}`,
-              `- longitud : ${(detail as any)?.longitud ?? 'NON'}`,
-              `- type : ${(detail as any)?.type ?? 'NON'}`,
-            ].join('\n')
-          )
-        }
-      } catch {}
 
       const raw = detail.trenPadded ?? detail.tren
       const disp = toTitleNumber(raw)
@@ -5160,89 +4183,6 @@ style={{
                   <input
                     type="radio"
                     name="startup-mode"
-                    checked={startupModeChoice === 'mixed'}
-                    onChange={() => setStartupModeChoice('mixed')}
-                    className="mt-1 h-4 w-4 cursor-pointer accent-blue-600"
-                  />
-                  <div>
-                    <div className="text-sm font-semibold">
-                      Mode mixte <span className="opacity-70">(recommandé)</span>
-                    </div>
-<div className="text-xs opacity-75 mt-1">
-  Dans ce mode, l’utilisateur importe le LIM au format PDF.
-  <br />
-  Le mode SECOURS est <strong>DISPONIBLE</strong>.
-</div>
-                  </div>
-                </div>
-              </label>
-
-              <label className="block rounded-xl border p-3 cursor-pointer"
-style={{
-  backgroundColor: dark ? "#27272a" : "#fafafa",
-  color: dark ? "#f4f4f5" : "#18181b",
-  borderColor: dark ? "#52525b" : "#e4e4e7",
-}}>
-                <div className="flex items-start gap-3">
-                  <input
-                    type="radio"
-                    name="startup-mode"
-                    checked={startupModeChoice === 'manual'}
-                    onChange={() => setStartupModeChoice('manual')}
-                    className="mt-1 h-4 w-4 cursor-pointer accent-blue-600"
-                  />
-                  <div>
-                    <div className="text-sm font-semibold">
-                      Mode manuel
-                    </div>
-<div className="text-xs opacity-75 mt-1">
-  Dans ce mode, l’utilisateur sélectionne manuellement le numéro du train.
-  <br />
-  Le mode SECOURS n’est <strong>PAS DISPONIBLE</strong>.
-</div>
-                  </div>
-                </div>
-              </label>
-
-              <label className="block rounded-xl border p-3 cursor-pointer"
-style={{
-  backgroundColor: dark ? "#27272a" : "#fafafa",
-  color: dark ? "#f4f4f5" : "#18181b",
-  borderColor: dark ? "#52525b" : "#e4e4e7",
-}}>
-                <div className="flex items-start gap-3">
-                  <input
-                    type="radio"
-                    name="startup-mode"
-                    checked={startupModeChoice === 'pdf'}
-                    onChange={() => setStartupModeChoice('pdf')}
-                    className="mt-1 h-4 w-4 cursor-pointer accent-blue-600"
-                  />
-                  <div>
-                    <div className="text-sm font-semibold">
-                      Mode PDF <span className="opacity-70">(historique)</span>
-                    </div>
-<div className="text-xs opacity-75 mt-1">
-  Dans ce mode, l’utilisateur importe le LIM au format PDF.
-  <br />
-  Celui-ci est analysé par reconnaissance de caractères.
-  <br />
-  Le mode SECOURS est <strong>DISPONIBLE</strong>.
-</div>
-                  </div>
-                </div>
-              </label>
-
-              <label className="block rounded-xl border p-3 cursor-pointer"
-style={{
-  backgroundColor: dark ? "#27272a" : "#fafafa",
-  color: dark ? "#f4f4f5" : "#18181b",
-  borderColor: dark ? "#52525b" : "#e4e4e7",
-}}>
-                <div className="flex items-start gap-3">
-                  <input
-                    type="radio"
-                    name="startup-mode"
                     checked={startupModeChoice === '2026'}
                     onChange={() => setStartupModeChoice('2026')}
                     className="mt-1 h-4 w-4 cursor-pointer accent-blue-600"
@@ -5298,146 +4238,6 @@ style={{
               >
                 Valider
               </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {manualImportOpen && createPortal(
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[1px]"
-          onClick={() => setManualImportOpen(false)}
-        >
-          <div
-            className={`w-[min(520px,92vw)] rounded-2xl border shadow-lg p-4${dark ? ' dark bg-zinc-900 border-zinc-700 text-zinc-100' : ' bg-white border-zinc-200 text-zinc-900'}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-lg font-semibold">
-                  {manualImportContext === 'mixed_fallback'
-                    ? 'Sélection du train'
-                    : 'Import manuel'}
-                </div>
-
-                <div className="text-xs opacity-70">
-                  {manualImportContext === 'mixed_fallback' ? (
-                    <>
-                      Le numéro de train n’a pas pu être identifié automatiquement depuis le PDF.
-                      <br />
-                      Sélectionnez manuellement le train à utiliser.
-                      <br />
-                      Le mode SECOURS restera disponible avec le PDF importé.
-                    </>
-                  ) : (
-                    'Sélection du train depuis le normalisé'
-                  )}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setManualImportOpen(false)}
-                className="h-8 px-3 text-xs rounded-md bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100 font-semibold"
-              >
-                Fermer
-              </button>
-            </div>
-
-            <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-3" />
-
-            <div className="space-y-3">
-              <label className="block">
-                <div className="text-xs font-semibold opacity-70 mb-1">
-                  Train normalisé
-                </div>
-
-                <select
-                  value={manualImportSelectedTrain}
-                  onChange={(e) => { if (e.target.value === 'SDM') { setSdmOpen(true); return } setManualImportSelectedTrain(e.target.value) }}
-                  className={`w-full h-10 rounded-lg border px-3 text-sm${dark ? ' bg-zinc-800 border-zinc-700 text-zinc-100' : ' bg-white border-zinc-300 text-zinc-900'}`}
-                  style={dark ? { colorScheme: 'dark' } : undefined}
-                >
-                  <option value="">Sélectionner un train…</option>
-
-                  {effectiveTrainOptions.map((train) => (
-                    <option key={train.trainNumber} value={train.trainNumber}>
-                      {train.trainNumber}
-                      {train.numeroFrance ? ` / ${train.numeroFrance}` : ''}
-                      {train.relation ? ` — ${train.relation}` : ''}
-                    </option>
-                  ))}
-                  <option value="SDM">Créer un train</option>
-                </select>
-              </label>
-
-              {selectedManualImportTrain && (
-                <div className={`rounded-xl border p-3 text-xs space-y-1${dark ? ' bg-zinc-800/40 border-zinc-700/70' : ' bg-zinc-50 border-zinc-200/70'}`}>
-                  <div>
-                    <span className="font-semibold">Train ES : </span>
-                    {selectedManualImportTrain.trainNumber}
-                  </div>
-
-                  <div>
-                    <span className="font-semibold">Train FR : </span>
-                    {selectedManualImportTrain.numeroFrance ?? '—'}
-                  </div>
-
-                  <div>
-                    <span className="font-semibold">Relation : </span>
-                    {selectedManualImportTrain.relation ?? '—'}
-                  </div>
-
-                  <div>
-                    <span className="font-semibold">Ligne : </span>
-                    {selectedManualImportTrain.ligne ?? '—'}
-                  </div>
-
-                  <div>
-                    <span className="font-semibold">Catégorie ES : </span>
-                    {selectedManualImportTrain.categorieEspagne ?? '—'}
-                  </div>
-
-                  <div>
-                    <span className="font-semibold">Catégorie FR : </span>
-                    {selectedManualImportTrain.categorieFrance ?? '—'}
-                  </div>
-
-                  <div>
-                    <span className="font-semibold">Composition : </span>
-                    {selectedManualImportTrain.composition ?? '—'}
-                  </div>
-
-                  <div>
-                    <span className="font-semibold">Matériel : </span>
-                    {selectedManualImportTrain.materiel ?? '—'}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setManualImportOpen(false)}
-                  className="h-8 px-3 text-xs rounded-md bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100 font-semibold"
-                >
-                  Annuler
-                </button>
-
-                <button
-                  type="button"
-                  disabled={!selectedManualImportTrain}
-                  onClick={validateManualImport}
-                  className={
-                    selectedManualImportTrain
-                      ? 'h-8 px-3 text-xs rounded-md bg-violet-600 text-white font-semibold'
-                      : 'h-8 px-3 text-xs rounded-md bg-zinc-200 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500 font-semibold cursor-not-allowed'
-                  }
-                >
-                  Valider ce train
-                </button>
-              </div>
             </div>
           </div>
         </div>,
@@ -5820,37 +4620,23 @@ setAutoScrollStartedOnce(next)
               const storedStartupMode = readStoredStartupMode()
 
               const startupModeIcon =
-                storedStartupMode === 'manual'
-                  ? '✋'
-                  : storedStartupMode === 'pdf'
-                    ? 'PDF'
-                    : storedStartupMode === 'mixed'
-                      ? '🧩'
-                      : storedStartupMode === '2026'
-                        ? '📋'
-                        : storedStartupMode === 'ltv'
-                          ? 'LTV'
-                          : null
+                storedStartupMode === '2026'
+                  ? '📋'
+                  : storedStartupMode === 'ltv'
+                    ? 'LTV'
+                    : null
 
               const startupModeTitle =
-                storedStartupMode === 'manual'
-                  ? 'Mode de démarrage sélectionné : manuel'
-                  : storedStartupMode === 'pdf'
-                    ? 'Mode de démarrage sélectionné : PDF historique'
-                    : storedStartupMode === 'mixed'
-                      ? 'Mode de démarrage sélectionné : mixte'
-                      : storedStartupMode === '2026'
-                        ? 'Mode de démarrage sélectionné : 2026'
-                        : storedStartupMode === 'ltv'
-                          ? 'Mode de démarrage sélectionné : LTV seul'
-                          : 'Aucun mode de démarrage enregistré'
+                storedStartupMode === '2026'
+                  ? 'Mode de démarrage sélectionné : 2026'
+                  : storedStartupMode === 'ltv'
+                    ? 'Mode de démarrage sélectionné : LTV seul'
+                    : 'Aucun mode de démarrage enregistré'
 
               const startupModeIconClassName =
-                storedStartupMode === 'pdf'
-                  ? 'h-8 w-8 rounded-md bg-red-600 text-white flex items-center justify-center text-[10px] font-bold select-none cursor-pointer'
-                  : storedStartupMode === 'ltv'
-                    ? 'h-8 w-8 rounded-md bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold select-none cursor-pointer'
-                    : 'h-8 w-8 rounded-md bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100 flex items-center justify-center text-sm select-none cursor-pointer'
+                storedStartupMode === 'ltv'
+                  ? 'h-8 w-8 rounded-md bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold select-none cursor-pointer'
+                  : 'h-8 w-8 rounded-md bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100 flex items-center justify-center text-sm select-none cursor-pointer'
 
               const openStartupModeChoice = () => {
                 if (simulationEnabled) {
@@ -5858,7 +4644,7 @@ setAutoScrollStartedOnce(next)
                   return
                 }
                 const mode = readStoredStartupMode()
-                setStartupModeChoice(mode ?? 'mixed')
+                setStartupModeChoice(mode ?? '2026')
                 setStartupModeChoiceIntent('settings')
                 setStartupModeChoiceOpen(true)
                 logTestEvent('ui:startup-mode-choice:open', {
@@ -5898,26 +4684,14 @@ setAutoScrollStartedOnce(next)
           {pdfMode !== 'blue' && (
             <button
               type="button"
-              aria-disabled={activeStartupMode === 'manual'}
               title={
-                activeStartupMode === 'manual'
-                  ? 'Mode manuel : le mode SECOURS n’est pas disponible'
-                  : pdfMode === 'green'
-                    ? 'Passer en mode SECOURS'
-                    : 'Revenir en mode NORMAL'
+                pdfMode === 'green'
+                  ? 'Passer en mode SECOURS'
+                  : 'Revenir en mode NORMAL'
               }
               onClick={() => {
                 if (simulationEnabled) {
                   logTestEvent('ui:blocked', { control: 'pdfModeButton', source: 'titlebar' })
-                  return
-                }
-
-                if (activeStartupMode === 'manual') {
-                  logTestEvent('ui:blocked', {
-                    control: 'pdfModeButton',
-                    source: 'titlebar',
-                    reason: 'manual_import_no_secours',
-                  })
                   return
                 }
 
@@ -5928,11 +4702,9 @@ setAutoScrollStartedOnce(next)
                 }
               }}
               className={
-                activeStartupMode === 'manual'
-                  ? 'h-8 px-3 text-xs rounded-md bg-emerald-500 text-white flex items-center gap-1 opacity-70 cursor-not-allowed'
-                  : pdfMode === 'green'
-                    ? 'h-8 px-3 text-xs rounded-md bg-emerald-500 text-white flex items-center gap-1'
-                    : 'h-8 px-3 text-xs rounded-md bg-red-500 text-white flex items-center gap-1'
+                pdfMode === 'green'
+                  ? 'h-8 px-3 text-xs rounded-md bg-emerald-500 text-white flex items-center gap-1'
+                  : 'h-8 px-3 text-xs rounded-md bg-red-500 text-white flex items-center gap-1'
               }
             >
               {pdfMode === 'green' && <span className="font-bold">NORMAL</span>}
@@ -6140,7 +4912,7 @@ setAutoScrollStartedOnce(next)
 
                   const storedMode = readStoredStartupMode()
 
-                  setStartupModeChoice(storedMode ?? 'mixed')
+                  setStartupModeChoice(storedMode ?? '2026')
                   setStartupModeChoiceIntent('settings')
                   setStartupModeChoiceOpen(true)
 
@@ -6538,7 +5310,6 @@ setAutoScrollStartedOnce(next)
                   stations: draft.stations.map(s => ({ name: s.name, arr: s.arr, dep: s.dep })),
                 })
                 setSdmOpen(false)
-                setManualImportSelectedTrain(draft.trainNumber)
               }}
             />,
             document.body
@@ -6601,14 +5372,6 @@ setAutoScrollStartedOnce(next)
             </div>,
             document.body
           )}
-
-          <input
-            ref={inputRef}
-            type="file"
-            accept="application/pdf"
-            onChange={onPickPdf}
-            className="hidden"
-          />
 
           <input
             ref={gpsReplayInputRef}
