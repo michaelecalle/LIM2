@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { getFtLignePair, getFtLigneImpair, getTrainOrigine, getTrainDestination } from "../../data/ligneFT.normalized.adapter";
+// Données de ligne + métadonnées train : normalisé 2026 publié (fichier embarqué).
+import { getFtLignePair, getFtLigneImpair, getTrainOrigine, getTrainDestination } from "../../data/ligneFT2026.ft.adapter";
 import type { FTEntry } from "../../data/ligneFT";
 
 // ============================================================================

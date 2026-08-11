@@ -16,6 +16,14 @@ export type CategoriesByNetwork = {
   RFN?: string
 }
 
+// Un matériel du catalogue `materiels` du normalisé 2026. Longueur/masse sont
+// UNITAIRES (rame US) : on les double quand la composition est UM.
+export type MaterielCatalogEntry = {
+  nom: string
+  longueur: number
+  masse: number
+}
+
 export type ManualTrainOption = {
   trainNumber: string
   numeroFrance?: string
@@ -30,6 +38,9 @@ export type ManualTrainOption = {
   originNetwork?: 'ADIF' | 'LFP' | 'RFN'
   composition?: string
   materiel?: string
+  // Catalogue complet des matériels du normalisé 2026 : sert à afficher
+  // longueur/masse (× 2 si UM) et à cycler entre matériels (appui long).
+  materielCatalog?: MaterielCatalogEntry[]
 }
 
 export type MixedTrainIdentificationMethod =
@@ -63,19 +74,27 @@ export function formatTodayForManualImport(): string {
   return `${day}/${month}/${year}`
 }
 
-export function getCompositionMetrics(composition?: string): {
-  lengthMeters?: number
-  massTons?: number
-} {
-  const value = String(composition ?? '').trim().toUpperCase()
-  if (value === 'US') return { lengthMeters: 200, massTons: 433 }
-  if (value === 'UM') return { lengthMeters: 400, massTons: 866 }
-  return {}
+// Longueur/masse AFFICHÉES = spec UNITAIRE du matériel (catalogue du normalisé 2026)
+// × 2 si la composition est UM. Renvoie {} si le matériel est absent du catalogue :
+// on n'affiche alors rien plutôt que d'inventer une valeur (décision 10/08). Remplace
+// les anciennes constantes en dur (US 200/433 · UM 400/866).
+export function getMaterielMetrics(
+  materiel: string | undefined,
+  composition: string | undefined,
+  catalog: MaterielCatalogEntry[] | undefined
+): { lengthMeters?: number; massTons?: number } {
+  const spec = (catalog ?? []).find((m) => m.nom === materiel)
+  if (!spec) return {}
+  const factor = String(composition ?? '').trim().toUpperCase() === 'UM' ? 2 : 1
+  return { lengthMeters: spec.longueur * factor, massTons: spec.masse * factor }
 }
 
 export function buildManualParsedFields(train: ManualTrainOption): LIMFields & Record<string, any> {
   const today = formatTodayForManualImport()
-  const metrics = getCompositionMetrics(train.composition)
+  // Composition : elle NE VIENT PLUS du normalisé (décision 07/08 — hors normalisé).
+  // Défaut US ; le conducteur bascule en UM manuellement (appui long sur la tuile).
+  const composition = train.composition ?? 'US'
+  const metrics = getMaterielMetrics(train.materiel, composition, train.materielCatalog)
   return {
     train: train.trainNumber,
     tren: train.trainNumber,
@@ -89,18 +108,20 @@ export function buildManualParsedFields(train: ManualTrainOption): LIMFields & R
     rawDate: today,
     fecha: today,
     fechaRaw: today,
-    unit: train.composition,
-    composicion: train.composition,
+    unit: composition,
+    composicion: composition,
     material: train.materiel,
+    // Catalogue transporté jusqu'au bloc info : longueur/masse + cycle appui long.
+    materielCatalog: train.materielCatalog,
     linea: train.ligne,
     line: train.ligne,
     lengthMeters: metrics.lengthMeters,
     longitud: metrics.lengthMeters,
     massTons: metrics.massTons,
     masa: metrics.massTons,
-    operador: 'OUIGO',
-    operadorLogo: '/ouigo.svg',
-    ouigoLogoUrl: '/ouigo.svg',
+    operador: 'INOUI',
+    operadorLogo: '/inoui.png',
+    ouigoLogoUrl: '/inoui.png',
     source: 'manual_import',
   }
 }

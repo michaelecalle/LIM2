@@ -1,12 +1,7 @@
 import React from "react"
 import ClassicInfoPanel from "./ClassicInfoPanel"
-import {
-  getTrainComposition,
-  getTrainLigne,
-  getTrainMateriel,
-  getTrainRelation,
-} from "../../data/ligneFT.normalized.adapter"
-import type { CategoriesByNetwork } from "./titleBarTrainUtils"
+import type { CategoriesByNetwork, MaterielCatalogEntry } from "./titleBarTrainUtils"
+import { getMaterielMetrics } from "./titleBarTrainUtils"
 type LIMData = {
 
   train?: string
@@ -22,6 +17,7 @@ type LIMData = {
   // Enrichissements éventuels
   categoriesByNetwork?: CategoriesByNetwork
   originNetwork?: 'ADIF' | 'LFP' | 'RFN'
+  materielCatalog?: MaterielCatalogEntry[]
   tren?: string
   origenDestino?: string
   fecha?: string
@@ -61,7 +57,7 @@ function buildPanelData(src: any): any {
     longitud: d.longitud ?? d.lengthMeters ?? "",
     masa: d.masa ?? d.massTons ?? "",
     operador: d.operador ?? "OUIGO",
-    operadorLogo: d.operadorLogo ?? d.ouigoLogoUrl ?? "/ouigo.svg",
+    operadorLogo: d.operadorLogo ?? d.ouigoLogoUrl ?? "/inoui.png",
   }
 }
 
@@ -153,22 +149,28 @@ export default function Infos() {
   // À chaque nouveau train (lim:parsed), on OUBLIE le réseau GPS mémorisé : le nouveau
   // train doit repartir de SON réseau d'origine (raw.originNetwork) au chargement, pas
   // hériter du réseau du train précédent. Le GPS reprendra la main dès qu'il émettra.
+  // Matériel choisi MANUELLEMENT (appui long sur la tuile MATERIAL → matériel suivant
+  // du catalogue 2026). null = celui du train. Cycle inerte tant que le catalogue n'a
+  // qu'un matériel, mais le mécanisme est en place (décision 07/08, confirmée 10/08).
+  const [materielOverride, setMaterielOverride] = React.useState<string | null>(null)
+
+  // MOTEURS ISOLÉS (0, 1 ou 2). Saisi manuellement par le conducteur (appui long),
+  // jamais dans le normalisé. Servira à choisir la courbe empirique utilisée par
+  // la localisation horaire → la valeur est DIFFUSÉE, pas gardée en interne.
+  const [moteursIsoles, setMoteursIsoles] = React.useState(0)
+
   React.useEffect(() => {
     const onNewTrain = () => {
       ;(window as any).__limCurrentNetwork = null
       setCurrentNetwork(null)
+      setMaterielOverride(null) // nouveau train → on repart de SON matériel
+      setMoteursIsoles(0)       // et d'aucun moteur isolé
     }
     window.addEventListener('lim:parsed', onNewTrain as EventListener)
     return () => window.removeEventListener('lim:parsed', onNewTrain as EventListener)
   }, [])
 
   const panelBaseData = buildPanelData(raw)
-
-  const currentTrainNumber = raw?.tren ?? raw?.train
-  const normalizedRelation = getTrainRelation(currentTrainNumber)
-  const normalizedLigne = getTrainLigne(currentTrainNumber)
-  const normalizedMateriel = getTrainMateriel(currentTrainNumber)
-  const normalizedComposition = getTrainComposition(currentTrainNumber)
 
   // Catégorie (migration 2026) = celle du RÉSEAU courant, lue dans le normalisé 2026
   // (raw.categoriesByNetwork). Avant tout signal GPS (chargement / avant départ), on
@@ -178,28 +180,60 @@ export default function Infos() {
     (effectiveNetwork ? raw?.categoriesByNetwork?.[effectiveNetwork] : undefined) ??
     panelBaseData.type
 
+  // Composition : plus lue du normalisé (décision 07/08 — hors normalisé).
+  // Défaut US ; la bascule manuelle US↔UM (appui long) reste prioritaire.
   const displayedComposition =
     displayedCompositionState?.displayedComposition ??
-    normalizedComposition ??
-    panelBaseData.composicion
+    panelBaseData.composicion ??
+    "US"
 
   const displayedCompositionKey = String(displayedComposition ?? "")
     .trim()
     .toUpperCase()
 
-  const derivedLengthMeters =
-    displayedCompositionKey === "US"
-      ? 200
-      : displayedCompositionKey === "UM"
-        ? 400
-        : undefined
+  // Matériel affiché : celui choisi manuellement (cycle) sinon celui du train (2026).
+  const materielCatalog = raw?.materielCatalog
+  const displayedMateriel = materielOverride ?? panelBaseData.material
 
-  const derivedMassTons =
-    displayedCompositionKey === "US"
-      ? 433
-      : displayedCompositionKey === "UM"
-        ? 866
-        : undefined
+  // Longueur/masse = spec UNITAIRE du matériel affiché × 2 si UM (décision 07/08).
+  // Plus aucune constante en dur : rien n'est affiché si le matériel est hors catalogue.
+  const { lengthMeters: derivedLengthMeters, massTons: derivedMassTons } = getMaterielMetrics(
+    displayedMateriel,
+    displayedCompositionKey,
+    materielCatalog
+  )
+
+  // Un moteur isolé AU MAXIMUM PAR RAME → US : max 1, UM : max 2.
+  const maxMoteursIsoles = displayedCompositionKey === "UM" ? 2 : 1
+
+  // Si la composition repasse en US alors qu'on affichait 2, la valeur devient
+  // impossible : on la ramène au maximum autorisé (1) plutôt qu'à 0 — on garde
+  // l'information « il y a un moteur isolé », qui reste vraie.
+  React.useEffect(() => {
+    setMoteursIsoles((v) => (v > maxMoteursIsoles ? maxMoteursIsoles : v))
+  }, [maxMoteursIsoles])
+
+  // Diffusion : la sélection de la courbe empirique (ailleurs) doit pouvoir lire
+  // cette valeur sans qu'on ait à retoucher le bloc info.
+  React.useEffect(() => {
+    ;(window as any).__limMoteursIsoles = moteursIsoles
+    window.dispatchEvent(
+      new CustomEvent("lim:moteurs-isoles-change", { detail: { moteursIsoles } })
+    )
+  }, [moteursIsoles])
+
+  // Appui long sur MOT. ISOLÉS → valeur suivante (0 → 1 → … → max → 0).
+  const handleMoteursIsolesLongPress = React.useCallback(() => {
+    setMoteursIsoles((v) => (v >= maxMoteursIsoles ? 0 : v + 1))
+  }, [maxMoteursIsoles])
+
+  // Appui long sur MATERIAL → matériel suivant du catalogue (cycle).
+  const handleMaterialLongPress = React.useCallback(() => {
+    const list = materielCatalog ?? []
+    if (list.length === 0) return
+    const idx = list.findIndex((m) => m.nom === displayedMateriel)
+    setMaterielOverride(list[(idx + 1) % list.length].nom)
+  }, [materielCatalog, displayedMateriel])
 
   const trenCommitted =
     displayedTrainNumberState?.displayedSide === 'FR'
@@ -224,12 +258,16 @@ export default function Infos() {
   const panelData = {
     ...panelBaseData,
     type: displayedCategory,
-    origenDestino: normalizedRelation ?? panelBaseData.origenDestino,
+    origenDestino: panelBaseData.origenDestino,
     composicion: displayedComposition,
-    material: normalizedMateriel ?? panelBaseData.material,
-    linea: normalizedLigne ?? panelBaseData.linea,
-    longitud: derivedLengthMeters ?? panelBaseData.longitud,
-    masa: derivedMassTons ?? panelBaseData.masa,
+    moteursIsoles,
+    // Matériel : celui du normalisé 2026, ou celui choisi manuellement (cycle appui
+    // long). « LINEA » n'est plus affichée (décision 07/08 : ligne supprimée du
+    // normalisé et de l'affichage).
+    material: displayedMateriel,
+    // Pas de repli : si le matériel est hors catalogue, les cases restent vides.
+    longitud: derivedLengthMeters,
+    masa: derivedMassTons,
     tren:
       displayedTrainNumberState?.displayedNumber ??
       panelBaseData.tren,
@@ -314,6 +352,8 @@ export default function Infos() {
         }
         onTrenLongPress={handleTrenLongPress}
         onCompositionLongPress={handleCompositionLongPress}
+        onMaterialLongPress={handleMaterialLongPress}
+        onMoteursIsolesLongPress={handleMoteursIsolesLongPress}
       />
     </section>
   )

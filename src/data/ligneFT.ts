@@ -106,6 +106,32 @@ export interface FTEntry {
   tecnico?: string;
 
   conc?: string;
+
+  // --- Format 2026 -----------------------------------------------------------
+  /**
+   * PK AFFICHÉ. Peut contenir DEUX lignes ("752.4\n44.4") aux transitions de
+   * réseau : PK du réseau quitté puis PK du réseau entrant, dans l'ordre du sens
+   * de marche. `pk` reste la valeur unique utilisée par les calculs.
+   */
+  pk_display?: string;
+
+  /** PK du raccordement (réseau RAC) — n'existait pas dans l'ancien format. */
+  pk_rac?: string;
+
+  /**
+   * Horaires EXPLICITES du format 2026 : ils remplacent `hora` + `com`/`tecn`/
+   * `conc` (l'arrivée était calculée `hora − com`, elle est désormais donnée).
+   * Sans arrêt → `passage` seul ; à l'arrêt → `arrivee` + `depart`.
+   */
+  arrivee?: string;
+  passage?: string;
+  depart?: string;
+
+  /** Barre de zone ETCS (même principe que vmax_bar / rc_bar / bloqueo_bar / radio_bar). */
+  etcs_bar?: boolean;
+
+  /** Note surlignée (fond pêche) — champ `surligne` du format 2026. */
+  noteSurligne?: boolean;
 }
 // -----------------------------------------------------------------------------
 // CSV_ZONES : zones de baisse significative de vitesse (CSV)

@@ -13,6 +13,9 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
+    /* Le normalisé 2026 est publié par l'éditeur au format .json et importé
+       statiquement (embarqué dans le bundle, donc disponible hors ligne). */
+    "resolveJsonModule": true,
     "noEmit": true,
     "jsx": "react-jsx",
 

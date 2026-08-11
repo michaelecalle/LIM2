@@ -38,7 +38,6 @@ import {
   type ManualTrainOption,
   toTitleNumber,
   formatTodayForManualImport,
-  getCompositionMetrics,
   buildManualParsedFields,
   normalizeKnownTrainNumber,
   buildDetectedTrainTokenVariants,
@@ -2362,14 +2361,13 @@ ${coords}
     const currentTrainNumber = trainDisplay
     if (!currentTrainNumber) return
 
-    const normalizedComposition = getTrainComposition(currentTrainNumber)
-
     const w = window as any
     const last: any = w.__limLastParsed || {}
     const rawComp = last?.composicion ?? last?.unit
     const fallbackComposition = rawComp ? String(rawComp).trim().toUpperCase() : undefined
 
-    const baseComposition = normalizedComposition ?? fallbackComposition
+    // Composition : plus lue du normalisé (décision 07/08). Défaut US, bascule manuelle UM.
+    const baseComposition = fallbackComposition ?? 'US'
 
     applyDisplayedCompositionState(
       {
@@ -3223,16 +3221,13 @@ ${coords}
         setTrainType(rawType ? String(rawType) : undefined)
       }
 
-      const normalizedComposition = parsedTrainNumber
-        ? getTrainComposition(parsedTrainNumber)
-        : undefined
-
       const parsedFallbackComposition = (() => {
         const rawComp = (detail as any).composicion ?? (detail as any).unit
         return rawComp ? String(rawComp).trim().toUpperCase() : undefined
       })()
 
-      const baseComposition = normalizedComposition ?? parsedFallbackComposition
+      // Composition : plus lue du normalisé (décision 07/08). Défaut US, bascule manuelle UM.
+      const baseComposition = parsedFallbackComposition ?? 'US'
 
       applyDisplayedCompositionState(
         {

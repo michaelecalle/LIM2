@@ -19,6 +19,8 @@ call :protect_file "src/data/ligneFT.normalized.json"
 if errorlevel 1 goto :git_error
 call :protect_file "src/data/ltv.normalized.json"
 if errorlevel 1 goto :git_error
+call :protect_file "src/data/normalized/ligneFT2026.normalized.json"
+if errorlevel 1 goto :git_error
 echo Protection terminee : les fichiers normalises operationnels ne seront pas inclus dans ce push.
 
 echo.
@@ -58,6 +60,8 @@ if errorlevel 1 goto :git_error
 call :protect_file "src/data/ligneFT.normalized.json"
 if errorlevel 1 goto :git_error
 call :protect_file "src/data/ltv.normalized.json"
+if errorlevel 1 goto :git_error
+call :protect_file "src/data/normalized/ligneFT2026.normalized.json"
 if errorlevel 1 goto :git_error
 echo Les fichiers normalises sont exclus de l'index Git.
 

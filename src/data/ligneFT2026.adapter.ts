@@ -1,16 +1,14 @@
-// Adaptateur du normalisé 2026 (fichier PUBLIÉ par lim-editor, cf.
-// ligneFT2026.fetch.ts) vers la forme ManualTrainOption attendue par
+// Adaptateur du normalisé 2026 vers la forme ManualTrainOption attendue par
 // Mode2026Modal / startNormalizedJourneyFromTrain — même rôle que
-// ligneFT.normalized.adapter.ts pour l'ancien format, mais en LECTURE
-// RÉSEAU (pas de fichier statique embarqué).
+// ligneFT.normalized.adapter.ts pour l'ancien format.
 //
-// Mapping volontairement best-effort : certains champs de l'ancien format
-// n'ont pas d'équivalent direct dans le 2026 (ligne, composition US/UM) —
-// laissés vides plutôt qu'inventés, pour que les écarts soient visibles
-// (chantier d'adaptation du bloc info, pas encore fait).
-import { useEffect, useState } from 'react'
-import type { ManualTrainOption } from '../components/LIM/titleBarTrainUtils'
-import { fetchLigneFt2026Preview } from './ligneFT2026.fetch'
+// ⚠️ LECTURE STATIQUE (décision 11/08) : le fichier publié par l'éditeur est
+// EMBARQUÉ dans le bundle, comme l'ancien normalisé. Plus de lecture réseau :
+// l'app doit fonctionner en cabine, hors couverture, y compris après un
+// démarrage à froid.
+import { useMemo } from 'react'
+import type { ManualTrainOption, MaterielCatalogEntry } from '../components/LIM/titleBarTrainUtils'
+import ligneFt2026Published from './normalized/ligneFT2026.normalized.json'
 
 type LigneFt2026TrainMeta = {
   numeroEspagne?: unknown
@@ -28,9 +26,30 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() !== '' ? v : undefined
 }
 
+function num(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
+// Catalogue `materiels` du 2026 : { "TGV 2N2 3UH": { longueur, masse } } → tableau.
+// Longueur/masse sont UNITAIRES (rame US). Les entrées incomplètes sont ignorées
+// (on préfère ne rien afficher plutôt qu'une valeur inventée).
+function mapMaterielCatalog(data: unknown): MaterielCatalogEntry[] {
+  const doc = data as { materiels?: Record<string, { longueur?: unknown; masse?: unknown }> }
+  const cat = doc?.materiels && typeof doc.materiels === 'object' ? doc.materiels : {}
+
+  const out: MaterielCatalogEntry[] = []
+  for (const [nom, spec] of Object.entries(cat)) {
+    const longueur = num(spec?.longueur)
+    const masse = num(spec?.masse)
+    if (longueur != null && masse != null) out.push({ nom, longueur, masse })
+  }
+  return out.sort((a, b) => a.nom.localeCompare(b.nom))
+}
+
 function mapLigneFt2026DocToOptions(data: unknown): ManualTrainOption[] {
   const doc = data as { trains?: Record<string, { variants?: Array<{ meta?: LigneFt2026TrainMeta }> }> }
   const trains = doc?.trains && typeof doc.trains === 'object' ? doc.trains : {}
+  const materielCatalog = mapMaterielCatalog(data)
 
   return Object.entries(trains)
     .map(([trainKey, t]) => {
@@ -59,6 +78,7 @@ function mapLigneFt2026DocToOptions(data: unknown): ManualTrainOption[] {
         // "composition" (US/UM, ancien format) : pas d'équivalent 2026 (catalogue
         // matériel direct, sans notion de composition séparée).
         materiel: str(meta.materiel),
+        materielCatalog,
       }
       return option
     })
@@ -70,33 +90,18 @@ function mapLigneFt2026DocToOptions(data: unknown): ManualTrainOption[] {
     })
 }
 
+// Lecture SYNCHRONE du fichier embarqué : plus d'attente ni d'échec réseau
+// possible. La forme de retour (`loading` / `error`) est conservée pour ne rien
+// changer chez les appelants.
 export function useLigneFt2026TrainOptions(): {
   options: ManualTrainOption[]
   loading: boolean
   error: string | null
 } {
-  const [options, setOptions] = useState<ManualTrainOption[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const options = useMemo(
+    () => mapLigneFt2026DocToOptions(ligneFt2026Published),
+    []
+  )
 
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    void fetchLigneFt2026Preview().then((result) => {
-      if (cancelled) return
-      if (!result) {
-        setError('Fichier 2026 indisponible (réseau, ou pas encore publié).')
-        setLoading(false)
-        return
-      }
-      setOptions(mapLigneFt2026DocToOptions(result.data))
-      setLoading(false)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  return { options, loading, error }
+  return { options, loading: false, error: null }
 }

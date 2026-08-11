@@ -1,11 +1,15 @@
 // src/components/LIM/FT.tsx
 import FTScrolling from "./FTScrolling"; // Ajouter cette ligne juste après les autres imports
 import React, { useState, useEffect, useMemo } from "react";
+// Bloc fiche train : les LIGNES viennent désormais du normalisé 2026 publié par
+// l'éditeur (fichier embarqué), avec les mêmes signatures qu'avant.
 import {
   getFtLignePair,
   getFtLigneImpair,
-  CSV_ZONES,
-} from "../../data/ligneFT.normalized.adapter";
+} from "../../data/ligneFT2026.ft.adapter";
+// CSV_ZONES reste pour l'instant issu de l'ancien module (donnée de ligne, pas
+// de train) — à réévaluer, le 2026 portant déjà un booléen `csv` par ligne.
+import { CSV_ZONES } from "../../data/ligneFT.normalized.adapter";
 import type { FTEntry, CsvSens } from "../../data/ligneFT";
 import { logTestEvent } from "../../lib/testLogger";
 import { onLtvZoneClick } from "../../lib/ltvFold";
@@ -5007,6 +5011,16 @@ const isRelock = acceptedMode === "relock";
   //
   // ===== 4. HELPERS REMARQUES ROUGES =================================
   //
+  // Radio et ETCS : la valeur est entourée d'un petit cercle sur le document
+  // source (Ⓖ, ①). Dans l'ancien format le cercle était DANS la donnée
+  // ("◯ GSMR", "①") ; le 2026 fournit la valeur brute ("G", "1"), on dessine
+  // donc le cercle. Même rendu que l'export PDF de l'éditeur (CircledValue).
+  function renderCircledValue(value: unknown) {
+    const v = String(value ?? "").trim();
+    if (!v) return null;
+    return <span className="ft-circled">{v}</span>;
+  }
+
   function renderRedNoteLine(line: string) {
     const firstSpace = line.indexOf(" ");
     const firstToken = firstSpace === -1 ? line : line.slice(0, firstSpace);
@@ -5356,6 +5370,48 @@ if (hasFranceFtLocal) {
     "[RADIO SEGMENTS JSON]",
     JSON.stringify(Array.from(radioValueBySeg.entries()))
   );
+
+  // --- Pré-calcul des segments ETCS (format 2026) -----------------------------
+  // Même principe que Radio : au lieu de répéter la valeur sur chaque ligne, on
+  // ouvre un segment au 1er ETCS rencontré puis à chaque changement, et on
+  // n'affiche la valeur qu'UNE fois par segment (+ barre de séparation).
+  const etcsSegmentIndex: number[] = [];
+  const etcsLabelRowIndex = new Map<number, number>();
+  const etcsValueBySeg = new Map<number, string>();
+
+  {
+    let currentEtcsSegId = 0;
+    let propagatedEtcs = "";
+    let previousSegmentValue = "";
+
+    for (let i = 0; i < rawEntries.length; i++) {
+      const e: any = rawEntries[i];
+
+      if (e?.isNoteOnly) {
+        etcsSegmentIndex[i] = currentEtcsSegId;
+        continue;
+      }
+
+      const rawVal = String(e?.etcs ?? "").trim();
+      if (rawVal) propagatedEtcs = rawVal;
+
+      if (!propagatedEtcs) {
+        etcsSegmentIndex[i] = 0;
+        continue;
+      }
+
+      if (currentEtcsSegId === 0 || propagatedEtcs !== previousSegmentValue) {
+        currentEtcsSegId++;
+        if (!etcsLabelRowIndex.has(currentEtcsSegId)) {
+          etcsLabelRowIndex.set(currentEtcsSegId, i);
+        }
+        etcsValueBySeg.set(currentEtcsSegId, propagatedEtcs);
+        previousSegmentValue = propagatedEtcs;
+      }
+
+      etcsSegmentIndex[i] = currentEtcsSegId;
+    }
+  }
 
   // --- Pré-calcul des segments Bloqueo (recalculés dans l’ordre affiché) ---
   const bloqueoSegmentIndex: number[] = [];
@@ -6264,6 +6320,7 @@ if (hasFranceFtLocal) {
   // Gestion Radio (logique type VMAX)
   let radioCurrentSegmentId = 0;
   const radioPrintedSegments = new Set<number>();
+  const etcsPrintedSegments = new Set<number>();
 
   // Debug : index de ligne visuelle (toutes les <tr> rendues)
   let renderedRowIndex = 0;
@@ -6472,6 +6529,12 @@ const sitKm =
           ? ((entry as any).pk_adif ?? entry.pk ?? "")
           : (entry.pk ?? "");
 
+// PK AFFICHÉ (format 2026) : aux transitions de réseau, `pk_display` contient
+// DEUX lignes — PK du réseau quitté puis PK du réseau entrant, dans l'ordre du
+// sens de marche. Variable distincte de `sitKm`, qui reste une valeur unique
+// utilisée par les recherches (horaire France) et les calculs.
+const sitKmDisplay = entry.isNoteOnly ? "" : ((entry as any).pk_display ?? sitKm);
+
 // FT France : lookup horaire (clé = PK affiché, mais en virgule comme dans ftFranceTimes)
 const pkKey = (sitKm ?? "").toString().replace(".", ",");
 
@@ -6513,10 +6576,9 @@ const hora = horaFromNormalized || horaFromPdf || horaFrance;
       !entry.isNoteOnly &&
       (i === firstNonNoteIndex || i === lastNonNoteIndex);
 
-    // Origine / destination utilisée pour le surlignage
-    const isLimiteAdifLfspa = depNorm === "LIMITE ADIF - LFPSA";
-    const isOriginOrDestinationForHighlight =
-      isOriginOrTerminus && !isLimiteAdifLfspa;
+    // (Migration 2026) L'ancien surlignage origine/destination PAR LE NOM est
+    // supprimé : la règle 2026 (`arrivee` et/ou `depart` non vide) couvre déjà
+    // ces deux cas, sans comparaison de libellés.
 
     // ✅ COM : priorité au fichier normalisé, fallback PDF seulement si absent
     const comFromNormalizedRaw = (entry as any).com;
@@ -6567,25 +6629,8 @@ const hora = horaFromNormalized || horaFromPdf || horaFrance;
       heuresDetecteesCursor++;
     }
 
-    // ✅ TECN : priorité au fichier normalisé
-    const tecnicoRaw =
-      (entry as any).tecn ?? (entry as any).tecnico;
-
-    const tecnico =
-      typeof tecnicoRaw === "string"
-        ? tecnicoRaw.trim()
-        : typeof tecnicoRaw === "number" && Number.isFinite(tecnicoRaw)
-          ? String(tecnicoRaw)
-          : "";
-
-    // ✅ CONC : priorité au fichier normalisé, sans recalcul local
-    const concRaw = (entry as any).conc;
-    const conc =
-      typeof concRaw === "string"
-        ? concRaw.trim()
-        : typeof concRaw === "number" && Number.isFinite(concRaw)
-          ? String(concRaw)
-          : "";
+    // (Migration 2026) Les colonnes TECN et CONC n'existent plus : les trois
+    // colonnes horaires explicites (Arr / Pass / Dép) les remplacent.
 
     // ✅ Heure d'arrivée calculée à partir du COM effectivement retenu
     let horaArrivee: string | null = null;
@@ -6607,14 +6652,17 @@ const hora = horaFromNormalized || horaFromPdf || horaFrance;
     const bloqueo = (entry as any).bloqueo ?? "";
     const bloqueoBar = (entry as any).bloqueo_bar ?? null;
 
-    // Arrêt : ligne principale avec COM ou TECN non vide
-    const hasComOrTecnico =
-      (com && com.trim() !== "") || (tecnico && tecnico.trim() !== "");
-    const isStopMainForHighlight = !!(hora && hasComOrTecnico);
+    // Surlignage d'arrêt — RÈGLE 2026 : présence d'une arrivée et/ou d'un départ.
+    // Elle remplace l'ancienne (reconnaissance de l'origine/destination PAR LEUR
+    // NOM + test COM/TECN) et la couvre naturellement : l'origine n'a qu'un
+    // départ, le terminus qu'une arrivée. Identique à l'éditeur
+    // (`buildFtRows2026.ts` : `row.arrivee !== "" || row.depart !== ""`).
+    const arriveeCell = ((entry as any).arrivee ?? "") as string;
+    const passageCell = ((entry as any).passage ?? "") as string;
+    const departCell = ((entry as any).depart ?? "") as string;
 
-    // Flag final pour le surlignage (origine/destination ou arrêt)
     const shouldHighlightRow =
-      isOriginOrDestinationForHighlight || isStopMainForHighlight;
+      arriveeCell.trim() !== "" || departCell.trim() !== "";
 
     if (hora) {
       previousHoraForConc = hora;
@@ -6663,11 +6711,9 @@ const hora = horaFromNormalized || horaFromPdf || horaFrance;
 
     const showRcBar = isRcBreakpointHere && i !== rawEntries.length - 1;
 
-// Colonne N (ETCS) : valeur explicite uniquement, sans fallback ni propagation
-const nivel =
-  typeof (entry as any).etcs === "string"
-    ? (entry as any).etcs.trim()
-    : "";
+// Colonne ETCS : la valeur brute n'est plus lue ici. Elle est désormais gérée
+// par segments (etcsSegmentIndex / etcsValueBySeg), affichée une fois par zone
+// avec barre au changement — comme Bloc / Radio / Rampe / Vmax.
 
     // --- Vitesse par segment ---
     const segId = speedSegmentIndex[i] ?? 0;
@@ -6846,8 +6892,48 @@ const nivel =
     const showRadioSpacer =
       radioSpacerContent && radioSpacerContent.trim() !== "";
 
-    const showArrivalSpacer =
-      horaArrivee && horaArrivee.trim() !== "";
+    // --- ETCS (format 2026) : valeur une fois par zone + scroll intelligent ---
+    // Calque exact du mécanisme Radio ci-dessus, dans sa version CORRIGÉE
+    // (première ligne principale visible du segment, sans le skip `+1` qui
+    // faisait disparaître la valeur quand une seule ligne était à l'écran).
+    const segIdEtcs = etcsSegmentIndex[i] ?? 0;
+    const labelRowIndexEtcs =
+      segIdEtcs > 0 ? etcsLabelRowIndex.get(segIdEtcs) ?? null : null;
+    const etcsValue = segIdEtcs > 0 ? etcsValueBySeg.get(segIdEtcs) ?? "" : "";
+    const isLabelRowEtcs = labelRowIndexEtcs === i;
+
+    let mainRowEtcsContent = "";
+
+    // La valeur s'affiche sur la ligne-label du segment…
+    if (segIdEtcs > 0 && isLabelRowEtcs && etcsValue) {
+      mainRowEtcsContent = etcsValue;
+      etcsPrintedSegments.add(segIdEtcs);
+    } else if (segIdEtcs > 0 && etcsValue && !etcsPrintedSegments.has(segIdEtcs)) {
+      // …sinon, si cette ligne-label est hors écran, on relocalise la valeur sur
+      // la première ligne principale visible du segment.
+      const labelVisibleEtcs =
+        labelRowIndexEtcs !== null &&
+        labelRowIndexEtcs >= visibleRows.first &&
+        labelRowIndexEtcs <= visibleRows.last;
+      if (!labelVisibleEtcs && i >= visibleRows.first && i <= visibleRows.last) {
+        mainRowEtcsContent = etcsValue;
+        etcsPrintedSegments.add(segIdEtcs);
+      }
+    }
+
+    // Barre de séparation au changement de zone (jamais sur le 1er segment).
+    const showEtcsBar = segIdEtcs > 1 && isLabelRowEtcs;
+
+    // (Migration 2026) L'heure d'arrivée a maintenant sa PROPRE colonne `Arr`
+    // sur la ligne de la station. L'affichage historique sur une ligne AU-DESSUS
+    // — hérité de l'époque où il n'existait qu'une colonne `Hora` unique et où
+    // l'arrivée devait être calculée (`hora − com`) — ferait donc doublon.
+    // Désactivé ici : `shouldRenderArrivalSpacer` devient faux, donc la ligne
+    // dédiée n'est plus créée du tout (pas de ligne vide résiduelle), et les
+    // cellules `Arr` des lignes de remarque rouge restent vides.
+    // ⚠️ `arrivalEvents` n'est PAS affecté : il est alimenté indépendamment et
+    // continue de servir au « prochain arrêt » et à la détection d'arrêt.
+    const showArrivalSpacer = false as boolean;
 
     // CSV : surlignage de la cellule V Max selon la classification calculée plus haut
     const highlightKind = csvHighlightByIndex[i];
@@ -6928,28 +7014,31 @@ const nivel =
             return <td className="ft-td"></td>;
           })()}
 
-          <td className={"ft-td ft-v-cell" + vmaxClassForNote}>
+          {/* Surlignage pêche des notes (champ `surligne` du 2026) : Vmax + KM +
+              Établissements, comme dans l'export PDF de l'éditeur. */}
+          <td
+            className={
+              "ft-td ft-v-cell" + vmaxClassForNote +
+              ((nextEntry as any)?.noteSurligne ? " ft-note-surligne" : "")
+            }
+          >
             <div className="ft-v-inner text-center"></div>
           </td>
 
-          <td className="ft-td" />
+          <td className={"ft-td" + ((nextEntry as any)?.noteSurligne ? " ft-note-surligne" : "")} />
 
-          <td className="ft-td">
+          <td className={"ft-td" + ((nextEntry as any)?.noteSurligne ? " ft-note-surligne" : "")}>
             {renderDependenciaCell(nextEntry as FTEntry)}
           </td>
 
-          {/* Com vide */}
-          <td className="ft-td" />
-
-          {/* Hora d'arrivée sur la même ligne que les remarques rouges,
-              alignée en bas de la cellule */}
+          {/* Arr — heure d'arrivée sur la même ligne que les remarques rouges */}
           <td className="ft-td ft-hora-cell">
             {showArrivalSpacer && horaArrivee && (
               <span className="ft-hora-arrivee">{horaArrivee}</span>
             )}
           </td>
 
-          {/* Técn / Conc / Radio vides */}
+          {/* Pass / Dép / Radio vides */}
           <td className="ft-td" />
           <td className="ft-td" />
           <td className="ft-td" />
@@ -6972,27 +7061,30 @@ const nivel =
             return <td className="ft-td"></td>;
           })()}
 
-          <td className={"ft-td ft-v-cell" + vmaxClassForNoteBeforeOdd}>
+          {/* Surlignage pêche des notes (champ `surligne` du 2026) */}
+          <td
+            className={
+              "ft-td ft-v-cell" + vmaxClassForNoteBeforeOdd +
+              ((prevEntry as any)?.noteSurligne ? " ft-note-surligne" : "")
+            }
+          >
             <div className="ft-v-inner text-center"></div>
           </td>
 
-          <td className="ft-td" />
+          <td className={"ft-td" + ((prevEntry as any)?.noteSurligne ? " ft-note-surligne" : "")} />
 
-          <td className="ft-td">
+          <td className={"ft-td" + ((prevEntry as any)?.noteSurligne ? " ft-note-surligne" : "")}>
             {renderDependenciaCell(prevEntry as FTEntry)}
           </td>
 
-          {/* Com vide */}
-          <td className="ft-td" />
-
-          {/* Heure d'arrivée sur la même ligne que la remarque rouge */}
+          {/* Arr — heure d'arrivée sur la même ligne que la remarque rouge */}
           <td className="ft-td ft-hora-cell">
             {showArrivalSpacer && horaArrivee && (
               <span className="ft-hora-arrivee">{horaArrivee}</span>
             )}
           </td>
 
-          {/* Técn / Conc / Radio vides */}
+          {/* Pass / Dép / Radio vides */}
           <td className="ft-td" />
           <td className="ft-td" />
           <td className="ft-td" />
@@ -7014,12 +7106,13 @@ const nivel =
 
           <td className="ft-td" />
           <td className="ft-td" />
-          <td className="ft-td" />
 
+          {/* Arr */}
           <td className="ft-td ft-hora-cell">
             <span className="ft-hora-arrivee">{horaArrivee}</span>
           </td>
 
+          {/* Pass / Dép / Radio vides */}
           <td className="ft-td" />
           <td className="ft-td" />
           <td className="ft-td" />
@@ -7120,7 +7213,7 @@ right: -1,
         </td>
 
         <td className="ft-td" style={{ position: "relative", textAlign: "center" }}>
-          {sitKm}
+          {sitKmDisplay}
 
           {testModeEnabled && activeRowIndex === i && (
             <span
@@ -7149,24 +7242,26 @@ right: -1,
           {renderDependenciaCell(entry)}
         </td>
 
-        {/* Com (surlignable) */}
-        <td
-          className={
-            "ft-td" + (shouldHighlightRow ? " ft-highlight-cell" : "")
-          }
-        >
-          {com}
-        </td>
-
-   {/* Hora */}
+        {/* Arr (surlignable) — arrivée, donnée DIRECTE en 2026 (plus de hora − com) */}
         <td
           className={
             "ft-td ft-hora-main" +
             (shouldHighlightRow ? " ft-highlight-cell" : "")
           }
         >
-          {hora ? (
-            <span className="ft-hora-depart">{hora}</span>
+          {arriveeCell ? <span className="ft-hora-depart">{arriveeCell}</span> : null}
+        </td>
+
+        {/* Pass — heure de passage (train sans arrêt). Porte aussi l'heure
+            théorique du mode test, qui n'est pas une donnée du normalisé. */}
+        <td
+          className={
+            "ft-td ft-hora-main" +
+            (shouldHighlightRow ? " ft-highlight-cell" : "")
+          }
+        >
+          {passageCell ? (
+            <span className="ft-hora-depart">{passageCell}</span>
           ) : testModeEnabled && typeof horaTheoSecondsByIndex[i] === "number" ? (
             <span className="ft-hora-theo">
               {(() => {
@@ -7185,9 +7280,15 @@ right: -1,
 
         </td>
 
-
-        <td className="ft-td">{tecnico}</td>
-        <td className="ft-td">{conc}</td>
+        {/* Dép (surlignable) — remplace les anciennes colonnes Técn et Conc */}
+        <td
+          className={
+            "ft-td ft-hora-main" +
+            (shouldHighlightRow ? " ft-highlight-cell" : "")
+          }
+        >
+          {departCell ? <span className="ft-hora-depart">{departCell}</span> : null}
+        </td>
 
         <td className="ft-td" style={{ position: "relative" }}>
           {(() => {
@@ -7204,7 +7305,7 @@ right: -1,
             if (segId === 1 && isLabelRow) {
               return (
                 <>
-                  {segValue}
+                  {renderCircledValue(segValue)}
                   {radioBar && (
                     <div
                       style={{
@@ -7246,7 +7347,7 @@ right: -1,
             }
 
             // Valeur radio relocalisée par le scroll intelligent (ligne principale).
-            return mainRowRadioContent || "";
+            return renderCircledValue(mainRowRadioContent);
           })()}
         </td>
 
@@ -7258,7 +7359,28 @@ right: -1,
           )}
         </td>
 
-        <td className="ft-td ft-td-nivel">{nivel}</td>
+        {/* ETCS (format 2026) : plus de répétition ligne à ligne — valeur affichée
+            une seule fois par zone, avec barre de séparation au changement.
+            Même rendu que la colonne Radio. */}
+        <td className="ft-td ft-td-nivel" style={{ position: "relative" }}>
+          {renderCircledValue(mainRowEtcsContent)}
+          {showEtcsBar && (
+            <div
+              style={{
+                height: 2,
+                width: "calc(100% + 2px)",
+                left: -1,
+                right: -1,
+                borderRadius: 0,
+                background: "currentColor",
+                opacity: 1,
+                position: "absolute",
+                top: "50%",
+                transform: "translateY(-50%)",
+              }}
+            />
+          )}
+        </td>
       </tr>
     );
 
@@ -7278,11 +7400,12 @@ right: -1,
         data-scale-gap={rowMainIndex}
         key={`scale-gap-${rowMainIndex}`}
       >
-        {/* 11 cellules (= colonnes de la FT) pour que les bordures VERTICALES
-            continuent à travers l'espace. La hauteur est posée sur la 1re par
-            l'effet de mesure ; les autres s'alignent sur la hauteur de ligne.
-            La 2e cellule (colonne V Max) reçoit l'orange si zone ouverte. */}
-        {Array.from({ length: 11 }).map((_, ci) => (
+        {/* 10 cellules (= colonnes de la FT, format 2026 : 4 colonnes horaires
+            remplacées par 3) pour que les bordures VERTICALES continuent à
+            travers l'espace. La hauteur est posée sur la 1re par l'effet de
+            mesure ; les autres s'alignent. La 2e cellule (Vmax) reçoit l'orange
+            si zone ouverte. */}
+        {Array.from({ length: 10 }).map((_, ci) => (
           <td
             key={ci}
             className={
@@ -7331,7 +7454,7 @@ const vmaxClassForLtv =
             </div>
           </td>
 
-          <td className="ft-td" />
+          {/* Arr / Pass / Dép / Radio vides */}
           <td className="ft-td ft-hora-cell" />
           <td className="ft-td" />
           <td className="ft-td" />
@@ -7415,15 +7538,13 @@ const vmaxClassForLtv =
 
           <td className="ft-td" />
           <td className="ft-td" />
-          <td className="ft-td" />
 
-          {/* Pas d'heure ici, on laisse la cellule vide */}
+          {/* Arr / Pass / Dép : pas d'heure sur une ligne intermédiaire */}
           <td className="ft-td ft-hora-cell" />
-
           <td className="ft-td" />
           <td className="ft-td" />
 
-          <td className="ft-td">{radioSpacerContent}</td>
+          <td className="ft-td">{renderCircledValue(radioSpacerContent)}</td>
 
           <td className="ft-td ft-rc-cell" />
           <td className="ft-td ft-td-nivel" />
@@ -7711,13 +7832,49 @@ const vmaxClassForLtv =
           text-align: center;
         }
 
-        .ft-table td:nth-child(6):not(.ft-hora-cell) {
+        /* Note surlignee (champ "surligne" du format 2026) : fond peche, meme
+           teinte que l'export PDF de l'editeur (NOTE_BG #fbe2d5). */
+        .ft-note-surligne {
+          background-color: #fbe2d5;
+        }
+
+        /* Radio / ETCS : valeur entouree d'un petit cercle (Ⓖ, ①), comme sur le
+           document source et l'export PDF de l'editeur. */
+        .ft-circled {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 1.45em;
+          height: 1.45em;
+          padding: 0 0.15em;
+          border: 1px solid currentColor;
+          border-radius: 999px;
+          line-height: 1;
+          box-sizing: border-box;
+        }
+        .dark .ft-note-surligne {
+          background-color: rgba(251, 226, 213, 0.22);
+        }
+
+        /* Colonnes horaires (Arr / Pass / Dép) : centrage vertical. Repose sur la
+           classe et non plus sur nth-child(6), l'ordre des colonnes ayant changé
+           avec le format 2026 (4 colonnes horaires → 3). */
+        .ft-hora-main {
           vertical-align: middle;
         }
 
-        .ft-table td:nth-child(9) {
-          font-size: 10px;
+        /* Colonne KM (3e) : peut contenir DEUX lignes aux transitions de réseau.
+           Les sauts de ligne sont conservés et le contenu reste centré
+           verticalement, y compris quand il n'y a qu'une seule valeur. */
+        .ft-table td:nth-child(3) {
+          white-space: pre-line;
+          vertical-align: middle;
         }
+
+        /* Radio : plus de reduction de taille. Le font-size 10px historique
+           existait parce que la valeur etait longue (GSMR entoure) ; le format
+           2026 fournit une seule lettre dans un cercle, qui doit avoir la meme
+           taille que la valeur ETCS. */
 
         .ft-td-nivel {
           text-align: center;
@@ -8047,18 +8204,19 @@ const vmaxClassForLtv =
         <table className="ft-table">
           <thead>
             <tr className="whitespace-nowrap">
-              <th className="ft-th">Bloqueo</th>
-              <th className="ft-th">V Max</th>
-              <th className="ft-th">Sit Km</th>
-              <th className="ft-th">Dependencia</th>
-              <th className="ft-th">Com</th>
-              <th className="ft-th">Hora</th>
-              <th className="ft-th">Técn</th>
-              <th className="ft-th">Conc</th>
+              {/* En-têtes format 2026 (calqués sur l'export PDF de l'éditeur,
+                  déjà validé visuellement) : francisés, 4 colonnes horaires
+                  remplacées par 3, « Ramp Caract » remplacé par une flèche
+                  oblique montante, ETCS toujours sans libellé. */}
+              <th className="ft-th">Bloc</th>
+              <th className="ft-th">Vmax</th>
+              <th className="ft-th">KM</th>
+              <th className="ft-th">Établissements</th>
+              <th className="ft-th">Arr</th>
+              <th className="ft-th">Pass</th>
+              <th className="ft-th">Dép</th>
               <th className="ft-th">Radio</th>
-              <th className="ft-th">
-                Ramp<br />Caract
-              </th>
+              <th className="ft-th" aria-label="Rampe">↗</th>
               <th className="ft-th ft-th-n"></th>
             </tr>
           </thead>

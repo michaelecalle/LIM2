@@ -533,8 +533,37 @@ function applyTrainOverrides(
     const conc = asNonEmptyString(override?.conc);
     if (conc !== undefined) next.conc = conc;
 
+    // ⚠️ PONT TEMPOIRE — MIGRATION 2026 (à SUPPRIMER une fois le normalisé 2026
+    // branché). Le rendu de la fiche train lit désormais les 3 colonnes
+    // explicites `arrivee` / `passage` / `depart` du format 2026. L'ancien
+    // format n'a qu'une colonne `hora` + une durée d'arrêt `com`, d'où cette
+    // reconstruction pour que l'app reste pleinement fonctionnelle pendant la
+    // transition :
+    //   arrêt (com > 0 ou tecn) → depart = hora, arrivee = hora − com
+    //   sinon                   → passage = hora
+    if (next.hora) {
+      const comMin = parseInt(String(next.com ?? ""), 10);
+      const hasCom = Number.isFinite(comMin) && comMin > 0;
+      const isStop = hasCom || !!(next.tecn ?? next.tecnico);
+
+      if (isStop) {
+        next.depart = next.hora;
+        next.arrivee = hasCom ? subtractMinutesFromHhmm(next.hora, comMin) : next.hora;
+      } else {
+        next.passage = next.hora;
+      }
+    }
+
     return next;
   });
+}
+
+/** Pont temporaire 2026 : "10:28" − 3 → "10:25". Renvoie l'entrée si non parsable. */
+function subtractMinutesFromHhmm(hhmm: string, minutes: number): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) return hhmm;
+  const total = ((Number(m[1]) * 60 + Number(m[2]) - minutes) % 1440 + 1440) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 function addVmaxBars(entries: FTEntry[]): FTEntry[] {
   let previousEffectiveVmax: number | undefined = undefined;

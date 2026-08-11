@@ -11,6 +11,8 @@ export type InfoData = {
   origenDestino?: string
   fecha?: string
   composicion?: string
+  /** Nombre de moteurs isolés (0, 1 ou 2) — voir la tuile MOT. ISOLÉS. */
+  moteursIsoles?: number
   material?: string
   linea?: string
   longitud?: string | number
@@ -93,18 +95,91 @@ function isFechaToday(fecha?: string): boolean {
   return dt.getFullYear() === t.getFullYear() && dt.getMonth() === t.getMonth() && dt.getDate() === t.getDate()
 }
 
+// ---------------------------------------------------------------------------
+// MOTEURS ISOLÉS — reproduction des deux indications de la cabine :
+//   • le pictogramme « moteur isolé » : un M dans un cercle, barré d'une
+//     diagonale, avec deux ergots latéraux (les bornes du moteur) — JAUNE ;
+//   • le nombre de moteurs isolés, en afficheur SEPT SEGMENTS ROUGE.
+// À 0, les deux sont rendus en gris sombre : métaphore du voyant ÉTEINT, qui
+// reste visible sur un pupitre sans se lire comme une alerte.
+// ---------------------------------------------------------------------------
+
+const MI_ON_PICTO = "#ffd400"   // jaune du pictogramme cabine
+const MI_ON_DIGIT = "#ff2020"   // rouge de l'afficheur sept segments
+const MI_OFF = "#9ca3af"        // gris « voyant éteint »
+
+function MoteurIsoleIcon({ active }: { active: boolean }) {
+  const c = active ? MI_ON_PICTO : MI_OFF
+  return (
+    <svg viewBox="0 0 100 100" width="26" height="26" aria-hidden="true">
+      {/* ergots latéraux (bornes) */}
+      <rect x="4" y="43" width="16" height="14" fill={c} />
+      <rect x="80" y="43" width="16" height="14" fill={c} />
+      {/* cercle */}
+      <circle cx="50" cy="50" r="33" fill="none" stroke={c} strokeWidth="8" />
+      {/* M */}
+      <text
+        x="50"
+        y="50"
+        fill={c}
+        fontSize="46"
+        fontWeight="700"
+        fontFamily="Arial, Helvetica, sans-serif"
+        textAnchor="middle"
+        dominantBaseline="central"
+      >
+        M
+      </text>
+      {/* diagonale barrant le symbole, débordant du cercle */}
+      <line x1="10" y1="90" x2="90" y2="10" stroke={c} strokeWidth="8" strokeLinecap="square" />
+    </svg>
+  )
+}
+
+// Segments allumés par chiffre (a=haut, b=haut-droit, c=bas-droit, d=bas,
+// e=bas-gauche, f=haut-gauche, g=milieu). Seuls 0, 1 et 2 sont possibles.
+const SEVEN_SEG: Record<number, string[]> = {
+  0: ["a", "b", "c", "d", "e", "f"],
+  1: ["b", "c"],
+  2: ["a", "b", "g", "e", "d"],
+}
+
+function SevenSegmentDigit({ value, active }: { value: number; active: boolean }) {
+  const on = SEVEN_SEG[value] ?? SEVEN_SEG[0]
+  const lit = active ? MI_ON_DIGIT : MI_OFF
+  const dim = active ? "rgba(255,32,32,0.12)" : "rgba(156,163,175,0.18)"
+  const S = (id: string, points: string) => (
+    <polygon key={id} points={points} fill={on.includes(id) ? lit : dim} />
+  )
+  return (
+    <svg viewBox="0 0 40 68" width="20" height="34" aria-hidden="true">
+      {S("a", "8,3 32,3 27,9 13,9")}
+      {S("b", "33,4 33,30 28,25 28,11")}
+      {S("c", "33,38 33,64 28,57 28,43")}
+      {S("d", "8,65 32,65 27,59 13,59")}
+      {S("e", "7,38 7,64 12,57 12,43")}
+      {S("f", "7,4 7,30 12,25 12,11")}
+      {S("g", "9,34 13,29 27,29 31,34 27,39 13,39")}
+    </svg>
+  )
+}
+
 export default function ClassicInfoPanel({
   data,
   onTrenClick,
   onTrenLongPress,
   onTrenDoubleClick,
   onCompositionLongPress,
+  onMaterialLongPress,
+  onMoteursIsolesLongPress,
 }: {
   data: InfoData
   onTrenClick?: () => void
   onTrenLongPress?: () => void
   onTrenDoubleClick?: () => void
   onCompositionLongPress?: () => void
+  onMaterialLongPress?: () => void
+  onMoteursIsolesLongPress?: () => void
 }) {
   const D = data || {}
   const trainDisplay = D.tren ? String(D.tren) : ""
@@ -120,7 +195,6 @@ export default function ClassicInfoPanel({
   const fechaShouldBlink = Boolean(parseFechaWide(D.fecha)) && !isFechaToday(D.fecha)
 
   const yellow = 'linear-gradient(180deg,#ffff00 0%,#fffda6 100%)'
-  const blue = 'linear-gradient(180deg,#01a5ce 0%,#7ed9ea 120%)'
 
   // Mesures pour TREN et TYPE (auto), appliquées via variables CSS
   const trenRef = React.useRef<HTMLDivElement | null>(null)
@@ -140,7 +214,7 @@ export default function ClassicInfoPanel({
     measure()
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
-  }, [D.origenDestino, D.material, D.linea, D.longitud, D.masa, fechaText])
+  }, [D.origenDestino, D.material, D.longitud, D.masa, fechaText])
 
   React.useLayoutEffect(() => {
     const pad = 24
@@ -242,6 +316,72 @@ export default function ClassicInfoPanel({
   const cancelCompositionLongPress = React.useCallback(() => {
     clearCompositionLongPressTimer()
   }, [clearCompositionLongPressTimer])
+
+  // Appui long sur MATERIAL → matériel suivant du catalogue (même patron que la
+  // composition ci-dessus). Cycle inerte tant qu'il n'y a qu'un seul matériel.
+  const materialLongPressTimerRef = React.useRef<number | null>(null)
+
+  const clearMaterialLongPressTimer = React.useCallback(() => {
+    if (materialLongPressTimerRef.current != null) {
+      window.clearTimeout(materialLongPressTimerRef.current)
+      materialLongPressTimerRef.current = null
+    }
+  }, [])
+
+  React.useEffect(() => {
+    return () => {
+      clearMaterialLongPressTimer()
+    }
+  }, [clearMaterialLongPressTimer])
+
+  const startMaterialLongPress = React.useCallback(() => {
+    if (!onMaterialLongPress) return
+
+    clearMaterialLongPressTimer()
+
+    materialLongPressTimerRef.current = window.setTimeout(() => {
+      materialLongPressTimerRef.current = null
+      onMaterialLongPress()
+    }, TREN_LONG_PRESS_DELAY_MS)
+  }, [clearMaterialLongPressTimer, onMaterialLongPress])
+
+  const cancelMaterialLongPress = React.useCallback(() => {
+    clearMaterialLongPressTimer()
+  }, [clearMaterialLongPressTimer])
+
+  // Appui long sur MOTEURS ISOLÉS → valeur suivante du cycle (même patron).
+  const moteursIsolesLongPressTimerRef = React.useRef<number | null>(null)
+
+  const clearMoteursIsolesLongPressTimer = React.useCallback(() => {
+    if (moteursIsolesLongPressTimerRef.current != null) {
+      window.clearTimeout(moteursIsolesLongPressTimerRef.current)
+      moteursIsolesLongPressTimerRef.current = null
+    }
+  }, [])
+
+  React.useEffect(() => {
+    return () => {
+      clearMoteursIsolesLongPressTimer()
+    }
+  }, [clearMoteursIsolesLongPressTimer])
+
+  const startMoteursIsolesLongPress = React.useCallback(() => {
+    if (!onMoteursIsolesLongPress) return
+
+    clearMoteursIsolesLongPressTimer()
+
+    moteursIsolesLongPressTimerRef.current = window.setTimeout(() => {
+      moteursIsolesLongPressTimerRef.current = null
+      onMoteursIsolesLongPress()
+    }, TREN_LONG_PRESS_DELAY_MS)
+  }, [clearMoteursIsolesLongPressTimer, onMoteursIsolesLongPress])
+
+  const cancelMoteursIsolesLongPress = React.useCallback(() => {
+    clearMoteursIsolesLongPressTimer()
+  }, [clearMoteursIsolesLongPressTimer])
+
+  const moteursIsoles = Number(D.moteursIsoles ?? 0)
+  const moteursIsolesActifs = moteursIsoles > 0
   return (
     <div className="select-none">
       <style>{`
@@ -332,8 +472,13 @@ export default function ClassicInfoPanel({
         </div>
 
         <div className="flex items-stretch border-t-2 border-black">
-          <div style={{ width: 'var(--w-tren)', background: blue }} className="border-r-2 border-black px-2 py-1 grid place-items-center">
-            {D.operadorLogo ? (<img src={D.operadorLogo} alt="OUIGO" className="w-10 h-10 object-contain"/>) : null}
+          {/* Logo TGV inOui : DEUX images empilées (badge puis silhouette du train),
+              même largeur, hauteur au ratio natif (badge 110×54, train 729×156) —
+              identique à l'export PDF 2026 de l'éditeur. Fond BLANC : le bleu de la
+              cellule faisait partie de l'ancien logo OUIGO, il n'a plus lieu d'être. */}
+          <div style={{ width: 'var(--w-tren)' }} className="border-r-2 border-black px-2 py-1 flex flex-col items-center justify-center gap-1">
+            <img src="/inoui.png" alt="TGV inOui" className="w-full max-w-[80px] h-auto object-contain" />
+            <img src="/inoui-train.png" alt="" className="w-full max-w-[80px] h-auto object-contain" />
           </div>
 
           <div
@@ -350,12 +495,41 @@ export default function ClassicInfoPanel({
             <div className="mt-0.5 text-[18px] font-extrabold tracking-tight">{(D.composicion || '').toUpperCase()}</div>
           </div>
 
-          <div style={{ flex: 1, minWidth: 0 }} className="border-r-2 border-black px-2 py-1">
+          {/* MOTEURS ISOLÉS — reproduit les indications de la cabine (pictogramme
+              jaune + afficheur sept segments rouge). Éteint (gris) à 0. Le cycle
+              est borné par la composition : 1 moteur isolé maximum par rame,
+              donc max 1 en US et 2 en UM. */}
+          <div
+            className={`border-r-2 border-black px-2 py-1 text-center ${onMoteursIsolesLongPress ? 'cursor-pointer' : ''}`}
+            style={{ flex: '0 0 auto' }}
+            onPointerDown={startMoteursIsolesLongPress}
+            onPointerUp={cancelMoteursIsolesLongPress}
+            onPointerLeave={cancelMoteursIsolesLongPress}
+            onPointerCancel={cancelMoteursIsolesLongPress}
+            onContextMenu={(e) => e.preventDefault()}
+            title={onMoteursIsolesLongPress ? 'Appui long : nombre de moteurs isolés' : undefined}
+          >
+            <div className="text-[12px] font-semibold leading-none">MOT. ISOLÉS</div>
+            <div className="mt-0.5 flex items-center justify-center gap-1.5">
+              <MoteurIsoleIcon active={moteursIsolesActifs} />
+              <SevenSegmentDigit value={moteursIsoles} active={moteursIsolesActifs} />
+            </div>
+          </div>
+
+          <div
+            style={{ flex: 1, minWidth: 0 }}
+            className={`border-r-2 border-black px-2 py-1 ${onMaterialLongPress ? 'cursor-pointer' : ''}`}
+            onPointerDown={startMaterialLongPress}
+            onPointerUp={cancelMaterialLongPress}
+            onPointerLeave={cancelMaterialLongPress}
+            onPointerCancel={cancelMaterialLongPress}
+            onContextMenu={(e) => e.preventDefault()}
+            title={onMaterialLongPress ? 'Appui long : matériel suivant' : undefined}
+          >
+            {/* MATERIAL seul : la ligne « LINEA » n'est plus affichée (décision 07/08,
+                ligne supprimée du normalisé et de l'affichage du bloc info). */}
             <div className="text-[16px] font-extrabold uppercase leading-5">
               MATERIAL: {(D.material || '').toUpperCase()}
-            </div>
-            <div className="text-[16px] font-extrabold uppercase leading-5 mt-0.5">
-              LINEA: {(D.linea || '').toUpperCase()}
             </div>
           </div>
 
