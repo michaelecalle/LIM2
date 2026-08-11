@@ -1,0 +1,2261 @@
+{
+  "formatVersion": "2026",
+  "materiels": {
+    "TGV 2N2 3UH": {
+      "longueur": 200,
+      "masse": 433
+    }
+  },
+  "ligneVersions": {
+    "v1": {
+      "numeroVersion": "01",
+      "dateVigueur": "2026-08-04",
+      "mentions": [
+        {
+          "titre": "",
+          "contenu": "Vitesses limites en rouge pour circulation en MODE SR, BSL"
+        }
+      ],
+      "sudNord": [
+        {
+          "bloc": "BCA",
+          "vmax": "30",
+          "csv": false,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "CAN TUNIS-AV",
+          "pkAdif": "615.9",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "615.9"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "95",
+          "csv": false,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "BIF CAN TUNIS-AV",
+          "pkAdif": "616.0",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "616.0"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "85",
+          "csv": false,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "618.1",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "618.1"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "60",
+          "csv": false,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "619.9",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "619.9"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "30",
+          "csv": true,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "620.2",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "620.2"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "30",
+          "csv": false,
+          "radio": "G",
+          "rampe": "28",
+          "etcs": "1",
+          "etablissement": "BARCELONA SANTS 2",
+          "pkAdif": "621.0",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "621.0"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "140",
+          "csv": false,
+          "radio": "G",
+          "rampe": "28",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "621.7",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "621.7"
+        },
+        {
+          "type": "note",
+          "texte": "80km/h circulation en MODE SR et en BSL — 621.692 al 623.758",
+          "position": "en-dessous",
+          "surligne": true
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "80",
+          "csv": false,
+          "radio": "G",
+          "rampe": "28",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "623.8",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "623.8"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "140",
+          "csv": false,
+          "radio": "G",
+          "rampe": "28",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "624.3",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "624.3"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "45",
+          "csv": true,
+          "radio": "G",
+          "rampe": "28",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "626.7",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "626.7"
+        },
+        {
+          "type": "note",
+          "texte": "35 vias estacionam V11 V19 / V10 V18",
+          "position": "au-dessus",
+          "surligne": false
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "45",
+          "csv": false,
+          "radio": "G",
+          "rampe": "28",
+          "etcs": "1",
+          "etablissement": "LA SAGRERA",
+          "pkAdif": "627.7",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "627.7"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "110",
+          "csv": false,
+          "radio": "G",
+          "rampe": "28",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "629.4",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "629.4"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "130",
+          "csv": false,
+          "radio": "G",
+          "rampe": "28",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "630.7",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "630.7"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "28",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "632.4",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "632.4"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "185",
+          "csv": false,
+          "radio": "G",
+          "rampe": "28",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "639.8",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "639.8"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "185",
+          "csv": false,
+          "radio": "G",
+          "rampe": "28",
+          "etcs": "1",
+          "etablissement": "Bif. MOLLET",
+          "pkAdif": "640.9",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "640.9"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "185",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "Bif. MOLLET- AG KM 641.3",
+          "pkAdif": "641.3",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "641.3"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "195",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "641.9",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "641.9"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "643.6",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "643.6"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "Bif. MOLLET - AG KM 644.3",
+          "pkAdif": "644.3",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "644.3"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "PCA LA ROCA",
+          "pkAdif": "654.1",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "654.1"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "LLINARS",
+          "pkAdif": "662.5",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "662.5"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "PCA SANT CELONI",
+          "pkAdif": "670.5",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "670.5"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "RIELLS",
+          "pkAdif": "679.3",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "679.3"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "BASE MTO RIELLS",
+          "pkAdif": "682.0",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "682.0"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "PCA RIUDARENES",
+          "pkAdif": "691.9",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "691.9"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "VILOBI D'ONYAR",
+          "pkAdif": "703.5",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "703.5"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "125",
+          "csv": true,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "709.9",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "709.9"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "125",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "Bif. GIRONA-MERCADERIES",
+          "pkAdif": "710.7",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "710.7"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "120",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "713.2",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "713.2"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "120",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "GIRONA",
+          "pkAdif": "714.7",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "714.7"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "165",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "715.5",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "715.5"
+        },
+        {
+          "type": "note",
+          "texte": "155  TASF KM 715.514 al 716.838",
+          "position": "en-dessous",
+          "surligne": false
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "716.8",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "716.8"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "PCA VILADEMULS",
+          "pkAdif": "726.2",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "726.2"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "PCA PONTOS",
+          "pkAdif": "738.2",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "738.2"
+        },
+        {
+          "type": "note",
+          "texte": "80 AL PASO V3 V4 V6",
+          "position": "au-dessus",
+          "surligne": false
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "FIGUERES-VILAFANT",
+          "pkAdif": "749.6",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "749.6"
+        },
+        {
+          "bloc": "ETCS1",
+          "vmax": "300",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "",
+          "etablissement": "Limite ADIF-LFPSA",
+          "pkAdif": "752.4",
+          "pkLfp": "44.4",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "752.4"
+        },
+        {
+          "bloc": "ETCS1",
+          "vmax": "300",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "",
+          "etablissement": "Tunnel du Perthus - tête sud",
+          "pkAdif": "",
+          "pkLfp": "25.6",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "771.2"
+        },
+        {
+          "bloc": "ETCS1",
+          "vmax": "300",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "",
+          "etablissement": "Frontière Espagne France",
+          "pkAdif": "",
+          "pkLfp": "24.6",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "772.2"
+        },
+        {
+          "bloc": "ETCS1",
+          "vmax": "300",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "",
+          "etablissement": "Tunnel du Perthus - tête nord",
+          "pkAdif": "",
+          "pkLfp": "17.1",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "779.7"
+        },
+        {
+          "bloc": "ETCS1",
+          "vmax": "300",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "",
+          "etablissement": "Saut de Mouton",
+          "pkAdif": "",
+          "pkLfp": "12.9",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "783.9"
+        },
+        {
+          "bloc": "BAL",
+          "vmax": "160",
+          "csv": false,
+          "radio": "G",
+          "rampe": "10",
+          "etcs": "",
+          "etablissement": "Limite LGV-Rac",
+          "pkAdif": "",
+          "pkLfp": "1.2",
+          "pkRac": "4.5",
+          "pkRfn": "",
+          "pkInterne": "799.7"
+        },
+        {
+          "bloc": "BAL",
+          "vmax": "160",
+          "csv": false,
+          "radio": "G",
+          "rampe": "10",
+          "etcs": "",
+          "etablissement": "Limite RAC LFP-RFF",
+          "pkAdif": "",
+          "pkLfp": "",
+          "pkRac": "0",
+          "pkRfn": "471",
+          "pkInterne": "802"
+        },
+        {
+          "bloc": "BAL",
+          "vmax": "160",
+          "csv": false,
+          "radio": "G",
+          "rampe": "10",
+          "etcs": "",
+          "etablissement": "PERPIGNAN BV",
+          "pkAdif": "",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "467.5",
+          "pkInterne": "805.5"
+        }
+      ],
+      "nordSud": [
+        {
+          "bloc": "BAL",
+          "vmax": "160",
+          "csv": false,
+          "radio": "G",
+          "rampe": "10",
+          "etcs": "",
+          "etablissement": "PERPIGNAN BV",
+          "pkAdif": "",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "467.5",
+          "pkInterne": "805.5"
+        },
+        {
+          "bloc": "BAL",
+          "vmax": "160",
+          "csv": false,
+          "radio": "G",
+          "rampe": "10",
+          "etcs": "",
+          "etablissement": "Limite RAC LFP-RFF",
+          "pkAdif": "",
+          "pkLfp": "",
+          "pkRac": "0",
+          "pkRfn": "471",
+          "pkInterne": "802"
+        },
+        {
+          "bloc": "ETCS1",
+          "vmax": "300",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "",
+          "etablissement": "Limite LGV-Rac",
+          "pkAdif": "",
+          "pkLfp": "0.8",
+          "pkRac": "2.8",
+          "pkRfn": "",
+          "pkInterne": "799.7"
+        },
+        {
+          "bloc": "ETCS1",
+          "vmax": "300",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "",
+          "etablissement": "Saut de Mouton",
+          "pkAdif": "",
+          "pkLfp": "12.9",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "783.9"
+        },
+        {
+          "bloc": "ETCS1",
+          "vmax": "300",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "",
+          "etablissement": "Tunnel du Perthus - tête nord",
+          "pkAdif": "",
+          "pkLfp": "17.1",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "779.7"
+        },
+        {
+          "bloc": "ETCS1",
+          "vmax": "300",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "",
+          "etablissement": "Frontière France Espagne",
+          "pkAdif": "",
+          "pkLfp": "24.6",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "772.2"
+        },
+        {
+          "bloc": "ETCS1",
+          "vmax": "300",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "",
+          "etablissement": "Tunnel du Perthus - tête sud",
+          "pkAdif": "",
+          "pkLfp": "25.6",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "771.2"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "Limite ADIF-LFPSA",
+          "pkAdif": "752.4",
+          "pkLfp": "44.4",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "752.4"
+        },
+        {
+          "type": "note",
+          "texte": "80 AL PASO V3 V4 V6",
+          "position": "au-dessus",
+          "surligne": false
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "FIGUERES-VILAFANT",
+          "pkAdif": "749.6",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "749.6"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "PCA PONTOS",
+          "pkAdif": "738.2",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "738.2"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "PCA VILADEMULS",
+          "pkAdif": "726.2",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "726.2"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "165",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "716.8",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "716.8"
+        },
+        {
+          "type": "note",
+          "texte": "155 TASF KM 716.838 al 715.514",
+          "position": "en-dessous",
+          "surligne": false
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "120",
+          "csv": true,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "715.5",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "715.5"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "120",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "GIRONA",
+          "pkAdif": "714.7",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "714.7"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "125",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "713.2",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "713.2"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "125",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "BIF. GIRONA-MERCADERIES",
+          "pkAdif": "710.7",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "710.7"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "709.9",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "709.9"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "VILOBI D'ONYAR",
+          "pkAdif": "703.5",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "703.5"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "PCA RIUDARENES",
+          "pkAdif": "691.9",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "691.9"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "BASE MTO.RIELLS",
+          "pkAdif": "682.0",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "682.0"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "RIELLS-A. V",
+          "pkAdif": "679.3",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "679.3"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "PCA SANT CELONI",
+          "pkAdif": "670.5",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "670.5"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "LLINARS-A V",
+          "pkAdif": "662.5",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "662.5"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "PCA LA ROCA",
+          "pkAdif": "654.1",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "654.1"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "BIF. MOLLET- AG KM.644.3",
+          "pkAdif": "644.3",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "644.3"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "195",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "643.6",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "643.6"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "185",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "641.9",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "641.9"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "185",
+          "csv": false,
+          "radio": "G",
+          "rampe": "18",
+          "etcs": "1",
+          "etablissement": "BIF. MOLLET- AG KM. 643.6",
+          "pkAdif": "641.3",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "641.3"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "185",
+          "csv": false,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "BIF. MOLLET",
+          "pkAdif": "640.9",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "640.9"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "200",
+          "csv": false,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "639.8",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "639.8"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "130",
+          "csv": true,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "632.4",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "632.4"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "110",
+          "csv": false,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "630.7",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "630.7"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "45",
+          "csv": true,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "629.4",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "629.4"
+        },
+        {
+          "type": "note",
+          "texte": "35 vias estacionam V11 V19 / V10 V18",
+          "position": "au-dessus",
+          "surligne": false
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "45",
+          "csv": false,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "LA SAGRERA AV",
+          "pkAdif": "627.7",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "627.7"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "140",
+          "csv": false,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "626.7",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "626.7"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "80",
+          "csv": true,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "624.3",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "624.3"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "140",
+          "csv": false,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "623.8",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "623.8"
+        },
+        {
+          "type": "note",
+          "texte": "80km/h circulation en MODE SR et en BSL — 623.758 al 621.692",
+          "position": "en-dessous",
+          "surligne": true
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "30",
+          "csv": true,
+          "radio": "G",
+          "rampe": "30",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "621.7",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "621.7"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "30",
+          "csv": false,
+          "radio": "G",
+          "rampe": "25",
+          "etcs": "1",
+          "etablissement": "BARCELONA SANTS",
+          "pkAdif": "621.0",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "621.0"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "60",
+          "csv": false,
+          "radio": "G",
+          "rampe": "25",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "620.2",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "620.2"
+        },
+        {
+          "type": "note",
+          "texte": "60km/h circulation en MODE SR et en BSL — KM619.933 al 619.500",
+          "position": "en-dessous",
+          "surligne": true
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "85",
+          "csv": false,
+          "radio": "G",
+          "rampe": "25",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "619.9",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "619.9"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "95",
+          "csv": false,
+          "radio": "G",
+          "rampe": "25",
+          "etcs": "1",
+          "etablissement": "",
+          "pkAdif": "618.1",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "618.1"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "30",
+          "csv": true,
+          "radio": "G",
+          "rampe": "25",
+          "etcs": "1",
+          "etablissement": "BIF CAN TUNIS-AV",
+          "pkAdif": "616.0",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "616.0"
+        },
+        {
+          "bloc": "BCA",
+          "vmax": "30",
+          "csv": false,
+          "radio": "G",
+          "rampe": "25",
+          "etcs": "1",
+          "etablissement": "CAN TUNIS-AV",
+          "pkAdif": "615.9",
+          "pkLfp": "",
+          "pkRac": "",
+          "pkRfn": "",
+          "pkInterne": "615.9"
+        }
+      ]
+    }
+  },
+  "trains": {
+    "9705": {
+      "variants": [
+        {
+          "ligneVersionId": "v1",
+          "validityStartDate": "2026-08-04",
+          "validityEndDate": "",
+          "meta": {
+            "numeroEspagne": "9705",
+            "numeroFrance": "9704",
+            "origine": "BARCELONA SANTS 2",
+            "destination": "PERPIGNAN BV",
+            "categorieSNCF": "E32C",
+            "categorieLFP": "Type 300",
+            "categorieADIF": "Tipo 200",
+            "materiel": "TGV 2N2 3UH",
+            "direction": "sudNord",
+            "horaires": {
+              "621.0|||": {
+                "arrivee": "",
+                "passage": "",
+                "depart": "15:17"
+              },
+              "627.7|||": {
+                "arrivee": "",
+                "passage": "15:23",
+                "depart": ""
+              },
+              "641.3|||": {
+                "arrivee": "",
+                "passage": "15:32",
+                "depart": ""
+              },
+              "644.3|||": {
+                "arrivee": "",
+                "passage": "15:34",
+                "depart": ""
+              },
+              "654.1|||": {
+                "arrivee": "",
+                "passage": "15:37",
+                "depart": ""
+              },
+              "662.5|||": {
+                "arrivee": "",
+                "passage": "15:39",
+                "depart": ""
+              },
+              "670.5|||": {
+                "arrivee": "",
+                "passage": "15:42",
+                "depart": ""
+              },
+              "679.3|||": {
+                "arrivee": "",
+                "passage": "15:45",
+                "depart": ""
+              },
+              "682.0|||": {
+                "arrivee": "",
+                "passage": "15:46",
+                "depart": ""
+              },
+              "691.9|||": {
+                "arrivee": "",
+                "passage": "15:49",
+                "depart": ""
+              },
+              "703.5|||": {
+                "arrivee": "",
+                "passage": "15:53",
+                "depart": ""
+              },
+              "710.7|||": {
+                "arrivee": "",
+                "passage": "15:55",
+                "depart": ""
+              },
+              "714.7|||": {
+                "arrivee": "15:58",
+                "passage": "",
+                "depart": "16:01"
+              },
+              "726.2|||": {
+                "arrivee": "",
+                "passage": "16:07",
+                "depart": ""
+              },
+              "738.2|||": {
+                "arrivee": "",
+                "passage": "16:11",
+                "depart": ""
+              },
+              "749.6|||": {
+                "arrivee": "16:16",
+                "passage": "",
+                "depart": "16:19"
+              },
+              "752.4|44.4||": {
+                "arrivee": "",
+                "passage": "16:24",
+                "depart": ""
+              },
+              "|25.6||": {
+                "arrivee": "",
+                "passage": "16:28",
+                "depart": ""
+              },
+              "|24.6||": {
+                "arrivee": "",
+                "passage": "16:29",
+                "depart": ""
+              },
+              "|17.1||": {
+                "arrivee": "",
+                "passage": "16:31",
+                "depart": ""
+              },
+              "|12.9||": {
+                "arrivee": "",
+                "passage": "16:32",
+                "depart": ""
+              },
+              "|1.2|4.5|": {
+                "arrivee": "",
+                "passage": "16:37",
+                "depart": ""
+              },
+              "|||467.5": {
+                "arrivee": "16:43+",
+                "passage": "",
+                "depart": ""
+              }
+            }
+          }
+        }
+      ]
+    },
+    "9707": {
+      "variants": [
+        {
+          "ligneVersionId": "v1",
+          "validityStartDate": "2026-08-04",
+          "validityEndDate": "",
+          "meta": {
+            "numeroEspagne": "9707",
+            "numeroFrance": "9706",
+            "origine": "BARCELONA SANTS 2",
+            "destination": "PERPIGNAN BV",
+            "categorieSNCF": "E32C",
+            "categorieLFP": "Type 300",
+            "categorieADIF": "Tipo 200",
+            "materiel": "TGV 2N2 3UH",
+            "direction": "sudNord",
+            "horaires": {
+              "621.0|||": {
+                "arrivee": "",
+                "passage": "",
+                "depart": "16:24"
+              },
+              "627.7|||": {
+                "arrivee": "",
+                "passage": "16:30",
+                "depart": ""
+              },
+              "641.3|||": {
+                "arrivee": "",
+                "passage": "16:39",
+                "depart": ""
+              },
+              "644.3|||": {
+                "arrivee": "",
+                "passage": "16:41",
+                "depart": ""
+              },
+              "654.1|||": {
+                "arrivee": "",
+                "passage": "16:44",
+                "depart": ""
+              },
+              "662.5|||": {
+                "arrivee": "",
+                "passage": "16:46",
+                "depart": ""
+              },
+              "670.5|||": {
+                "arrivee": "",
+                "passage": "16:49",
+                "depart": ""
+              },
+              "679.3|||": {
+                "arrivee": "",
+                "passage": "16:52",
+                "depart": ""
+              },
+              "682.0|||": {
+                "arrivee": "",
+                "passage": "16:53",
+                "depart": ""
+              },
+              "691.9|||": {
+                "arrivee": "",
+                "passage": "16:56",
+                "depart": ""
+              },
+              "703.5|||": {
+                "arrivee": "",
+                "passage": "17:00",
+                "depart": ""
+              },
+              "710.7|||": {
+                "arrivee": "",
+                "passage": "17:02",
+                "depart": ""
+              },
+              "714.7|||": {
+                "arrivee": "17:05",
+                "passage": "",
+                "depart": "17:08"
+              },
+              "726.2|||": {
+                "arrivee": "",
+                "passage": "17:14",
+                "depart": ""
+              },
+              "738.2|||": {
+                "arrivee": "",
+                "passage": "17:18",
+                "depart": ""
+              },
+              "749.6|||": {
+                "arrivee": "17:23",
+                "passage": "",
+                "depart": "17:26"
+              },
+              "752.4|44.4||": {
+                "arrivee": "",
+                "passage": "17:31",
+                "depart": ""
+              },
+              "|25.6||": {
+                "arrivee": "",
+                "passage": "17:35",
+                "depart": ""
+              },
+              "|24.6||": {
+                "arrivee": "",
+                "passage": "17:36",
+                "depart": ""
+              },
+              "|17.1||": {
+                "arrivee": "",
+                "passage": "17:38",
+                "depart": ""
+              },
+              "|12.9||": {
+                "arrivee": "",
+                "passage": "17:39",
+                "depart": ""
+              },
+              "|1.2|4.5|": {
+                "arrivee": "",
+                "passage": "17:44",
+                "depart": ""
+              },
+              "|||467.5": {
+                "arrivee": "17:50",
+                "passage": "",
+                "depart": ""
+              }
+            }
+          }
+        }
+      ]
+    },
+    "9709": {
+      "variants": [
+        {
+          "ligneVersionId": "v1",
+          "validityStartDate": "2026-08-04",
+          "validityEndDate": "",
+          "meta": {
+            "numeroEspagne": "9709",
+            "numeroFrance": "9708",
+            "origine": "BARCELONA SANTS 2",
+            "destination": "PERPIGNAN BV",
+            "categorieSNCF": "E32C",
+            "categorieLFP": "Type 300",
+            "categorieADIF": "Tipo 200",
+            "materiel": "TGV 2N2 3UH",
+            "direction": "sudNord",
+            "horaires": {
+              "621.0|||": {
+                "arrivee": "",
+                "passage": "",
+                "depart": "9:26"
+              },
+              "627.7|||": {
+                "arrivee": "",
+                "passage": "9:32",
+                "depart": ""
+              },
+              "641.3|||": {
+                "arrivee": "",
+                "passage": "9:41",
+                "depart": ""
+              },
+              "644.3|||": {
+                "arrivee": "",
+                "passage": "9:43",
+                "depart": ""
+              },
+              "654.1|||": {
+                "arrivee": "",
+                "passage": "9:46",
+                "depart": ""
+              },
+              "662.5|||": {
+                "arrivee": "",
+                "passage": "9:48",
+                "depart": ""
+              },
+              "670.5|||": {
+                "arrivee": "",
+                "passage": "9:51",
+                "depart": ""
+              },
+              "679.3|||": {
+                "arrivee": "",
+                "passage": "9:54",
+                "depart": ""
+              },
+              "682.0|||": {
+                "arrivee": "",
+                "passage": "9:55",
+                "depart": ""
+              },
+              "691.9|||": {
+                "arrivee": "",
+                "passage": "9:58",
+                "depart": ""
+              },
+              "703.5|||": {
+                "arrivee": "",
+                "passage": "10:02",
+                "depart": ""
+              },
+              "710.7|||": {
+                "arrivee": "",
+                "passage": "10:04",
+                "depart": ""
+              },
+              "714.7|||": {
+                "arrivee": "10:07",
+                "passage": "",
+                "depart": "10:10"
+              },
+              "726.2|||": {
+                "arrivee": "",
+                "passage": "10:16",
+                "depart": ""
+              },
+              "738.2|||": {
+                "arrivee": "",
+                "passage": "10:20",
+                "depart": ""
+              },
+              "749.6|||": {
+                "arrivee": "10:25",
+                "passage": "",
+                "depart": "10:28"
+              },
+              "752.4|44.4||": {
+                "arrivee": "",
+                "passage": "10:33",
+                "depart": ""
+              },
+              "|25.6||": {
+                "arrivee": "",
+                "passage": "10:37",
+                "depart": ""
+              },
+              "|24.6||": {
+                "arrivee": "",
+                "passage": "10:38",
+                "depart": ""
+              },
+              "|17.1||": {
+                "arrivee": "",
+                "passage": "10:40",
+                "depart": ""
+              },
+              "|12.9||": {
+                "arrivee": "",
+                "passage": "10:41",
+                "depart": ""
+              },
+              "|1.2|4.5|": {
+                "arrivee": "",
+                "passage": "10:46",
+                "depart": ""
+              },
+              "|||467.5": {
+                "arrivee": "10:52",
+                "passage": "",
+                "depart": ""
+              }
+            }
+          }
+        }
+      ]
+    },
+    "9711": {
+      "variants": [
+        {
+          "ligneVersionId": "v1",
+          "validityStartDate": "2026-08-04",
+          "validityEndDate": "",
+          "meta": {
+            "numeroEspagne": "9711",
+            "numeroFrance": "9710",
+            "origine": "PERPIGNAN BV",
+            "destination": "BARCELONA-SANTS",
+            "categorieSNCF": "E32C",
+            "categorieLFP": "Type 300",
+            "categorieADIF": "Tipo 200",
+            "materiel": "TGV 2N2 3UH",
+            "direction": "nordSud",
+            "horaires": {
+              "|||467.5": {
+                "arrivee": "",
+                "passage": "",
+                "depart": "12:06"
+              },
+              "|0.8|2.8|": {
+                "arrivee": "",
+                "passage": "12:11",
+                "depart": ""
+              },
+              "|12.9||": {
+                "arrivee": "",
+                "passage": "12:15",
+                "depart": ""
+              },
+              "|17.1||": {
+                "arrivee": "",
+                "passage": "12:16",
+                "depart": ""
+              },
+              "|24.6||": {
+                "arrivee": "",
+                "passage": "12:18",
+                "depart": ""
+              },
+              "|25.6||": {
+                "arrivee": "",
+                "passage": "12:19",
+                "depart": ""
+              },
+              "752.4|44.4||": {
+                "arrivee": "",
+                "passage": "12:24",
+                "depart": ""
+              },
+              "749.6|||": {
+                "arrivee": "12:27",
+                "passage": "",
+                "depart": "12:30"
+              },
+              "738.2|||": {
+                "arrivee": "",
+                "passage": "12:35",
+                "depart": ""
+              },
+              "726.2|||": {
+                "arrivee": "",
+                "passage": "12:39",
+                "depart": ""
+              },
+              "714.7|||": {
+                "arrivee": "12:44",
+                "passage": "",
+                "depart": "12:47"
+              },
+              "710.7|||": {
+                "arrivee": "",
+                "passage": "12:50",
+                "depart": ""
+              },
+              "703.5|||": {
+                "arrivee": "",
+                "passage": "12:53",
+                "depart": ""
+              },
+              "691.9|||": {
+                "arrivee": "",
+                "passage": "12:57",
+                "depart": ""
+              },
+              "682.0|||": {
+                "arrivee": "",
+                "passage": "13:00",
+                "depart": ""
+              },
+              "679.3|||": {
+                "arrivee": "",
+                "passage": "13:01",
+                "depart": ""
+              },
+              "670.5|||": {
+                "arrivee": "",
+                "passage": "13:04",
+                "depart": ""
+              },
+              "662.5|||": {
+                "arrivee": "",
+                "passage": "13:06",
+                "depart": ""
+              },
+              "654.1|||": {
+                "arrivee": "",
+                "passage": "13:09",
+                "depart": ""
+              },
+              "644.3|||": {
+                "arrivee": "",
+                "passage": "13:12",
+                "depart": ""
+              },
+              "641.3|||": {
+                "arrivee": "",
+                "passage": "13:14",
+                "depart": ""
+              },
+              "640.9|||": {
+                "arrivee": "",
+                "passage": "13:15",
+                "depart": ""
+              },
+              "627.7|||": {
+                "arrivee": "",
+                "passage": "13:23",
+                "depart": ""
+              },
+              "621.0|||": {
+                "arrivee": "13:36",
+                "passage": "",
+                "depart": ""
+              }
+            }
+          }
+        }
+      ]
+    },
+    "9713": {
+      "variants": [
+        {
+          "ligneVersionId": "v1",
+          "validityStartDate": "2026-08-04",
+          "validityEndDate": "",
+          "meta": {
+            "numeroEspagne": "9713",
+            "numeroFrance": "9712",
+            "origine": "PERPIGNAN BV",
+            "destination": "BARCELONA-SANTS",
+            "categorieSNCF": "E32C",
+            "categorieLFP": "Type 300",
+            "categorieADIF": "Tipo 200",
+            "materiel": "TGV 2N2 3UH",
+            "direction": "nordSud",
+            "horaires": {
+              "|||467.5": {
+                "arrivee": "",
+                "passage": "",
+                "depart": "13:06+"
+              },
+              "|0.8|2.8|": {
+                "arrivee": "",
+                "passage": "13:12",
+                "depart": ""
+              },
+              "|12.9||": {
+                "arrivee": "",
+                "passage": "13:16",
+                "depart": ""
+              },
+              "|17.1||": {
+                "arrivee": "",
+                "passage": "13:17",
+                "depart": ""
+              },
+              "|24.6||": {
+                "arrivee": "",
+                "passage": "13:19",
+                "depart": ""
+              },
+              "|25.6||": {
+                "arrivee": "",
+                "passage": "13:20",
+                "depart": ""
+              },
+              "752.4|44.4||": {
+                "arrivee": "",
+                "passage": "13:25",
+                "depart": ""
+              },
+              "749.6|||": {
+                "arrivee": "13:30",
+                "passage": "",
+                "depart": "13:33"
+              },
+              "738.2|||": {
+                "arrivee": "",
+                "passage": "13:38",
+                "depart": ""
+              },
+              "726.2|||": {
+                "arrivee": "",
+                "passage": "13:42",
+                "depart": ""
+              },
+              "714.7|||": {
+                "arrivee": "13:47",
+                "passage": "",
+                "depart": "13:50"
+              },
+              "710.7|||": {
+                "arrivee": "",
+                "passage": "13:53",
+                "depart": ""
+              },
+              "703.5|||": {
+                "arrivee": "",
+                "passage": "13:56",
+                "depart": ""
+              },
+              "691.9|||": {
+                "arrivee": "",
+                "passage": "14:00",
+                "depart": ""
+              },
+              "682.0|||": {
+                "arrivee": "",
+                "passage": "14:03",
+                "depart": ""
+              },
+              "679.3|||": {
+                "arrivee": "",
+                "passage": "14:04",
+                "depart": ""
+              },
+              "670.5|||": {
+                "arrivee": "",
+                "passage": "14:07",
+                "depart": ""
+              },
+              "662.5|||": {
+                "arrivee": "",
+                "passage": "14:09",
+                "depart": ""
+              },
+              "654.1|||": {
+                "arrivee": "",
+                "passage": "14:12",
+                "depart": ""
+              },
+              "644.3|||": {
+                "arrivee": "",
+                "passage": "14:15",
+                "depart": ""
+              },
+              "641.3|||": {
+                "arrivee": "",
+                "passage": "14:17",
+                "depart": ""
+              },
+              "640.9|||": {
+                "arrivee": "",
+                "passage": "14:18",
+                "depart": ""
+              },
+              "627.7|||": {
+                "arrivee": "",
+                "passage": "14:25",
+                "depart": ""
+              },
+              "621.0|||": {
+                "arrivee": "14:32",
+                "passage": "",
+                "depart": ""
+              }
+            }
+          }
+        }
+      ]
+    },
+    "9715": {
+      "variants": [
+        {
+          "ligneVersionId": "v1",
+          "validityStartDate": "2026-08-04",
+          "validityEndDate": "",
+          "meta": {
+            "numeroEspagne": "9715",
+            "numeroFrance": "9714",
+            "origine": "PERPIGNAN BV",
+            "destination": "BARCELONA-SANTS",
+            "categorieSNCF": "E32C",
+            "categorieLFP": "Type 300",
+            "categorieADIF": "Tipo 200",
+            "materiel": "TGV 2N2 3UH",
+            "direction": "nordSud",
+            "horaires": {
+              "|||467.5": {
+                "arrivee": "",
+                "passage": "",
+                "depart": "20:07"
+              },
+              "|0.8|2.8|": {
+                "arrivee": "",
+                "passage": "20:12",
+                "depart": ""
+              },
+              "|12.9||": {
+                "arrivee": "",
+                "passage": "20:16",
+                "depart": ""
+              },
+              "|17.1||": {
+                "arrivee": "",
+                "passage": "20:17",
+                "depart": ""
+              },
+              "|24.6||": {
+                "arrivee": "",
+                "passage": "20:19",
+                "depart": ""
+              },
+              "|25.6||": {
+                "arrivee": "",
+                "passage": "20:20",
+                "depart": ""
+              },
+              "752.4|44.4||": {
+                "arrivee": "",
+                "passage": "20:25",
+                "depart": ""
+              },
+              "749.6|||": {
+                "arrivee": "20:30",
+                "passage": "",
+                "depart": "20:33"
+              },
+              "738.2|||": {
+                "arrivee": "",
+                "passage": "20:38",
+                "depart": ""
+              },
+              "726.2|||": {
+                "arrivee": "",
+                "passage": "20:42",
+                "depart": ""
+              },
+              "714.7|||": {
+                "arrivee": "20:47",
+                "passage": "",
+                "depart": "20:50"
+              },
+              "710.7|||": {
+                "arrivee": "",
+                "passage": "20:53",
+                "depart": ""
+              },
+              "703.5|||": {
+                "arrivee": "",
+                "passage": "20:56",
+                "depart": ""
+              },
+              "691.9|||": {
+                "arrivee": "",
+                "passage": "21:00",
+                "depart": ""
+              },
+              "682.0|||": {
+                "arrivee": "",
+                "passage": "21:03",
+                "depart": ""
+              },
+              "679.3|||": {
+                "arrivee": "",
+                "passage": "21:04",
+                "depart": ""
+              },
+              "670.5|||": {
+                "arrivee": "",
+                "passage": "21:07",
+                "depart": ""
+              },
+              "662.5|||": {
+                "arrivee": "",
+                "passage": "21:09",
+                "depart": ""
+              },
+              "654.1|||": {
+                "arrivee": "",
+                "passage": "21:12",
+                "depart": ""
+              },
+              "644.3|||": {
+                "arrivee": "",
+                "passage": "21:15",
+                "depart": ""
+              },
+              "641.3|||": {
+                "arrivee": "",
+                "passage": "21:17",
+                "depart": ""
+              },
+              "640.9|||": {
+                "arrivee": "",
+                "passage": "21:18",
+                "depart": ""
+              },
+              "627.7|||": {
+                "arrivee": "",
+                "passage": "21:25",
+                "depart": ""
+              },
+              "621.0|||": {
+                "arrivee": "21:32",
+                "passage": "",
+                "depart": ""
+              }
+            }
+          }
+        }
+      ]
+    },
+    "38510": {
+      "variants": [
+        {
+          "ligneVersionId": "v1",
+          "validityStartDate": "2026-08-04",
+          "validityEndDate": "",
+          "meta": {
+            "numeroEspagne": "38510",
+            "numeroFrance": "38511",
+            "origine": "BARCELONA SANTS 2",
+            "destination": "CAN TUNIS-AV",
+            "categorieSNCF": "E32C",
+            "categorieLFP": "Type 300",
+            "categorieADIF": "Tipo 200",
+            "materiel": "TGV 2N2 3UH",
+            "direction": "sudNord",
+            "horaires": {
+              "621.0|||": {
+                "arrivee": "",
+                "passage": "",
+                "depart": "22:00"
+              },
+              "616.0|||": {
+                "arrivee": "",
+                "passage": "22:05",
+                "depart": ""
+              },
+              "615.9|||": {
+                "arrivee": "22:06",
+                "passage": "",
+                "depart": ""
+              }
+            }
+          }
+        }
+      ]
+    },
+    "38579": {
+      "variants": [
+        {
+          "ligneVersionId": "v1",
+          "validityStartDate": "2026-08-04",
+          "validityEndDate": "",
+          "meta": {
+            "numeroEspagne": "38579",
+            "numeroFrance": "38578",
+            "origine": "CAN TUNIS-AV",
+            "destination": "BARCELONA SANTS 2",
+            "categorieSNCF": "E32C",
+            "categorieLFP": "Type 300",
+            "categorieADIF": "Tipo 200",
+            "materiel": "TGV 2N2 3UH",
+            "direction": "sudNord",
+            "horaires": {
+              "615.9|||": {
+                "arrivee": "",
+                "passage": "",
+                "depart": "15:22"
+              },
+              "616.0|||": {
+                "arrivee": "",
+                "passage": "15:22",
+                "depart": ""
+              },
+              "621.0|||": {
+                "arrivee": "15:27",
+                "passage": "",
+                "depart": ""
+              }
+            }
+          }
+        }
+      ]
+    },
+    "39819": {
+      "variants": [
+        {
+          "ligneVersionId": "v1",
+          "validityStartDate": "2026-08-04",
+          "validityEndDate": "",
+          "meta": {
+            "numeroEspagne": "39819",
+            "numeroFrance": "39818",
+            "origine": "CAN TUNIS-AV",
+            "destination": "BARCELONA SANTS 2",
+            "categorieSNCF": "E32C",
+            "categorieLFP": "Type 300",
+            "categorieADIF": "Tipo 200",
+            "materiel": "TGV 2N2 3UH",
+            "direction": "sudNord",
+            "horaires": {
+              "615.9|||": {
+                "arrivee": "",
+                "passage": "",
+                "depart": "8:23"
+              },
+              "616.0|||": {
+                "arrivee": "",
+                "passage": "8:24",
+                "depart": ""
+              },
+              "621.0|||": {
+                "arrivee": "8:30",
+                "passage": "",
+                "depart": ""
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
