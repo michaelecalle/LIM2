@@ -61,7 +61,12 @@ import FT from "./components/LIM/FT"
 import FTHorizontal from "./components/LIM/FTHorizontal"
 import ReplayOverlay from "./components/Replay/ReplayOverlay"
 import { APP_VERSION } from "./components/version"
-import { fetchLtvSourcePdfBytes } from "./lib/managedDocs"
+import {
+  fetchLtvSourcePdfBytes,
+  fetchManagedDocBlobUrl,
+  fetchLivretFtPageIndex,
+} from "./lib/managedDocs"
+import ManualPdfCanvasViewer from "./components/LIM/ManualPdfCanvasViewer"
 import { renderPdfDataToImages } from "./lib/redPdfParser"
 
 /**
@@ -163,6 +168,19 @@ export default function App() {
   const ltvSessionLoadedRef = React.useRef(false)
   const ltvAvailable = ltvPageImages.length > 0
   const secoursTouchXRef = React.useRef<number | null>(null)
+
+  // Mode secours — LIVRET FT complet (tous les trains dans un seul PDF) publié par
+  // l'éditeur dans lim-logs, avec son index « n° de train → 1re page ».
+  // Sert de repli quand aucune fiche train n'a été importée dans la session.
+  //
+  // ⚠️ PRÉCHARGÉ AU DÉMARRAGE, pas à l'entrée en mode rouge : on a besoin du
+  // secours précisément quand ça se passe mal (tunnel, pas de couverture).
+  // Le récupérer à ce moment-là reviendrait à ne pas l'avoir. Contrairement au
+  // LTV, qui lui est encore chargé à l'entrée en rouge (comportement existant).
+  const [livretFtUrl, setLivretFtUrl] = React.useState<string | null>(null)
+  const [livretFtIndex, setLivretFtIndex] =
+    React.useState<Record<string, number> | null>(null)
+  const [livretFtPage, setLivretFtPage] = React.useState(1)
 
   const onSecoursTouchStart = (e: React.TouchEvent) => {
     secoursTouchXRef.current = e.changedTouches[0]?.clientX ?? null
@@ -559,6 +577,56 @@ export default function App() {
     return () => { cancelled = true }
   }, [pdfMode, ltvPageImages.length])
 
+  // Mode secours — préchargement du LIVRET FT (PDF + index des pages) AU DÉMARRAGE.
+  // Volontairement au montage : c'est le moment où la couverture réseau est la
+  // meilleure (à quai). Si l'un des deux manque, on dégrade sans bloquer :
+  //   - pas de PDF   → le repli livret n'est simplement pas proposé ;
+  //   - pas d'index  → le livret s'ouvre page 1, à feuilleter à la main.
+  React.useEffect(() => {
+    let cancelled = false
+    let createdUrl: string | null = null
+
+    fetchManagedDocBlobUrl("livretFt")
+      .then((url) => {
+        if (cancelled) {
+          if (url) URL.revokeObjectURL(url)
+          return
+        }
+        if (url) {
+          createdUrl = url
+          setLivretFtUrl(url)
+        }
+      })
+      .catch((err) => console.warn("[App] livret FT (PDF) indisponible", err))
+
+    fetchLivretFtPageIndex()
+      .then((idx) => {
+        if (cancelled || !idx) return
+        setLivretFtIndex(idx)
+      })
+      .catch((err) => console.warn("[App] livret FT (index) indisponible", err))
+
+    return () => {
+      cancelled = true
+      if (createdUrl) URL.revokeObjectURL(createdUrl)
+    }
+  }, [])
+
+  // Page du livret pour le train courant. Absent de l'index (ex. train non repris
+  // dans le livret) → page 1, plutôt que rien.
+  React.useEffect(() => {
+    if (trainNumber === null || !livretFtIndex) return
+    const page = livretFtIndex[String(trainNumber)]
+    if (typeof page === "number" && page >= 1) {
+      setLivretFtPage(page)
+    } else {
+      console.warn(
+        `[App] train ${trainNumber} absent de l'index du livret FT → ouverture page 1`
+      )
+      setLivretFtPage(1)
+    }
+  }, [trainNumber, livretFtIndex])
+
   // changement de mode (blue/green/red)
   React.useEffect(() => {
     const handler = (e: Event) => {
@@ -847,6 +915,18 @@ export default function App() {
                     src={pdfUrl}
                     className="w-full h-full rounded-2xl"
                     title="PDF importé"
+                  />
+                ) : livretFtUrl ? (
+                  // Repli : LIVRET FT complet publié par l'éditeur, ouvert
+                  // directement à la page du train courant grâce à l'index.
+                  // Visionneuse canvas (et non iframe) : elle gère la pagination
+                  // nativement — utile car un train peut occuper 2 pages — et
+                  // n'a pas le défaut d'affichage des iframes PDF sur iOS.
+                  <ManualPdfCanvasViewer
+                    pdfUrl={livretFtUrl}
+                    page={livretFtPage}
+                    onPageChange={setLivretFtPage}
+                    applyDarkInvert={false}
                   />
                 ) : (
                   <div className="h-full flex items-center justify-center text-sm text-zinc-400 dark:text-zinc-500">

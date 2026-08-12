@@ -3044,6 +3044,12 @@ useEffect(() => {
           };
 
           for (const e of rawEntries) {
+            // ⚠️ La zone kilométrique sert AUSSI à placer les notes NON
+            // surlignées (décision 12/08) : elle sera donc bientôt extraite pour
+            // toutes les notes à intervalle. Le surlignage reste, lui, piloté par
+            // le seul champ `surligne` → on filtre ici, pas à l'extraction.
+            if (!(e as any)?.noteSurligne) continue;
+
             const from = (e as any)?.noteZoneFrom as number | undefined;
             const to = (e as any)?.noteZoneTo as number | undefined;
             if (typeof from !== "number" || typeof to !== "number") continue;
