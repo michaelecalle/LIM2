@@ -82,10 +82,51 @@ export const EMPIRICAL_SEGMENTS: EmpiricalSegment[] = [
   // Perthus : pas encore de relevé → repli théorique. Ajouter un segment ici le moment venu.
 ];
 
+// ── SÉLECTION DE COURBE PAR VARIANTE (11/08) ────────────────────────────────
+// Le temps de parcours réel dépend de la puissance disponible, donc de la
+// COMPOSITION (US / UM) et du nombre de MOTEURS ISOLÉS (0, 1 ou 2 — un par rame
+// au maximum). On indexe donc les courbes par ces deux critères.
+//
+// ⚠️ ÉTAT ACTUEL : une seule courbe mesurée, relevée sur le 9709 du 25/06 AVEC
+// UN BLOC MOTEUR ISOLÉ (75 % de puissance — cf. en-tête de ce fichier). Elle est
+// donc enregistrée comme variante (US, 1) ET comme COURBE PAR DÉFAUT, pour que
+// le cas nominal (US, 0), qui est la valeur affichée par défaut, continue d'en
+// bénéficier plutôt que de repartir au théorique — ce serait une régression.
+//
+// POUR AJOUTER UNE VARIANTE : déposer ses segments dans `CURVES` sous la clé
+// correspondante. La sélection la prendra automatiquement, sans autre modif.
+
+export type CurveVariant = {
+  /** "US" ou "UM" (insensible à la casse). */
+  composition?: string | null;
+  /** 0, 1 ou 2. */
+  moteursIsoles?: number | null;
+};
+
+const variantKey = (composition?: string | null, moteursIsoles?: number | null) =>
+  `${String(composition ?? "").trim().toUpperCase() || "US"}|${moteursIsoles ?? 0}`;
+
+/** Courbes mesurées, par variante. Vide = pas encore relevée → repli défaut. */
+const CURVES: Record<string, EmpiricalSegment[]> = {
+  // Relevé 9709 du 25/06, un bloc moteur isolé.
+  "US|1": EMPIRICAL_SEGMENTS,
+};
+
+/** Utilisée tant qu'aucune variante plus spécifique n'a été mesurée. */
+const DEFAULT_CURVE = EMPIRICAL_SEGMENTS;
+
+function selectSegments(variant?: CurveVariant): EmpiricalSegment[] {
+  const exact = CURVES[variantKey(variant?.composition, variant?.moteursIsoles)];
+  return exact ?? DEFAULT_CURVE;
+}
+
 /** Segment couvrant ce PK (ou null si hors de tout segment → repli théorique). */
-function segmentForPk(pk: number | null | undefined): EmpiricalSegment | null {
+function segmentForPk(
+  pk: number | null | undefined,
+  variant?: CurveVariant
+): EmpiricalSegment | null {
   if (typeof pk !== "number" || !Number.isFinite(pk)) return null;
-  for (const seg of EMPIRICAL_SEGMENTS) {
+  for (const seg of selectSegments(variant)) {
     const lo = seg.points[0].pk;
     const hi = seg.points[seg.points.length - 1].pk;
     if (pk >= lo && pk <= hi) return seg;
@@ -94,8 +135,11 @@ function segmentForPk(pk: number | null | undefined): EmpiricalSegment | null {
 }
 
 /** Vrai si ce PK tombe dans un segment empirique mesuré. */
-export function isInEmpiricalZone(pk: number | null | undefined): boolean {
-  return segmentForPk(pk) != null;
+export function isInEmpiricalZone(
+  pk: number | null | undefined,
+  variant?: CurveVariant
+): boolean {
+  return segmentForPk(pk, variant) != null;
 }
 
 /** Δt (s) au PK donné DANS un segment (interpolation PK → Δt). */
@@ -121,8 +165,12 @@ function dtAtPkInSegment(seg: EmpiricalSegment, pk: number): number {
  * Retourne null si l'ancre est hors segment OU si le temps écoulé dépasse la fin du segment
  * (dans les deux cas, l'appelant bascule sur le calcul théorique normal).
  */
-export function empiricalPkAtElapsed(anchorPk: number, dtSec: number): number | null {
-  const seg = segmentForPk(anchorPk);
+export function empiricalPkAtElapsed(
+  anchorPk: number,
+  dtSec: number,
+  variant?: CurveVariant
+): number | null {
+  const seg = segmentForPk(anchorPk, variant);
   if (!seg) return null;
 
   const anchorDt = dtAtPkInSegment(seg, anchorPk);

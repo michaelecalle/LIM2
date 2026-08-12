@@ -772,6 +772,34 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   // --- Continuité ORANGE -> RED (ancrage visuel) + anti-retour arrière en RED ---
   const lastTrainPosYpxRef = React.useRef<number | null>(null);
   const prevGpsStateUiRef = React.useRef<GpsStateUi>("RED");
+
+  // Variante de courbe empirique : composition (US/UM) + nombre de moteurs
+  // isolés, tous deux saisis dans le bloc info. Tant qu'une seule courbe est
+  // mesurée, la sélection retombe dessus — déposer une variante suffira.
+  const curveVariantRef = React.useRef<{ composition: string | null; moteursIsoles: number }>({
+    composition: null,
+    moteursIsoles: 0,
+  });
+
+  React.useEffect(() => {
+    const onComposition = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      const v = d?.displayedComposition ?? d?.normalizedComposition ?? null;
+      curveVariantRef.current.composition = typeof v === "string" ? v : null;
+    };
+    const onMoteurs = (e: Event) => {
+      const n = (e as CustomEvent).detail?.moteursIsoles;
+      if (typeof n === "number" && Number.isFinite(n)) {
+        curveVariantRef.current.moteursIsoles = n;
+      }
+    };
+    window.addEventListener("lim:displayed-composition-change", onComposition as EventListener);
+    window.addEventListener("lim:moteurs-isoles-change", onMoteurs as EventListener);
+    return () => {
+      window.removeEventListener("lim:displayed-composition-change", onComposition as EventListener);
+      window.removeEventListener("lim:moteurs-isoles-change", onMoteurs as EventListener);
+    };
+  }, []);
   // Réseau (ADIF/LFP/RFN) déduit de s_km dans le handler gps:position, diffusé au bloc
   // info (catégorie) au changement seulement. Pas de s_km valide (tunnel/GPS perdu) →
   // pas d'émission = catégorie gelée sur la dernière valeur, réévaluée au retour du GPS.
@@ -1092,14 +1120,21 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
               const p = ftEntryPkNum(rawEntries[i]);
               if (p != null) { originPk = p; break; }
             }
-            if (originPk != null && isInEmpiricalZone(originPk)) {
+            if (originPk != null && isInEmpiricalZone(originPk, curveVariantRef.current)) {
               empiricalAnchorVertRef.current = { pk: originPk, minFloat: nowMinFloat };
               empiricalResumeAtOriginRef.current = false;
             }
           }
           {
             const ea = empiricalAnchorVertRef.current;
-            const empPk = ea != null ? empiricalPkAtElapsed(ea.pk, (nowMinFloat - ea.minFloat) * 60) : null;
+            const empPk =
+              ea != null
+                ? empiricalPkAtElapsed(
+                    ea.pk,
+                    (nowMinFloat - ea.minFloat) * 60,
+                    curveVariantRef.current
+                  )
+                : null;
             if (ea != null && empPk != null) {
               const ptsPk: { pk: number; y: number }[] = [];
               for (const tr of rows) {
