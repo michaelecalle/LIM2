@@ -89,18 +89,6 @@ const num = (v: unknown): number | undefined => {
   return Number.isFinite(n) ? n : undefined;
 };
 
-/** Durée d'arrêt en minutes entre deux "HH:MM". null si non parsable. */
-function minutesBetweenHhmm(from: string, to: string): number | null {
-  const parse = (v: string) => {
-    const m = /^(\d{1,2}):(\d{2})/.exec(v.trim());
-    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-  };
-  const a = parse(from);
-  const b = parse(to);
-  if (a == null || b == null) return null;
-  return ((b - a) % 1440 + 1440) % 1440;
-}
-
 /** PK non vides, dans l'ordre du sens de marche (le réseau quitté d'abord). */
 function pkFieldsPresent(row: LigneRow2026, direction: Direction): string[] {
   return PK_FIELDS_BY_DIRECTION[direction].filter(
@@ -235,18 +223,9 @@ function buildFtEntries2026(
       if (passage) entry.passage = passage;
       if (depart) entry.depart = depart;
 
-      // ⚠️ COMPATIBILITÉ TEMPORAIRE — à retirer quand les mécanismes ci-dessous
-      // auront été migrés sur arrivee/passage/depart. Sans ces deux champs, le
-      // branchement du 2026 casserait :
-      //   • `hora` → bloc horaire HORIZONTAL (FTHorizontalSchedule filtre dessus)
-      //   • `com`  → bloc « prochain arrêt » et détection d'arrêt (arrivalEvents)
-      const horaCompat = depart ?? passage ?? arrivee;
-      if (horaCompat) entry.hora = horaCompat;
-
-      if (arrivee && depart) {
-        const dwell = minutesBetweenHhmm(arrivee, depart);
-        if (dwell != null && dwell > 0) entry.com = String(dwell);
-      }
+      // (Le pont de compatibilité `hora`/`com` a été retiré le 11/08 : tous les
+      // consommateurs — bloc horaire horizontal, « prochain arrêt », détection
+      // d'arrêt, stand-by — lisent désormais directement arrivee/passage/depart.)
     }
 
     // Clé de traçabilité (l'ancien format utilisait `rowKey` pour la jointure ;

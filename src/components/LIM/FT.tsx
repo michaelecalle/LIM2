@@ -1879,7 +1879,12 @@ detail: { enabled: true, standby: true },
           recalibrateFromRowRef.current = resumeRowIndex;
           // N'avancer le "prochain arrêt" que si le standby venait d'une détection d'arrêt
           // (pas d'un standby manuel entre deux gares)
-          const wasAutoArret = stationArretRef.current != null || (rawEntries[resumeRowIndex] as any)?.com > 0;
+          // (Format 2026) Arrêt = arrivée et/ou départ, au lieu d'une durée COM > 0.
+          const resumeEntry = rawEntries[resumeRowIndex] as any;
+          const resumeIsStop =
+            ((resumeEntry?.arrivee ?? "") as string).trim() !== "" ||
+            ((resumeEntry?.depart ?? "") as string).trim() !== "";
+          const wasAutoArret = stationArretRef.current != null || resumeIsStop;
           if (wasAutoArret) nextStopAnchorRowRef.current = resumeRowIndex;
           // Bug 2 fix : forcer le re-déclenchement du useEffect même si autoScrollEnabled
           // reste à true (le state ne changerait pas, l'effect ne se relancerait pas sinon)
@@ -5780,23 +5785,20 @@ if (hasFranceFtLocal) {
       return;
     }
 
-    // Dernière entrée valide (destination) — incluse même sans com/tecn
-    let lastValidIdx = -1;
-    for (let j = rawEntries.length - 1; j > activeRowIndex; j--) {
-      const e2 = rawEntries[j] as any;
-      if (!e2.isNoteOnly && ((e2.dependencia ?? "") as string).trim()) {
-        lastValidIdx = j;
-        break;
-      }
-    }
+    // (Format 2026) La recherche de la « dernière entrée valide » servait à
+    // inclure la destination, qui n'avait ni COM ni TECN. Le terminus porte
+    // désormais une heure d'ARRIVÉE, donc la règle générale le couvre.
 
     // Fallback : si activeRowIndex dépasse une gare commerciale de plus de 1 km,
     // avancer nextStopAnchorRow (couvre le cas où ni standby ni GPS arret n'a été détecté)
     for (let f = nextStopAnchorRowRef.current + 1; f <= activeRowIndex; f++) {
       const ef = rawEntries[f] as any;
       if (ef?.isNoteOnly) continue;
-      const comF = parseInt((ef?.com ?? "") as string, 10);
-      if (!(Number.isFinite(comF) && comF > 0)) continue;
+      // (Format 2026) Arrêt = arrivée et/ou départ, au lieu d'une durée COM > 0.
+      const isStopF =
+        ((ef?.arrivee ?? "") as string).trim() !== "" ||
+        ((ef?.depart ?? "") as string).trim() !== "";
+      if (!isStopF) continue;
       const pkF = ef?.pk_internal as number | undefined;
       const pkActive = (rawEntries[activeRowIndex] as any)?.pk_internal as number | undefined;
       if (pkF != null && pkActive != null && Math.abs(pkActive - pkF) > 1.0) {
@@ -5809,27 +5811,27 @@ if (hasFranceFtLocal) {
     for (let i = searchFrom; i < rawEntries.length; i++) {
       const e = rawEntries[i] as any;
       if (e.isNoteOnly) continue;
-      const hora = ((e.hora ?? "") as string).trim();
       const dep  = ((e.dependencia ?? "") as string).trim();
       if (!dep) continue;
 
-      const comN   = parseInt((e.com ?? "") as string, 10);
-      const hasCom = Number.isFinite(comN) && comN > 0;
-      const tecn   = ((e.tecn ?? e.tecnico ?? "") as string).trim();
-      const isLast = i === lastValidIdx;
+      // (Format 2026) Arrêt = arrivée et/ou départ. Cette règle couvre déjà le
+      // TERMINUS (arrivée seule) : le cas particulier `isLast` disparaît, tout
+      // comme le test sur l'arrêt technique `tecn` (colonne supprimée).
+      const arrTxt = ((e.arrivee ?? "") as string).trim();
+      const depTxt = ((e.depart ?? "") as string).trim();
+      if (!arrTxt && !depTxt) continue;
 
-      // Pastille jaune = arrêt commercial, arrêt technique, ou destination finale
-      if (!hasCom && !tecn && !isLast) continue;
-      if (!hora) continue; // pas d'heure connue → on skip quand même
-
-      const depMin = parseHoraToMinutes(hora);
-      const arr    = hasCom && depMin != null ? formatMinutesToHora(depMin - comN) : null;
-      const pkStr  = ((e.pk ?? "") as string).trim();
-      const delta  = autoScrollBaseRef.current?.fixedDelay ?? 0;
-      // Terminus : hora = heure d'arrivée (pas de départ)
-      detail = isLast && !hasCom
-        ? { name: dep, pk: pkStr, dep: "", arr: hora, deltaMin: delta }
-        : { name: dep, pk: pkStr, dep: hora, arr, deltaMin: delta };
+      const pkStr = ((e.pk ?? "") as string).trim();
+      const delta = autoScrollBaseRef.current?.fixedDelay ?? 0;
+      // L'arrivée est une donnée directe : plus de calcul `hora − com`. Au
+      // terminus il n'y a pas de départ, d'où la chaîne vide.
+      detail = {
+        name: dep,
+        pk: pkStr,
+        dep: depTxt,
+        arr: arrTxt !== "" ? arrTxt : null,
+        deltaMin: delta,
+      };
       break;
     }
     window.dispatchEvent(new CustomEvent("lim:next-stop", { detail }));
@@ -6558,72 +6560,19 @@ const horaFrance =
 
 const hora = horaFromNormalized || horaFromPdf || horaFrance;
 
-    const depNorm = (entry.dependencia ?? "")
-      .toUpperCase()
-      .replace(/\s+/g, " ")
-      .trim();
+    // (Format 2026) Les TROIS heures explicites de la ligne. Déclarées ici car
+    // elles servent aussi bien à `arrivalEvents` (plus bas) qu'au surlignage
+    // d'arrêt et au rendu des colonnes Arr / Pass / Dép.
+    const arriveeCell = ((entry as any).arrivee ?? "") as string;
+    const passageCell = ((entry as any).passage ?? "") as string;
+    const departCell = ((entry as any).depart ?? "") as string;
 
-    const isVoyageursStop =
-      depNorm === "BARCELONA SANTS" ||
-      depNorm === "LA SAGRERA AV" ||
-      depNorm === "GIRONA" ||
-      depNorm === "FIGUERES-VILAFANT";
-
-    let com = "";
-    let comMinutes: number | null = null;
-
-    const isOriginOrTerminus =
-      !entry.isNoteOnly &&
-      (i === firstNonNoteIndex || i === lastNonNoteIndex);
-
-    // (Migration 2026) L'ancien surlignage origine/destination PAR LE NOM est
-    // supprimé : la règle 2026 (`arrivee` et/ou `depart` non vide) couvre déjà
-    // ces deux cas, sans comparaison de libellés.
-
-    // ✅ COM : priorité au fichier normalisé, fallback PDF seulement si absent
-    const comFromNormalizedRaw = (entry as any).com;
-    const comFromNormalized =
-      typeof comFromNormalizedRaw === "string"
-        ? comFromNormalizedRaw.trim()
-        : typeof comFromNormalizedRaw === "number" && Number.isFinite(comFromNormalizedRaw)
-          ? String(comFromNormalizedRaw)
-          : "";
-
-    const comFromPdfList =
-      hora && isVoyageursStop && !isOriginOrTerminus
-        ? (codesCParHeure[hora] ?? [])
-        : [];
-
-    const comFromPdf =
-      comFromPdfList.length > 0 ? comFromPdfList.join(" ").trim() : "";
-
-    com = comFromNormalized || comFromPdf;
-
-    if (com) {
-      const firstCode = com.split(/\s+/)[0];
-      const n = Number(firstCode);
-
-      if (Number.isFinite(n)) {
-        comMinutes = n;
-      } else {
-        console.warn(
-          "[FT] Impossible de parser COM en minutes pour la ligne",
-          i,
-          "hora=",
-          hora,
-          "com=",
-          com
-        );
-      }
-
-      if (!comFromNormalized && comFromPdfList.length > 1) {
-        console.warn(
-          "[FT] Plusieurs codes C détectés pour la même heure",
-          hora,
-          comFromPdfList
-        );
-      }
-    }
+    // (Migration 2026) TOUT le calcul de COM a été supprimé ici : durée d'arrêt
+    // du normalisé, repli sur les codes C extraits du PDF, **liste de gares
+    // voyageurs codée en dur** (BARCELONA SANTS / LA SAGRERA AV / GIRONA /
+    // FIGUERES-VILAFANT) et détection origine/terminus par position. L'arrivée
+    // est désormais une donnée directe (`arrivee`), et le surlignage d'arrêt
+    // suit la règle 2026 — plus rien de tout ça n'est nécessaire.
 
     if (eligible && heuresDetecteesCursor < heuresDetectees.length) {
       heuresDetecteesCursor++;
@@ -6632,15 +6581,16 @@ const hora = horaFromNormalized || horaFromPdf || horaFrance;
     // (Migration 2026) Les colonnes TECN et CONC n'existent plus : les trois
     // colonnes horaires explicites (Arr / Pass / Dép) les remplacent.
 
-    // ✅ Heure d'arrivée calculée à partir du COM effectivement retenu
-    let horaArrivee: string | null = null;
-    if (hora && comMinutes != null && comMinutes > 0) {
-      const depMinutes = parseHoraToMinutes(hora);
-      if (depMinutes != null) {
-        const arrMinutes = depMinutes - comMinutes;
-        horaArrivee = formatMinutesToHora(arrMinutes);
-
-        // On mémorise cet événement d'arrivée pour l'auto-scroll horaire
+    // (Format 2026) L'heure d'arrivée est une DONNÉE DIRECTE (`arrivee`), plus
+    // un calcul `hora − com`. Conséquence voulue : le TERMINUS entre désormais
+    // dans `arrivalEvents` — il porte une arrivée mais pas de durée d'arrêt,
+    // donc l'ancienne règle l'excluait. Validé avec l'utilisateur le 11/08.
+    const horaArrivee: string | null = arriveeCell.trim() !== "" ? arriveeCell.trim() : null;
+    if (horaArrivee) {
+      const arrMinutes = parseHoraToMinutes(horaArrivee);
+      if (arrMinutes != null) {
+        // Alimente : stand-by horaire à l'heure d'arrivée, rattachement d'un
+        // arrêt GPS à la gare la plus proche, et calcul du delta à l'arrivée.
         arrivalEvents.push({
           arrivalMin: arrMinutes,
           rowIndex: i,
@@ -6657,10 +6607,6 @@ const hora = horaFromNormalized || horaFromPdf || horaFrance;
     // NOM + test COM/TECN) et la couvre naturellement : l'origine n'a qu'un
     // départ, le terminus qu'une arrivée. Identique à l'éditeur
     // (`buildFtRows2026.ts` : `row.arrivee !== "" || row.depart !== ""`).
-    const arriveeCell = ((entry as any).arrivee ?? "") as string;
-    const passageCell = ((entry as any).passage ?? "") as string;
-    const departCell = ((entry as any).depart ?? "") as string;
-
     const shouldHighlightRow =
       arriveeCell.trim() !== "" || departCell.trim() !== "";
 

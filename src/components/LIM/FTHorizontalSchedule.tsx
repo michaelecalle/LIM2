@@ -40,16 +40,9 @@ function fuzzyMatch(a: string, b: string): boolean {
   if (!a || !b) return false;
   return a === b || a.startsWith(b) || b.startsWith(a) || a.includes(b) || b.includes(a);
 }
-function parseHora(s: string): number | null {
-  const m = /^(\d{1,2}):(\d{2})/.exec((s ?? "").trim());
-  if (!m) return null;
-  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-}
-function fmtMin(m: number): string {
-  const t = ((m % 1440) + 1440) % 1440;
-  const hh = Math.floor(t / 60), mm = t % 60;
-  return `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`;
-}
+// (Format 2026) `parseHora` / `fmtMin` supprimés : ils ne servaient qu'à
+// reconstituer l'heure d'arrivée par soustraction (`hora − com`). L'arrivée est
+// désormais une donnée directe.
 
 type Stop = { pk: string; dep: string; arr: string | null; yellow: boolean; dist: number };
 
@@ -142,18 +135,39 @@ export default function FTHorizontalSchedule() {
     // distEnd = distance du dernier point (pour que le SVG ait la même largeur que FTHorizontal)
     const distEnd = allValid.length > 0 ? Math.abs(entryPkNum(allValid[allValid.length - 1])! - pk0) : 0;
 
-    // Seulement les points avec une heure (hora)
-    const timed = entries.filter((e) => typeof e.hora === "string" && e.hora.trim() !== "");
-    const out: Stop[] = timed.map((e, idx) => {
-      const dep = (e.hora ?? "").trim();
-      const comN = parseInt((e.com ?? "").toString(), 10);
-      const hasCom = Number.isFinite(comN) && comN > 0;
-      const depMin = parseHora(dep);
-      const arr = hasCom && depMin != null ? fmtMin(depMin - comN) : null;
-      const tecn = (((e as any).tecn ?? (e as any).tecnico ?? "") as string).trim();
-      const yellow = idx === 0 || idx === timed.length - 1 || hasCom || tecn !== "";
+    // (Format 2026) Trois colonnes horaires EXPLICITES : `arrivee` / `passage` /
+    // `depart`. Plus de colonne `hora` unique ni de durée d'arrêt `com` d'où il
+    // fallait déduire l'arrivée (`hora − com`).
+    const heureDe = (e: FTEntry) => {
+      const arr = ((e as any).arrivee ?? "").trim();
+      const pass = ((e as any).passage ?? "").trim();
+      const dep = ((e as any).depart ?? "").trim();
+      return { arr, pass, dep };
+    };
+
+    // Un point est horodaté dès qu'il porte l'une des trois heures.
+    const timed = entries.filter((e) => {
+      const { arr, pass, dep } = heureDe(e);
+      return arr !== "" || pass !== "" || dep !== "";
+    });
+
+    const out: Stop[] = timed.map((e) => {
+      const { arr, pass, dep } = heureDe(e);
+      // Heure principale affichée : le départ, sinon le passage, sinon l'arrivée
+      // (le terminus n'a qu'une arrivée).
+      const principale = dep || pass || arr;
+      // Pastille jaune = ARRÊT, règle 2026 : une arrivée et/ou un départ. Elle
+      // couvre naturellement l'origine (départ seul) et le terminus (arrivée
+      // seule) — d'où la disparition des cas particuliers premier/dernier point.
+      const yellow = arr !== "" || dep !== "";
       const pkVal = entryPkNum(e) ?? pk0;
-      return { pk: displayPk(e), dep, arr, yellow, dist: Math.abs(pkVal - pk0) };
+      return {
+        pk: displayPk(e),
+        dep: principale,
+        arr: arr !== "" ? arr : null,
+        yellow,
+        dist: Math.abs(pkVal - pk0),
+      };
     });
     return { stops: out, distEnd };
   }, [trainNumber]);
