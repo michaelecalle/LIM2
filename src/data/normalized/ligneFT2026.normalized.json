@@ -2189,43 +2189,6 @@
         }
       ]
     },
-    "38579": {
-      "variants": [
-        {
-          "ligneVersionId": "v1",
-          "validityStartDate": "2026-08-04",
-          "validityEndDate": "",
-          "meta": {
-            "numeroEspagne": "38579",
-            "numeroFrance": "38578",
-            "origine": "CAN TUNIS-AV",
-            "destination": "BARCELONA SANTS",
-            "categorieSNCF": "E32C",
-            "categorieLFP": "Type 300",
-            "categorieADIF": "Tipo 200",
-            "materiel": "TGV 2N2 3UH",
-            "direction": "sudNord",
-            "horaires": {
-              "615.9|||": {
-                "arrivee": "",
-                "passage": "",
-                "depart": "15:22"
-              },
-              "616.0|||": {
-                "arrivee": "",
-                "passage": "15:22",
-                "depart": ""
-              },
-              "621.0|||": {
-                "arrivee": "15:27",
-                "passage": "",
-                "depart": ""
-              }
-            }
-          }
-        }
-      ]
-    },
     "39819": {
       "variants": [
         {
