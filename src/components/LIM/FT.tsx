@@ -775,6 +775,25 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   type NoteBand = { top: number; height: number; left: number; width: number };
   const [noteBands, setNoteBands] = useState<NoteBand[]>([]);
 
+  /**
+   * Textes de notes positionnés en HAUT de leur zone kilométrique (décision
+   * 12/08). Ils sortent du flux du tableau : une zone commence à un PK
+   * quelconque, donc « en haut de la zone » n'est pas une position de ligne.
+   * `entryIndex` pointe la note dans `rawEntries` (le texte est rendu au render).
+   */
+  type NoteOverlay = { top: number; left: number; width: number; entryIndex: number };
+  const [noteOverlays, setNoteOverlays] = useState<NoteOverlay[]>([]);
+
+  /**
+   * Bandes LTV (orange très pâle), même mécanique que les bandes de notes.
+   * ⚠️ Les zones LTV se RECOUVRENT beaucoup (10 LTV → 12 paires en recouvrement
+   * sur le 9705, en deux grappes). Peintes telles quelles en `multiply`, les
+   * superpositions donneraient un orange d'autant plus foncé qu'il y a de LTV,
+   * soit une échelle de gravité involontaire. Elles sont donc FUSIONNÉES avant
+   * peinture → teinte uniforme (décision 12/08).
+   */
+  const [ltvBands, setLtvBands] = useState<NoteBand[]>([]);
+
 
 
   // --- Continuité ORANGE -> RED (ancrage visuel) + anti-retour arrière en RED ---
@@ -3014,7 +3033,28 @@ useEffect(() => {
         (m): m is { idx: number; top: number; pk: number } => m.pk != null
       );
 
+      // PK → pixel, par interpolation entre les 2 lignes principales encadrantes.
+      // Déclaré ICI (et non dans le bloc des notes) car les bandes LTU l'utilisent
+      // aussi. Renvoie null tant qu'on n'a pas 2 lignes mesurables.
+      const yAt = (pk: number): number | null => {
+        if (post.length < 2) return null;
+        if (pk <= post[0].pk) return post[0].top;
+        const last = post[post.length - 1];
+        if (pk >= last.pk) return last.top;
+        for (let k = 0; k < post.length - 1; k++) {
+          const a = post[k];
+          const b = post[k + 1];
+          if (pk >= a.pk && pk <= b.pk) {
+            const span = b.pk - a.pk;
+            const f = span === 0 ? 0 : (pk - a.pk) / span;
+            return a.top + f * (b.top - a.top);
+          }
+        }
+        return last.top;
+      };
+
       const bands: NoteBand[] = [];
+      const overlays: NoteOverlay[] = [];
       if (post.length >= 2) {
         const firstMain = table.querySelector<HTMLTableRowElement>("tr.ft-row-main");
         const cells = firstMain?.querySelectorAll<HTMLTableCellElement>("td");
@@ -3022,51 +3062,112 @@ useEffect(() => {
         const etabCell = cells?.[3];
 
         if (kmCell && etabCell) {
+          // Emprise de la BANDE : KM + Établissements (Vmax exclue).
           const left = kmCell.offsetLeft;
           const width =
             etabCell.offsetLeft + etabCell.offsetWidth - kmCell.offsetLeft;
 
-          // PK → pixel, par interpolation entre les 2 lignes encadrantes.
-          const yAt = (pk: number): number => {
-            if (pk <= post[0].pk) return post[0].top;
-            const last = post[post.length - 1];
-            if (pk >= last.pk) return last.top;
-            for (let k = 0; k < post.length - 1; k++) {
-              const a = post[k];
-              const b = post[k + 1];
-              if (pk >= a.pk && pk <= b.pk) {
-                const span = b.pk - a.pk;
-                const f = span === 0 ? 0 : (pk - a.pk) / span;
-                return a.top + f * (b.top - a.top);
-              }
-            }
-            return last.top;
-          };
+          // Emprise du TEXTE : Établissements SEULEMENT. Le déborder sur la
+          // colonne KM le ferait chevaucher les valeurs de PK, qui restent
+          // affichées sous la bande (constaté à l'écran le 12/08).
+          const textLeft = etabCell.offsetLeft;
+          const textWidth = etabCell.offsetWidth;
 
-          for (const e of rawEntries) {
-            // ⚠️ La zone kilométrique sert AUSSI à placer les notes NON
-            // surlignées (décision 12/08) : elle sera donc bientôt extraite pour
-            // toutes les notes à intervalle. Le surlignage reste, lui, piloté par
-            // le seul champ `surligne` → on filtre ici, pas à l'extraction.
-            if (!(e as any)?.noteSurligne) continue;
-
+          for (let n = 0; n < rawEntries.length; n++) {
+            const e = rawEntries[n];
             const from = (e as any)?.noteZoneFrom as number | undefined;
             const to = (e as any)?.noteZoneTo as number | undefined;
             if (typeof from !== "number" || typeof to !== "number") continue;
 
             const y1 = yAt(from);
             const y2 = yAt(to);
+            if (y1 === null || y2 === null) continue;
             const h = Math.round(y2 - y1);
-            if (h <= 0) continue; // zone hors parcours affiché
-            bands.push({ top: Math.round(y1), height: h, left, width });
+            if (h <= 0) continue; // zone hors du parcours affiché
+
+            // Le TEXTE se place en haut de la zone, qu'elle soit peinte ou non :
+            // la zone commande le placement de toutes les notes qui en ont une.
+            overlays.push({
+              top: Math.round(y1),
+              left: textLeft,
+              width: textWidth,
+              entryIndex: n,
+            });
+
+            // La PEINTURE, elle, reste pilotée par le seul champ `surligne`.
+            if ((e as any)?.noteSurligne) {
+              bands.push({ top: Math.round(y1), height: h, left, width });
+            }
           }
         }
       }
 
-      // Ne re-rendre que si les rectangles ont réellement changé (cette fonction
-      // est rappelée sur resize / rAF / plis successifs).
+      // ── 6) BANDES LTV (orange très pâle), fusionnées ────────────────────────
+      // Mêmes colonnes que les bandes de notes. Les bornes viennent directement
+      // de `ftLtvRows` (kmIni/kmFin) : aucune extraction depuis du texte.
+      const ltv: NoteBand[] = [];
+      if (post.length >= 2 && ftLtvRows.length > 0) {
+        const firstMain = table.querySelector<HTMLTableRowElement>("tr.ft-row-main");
+        const cells = firstMain?.querySelectorAll<HTMLTableCellElement>("td");
+        const kmCell = cells?.[2];
+        const etabCell = cells?.[3];
+
+        if (kmCell && etabCell) {
+          // ⚠️ Emprise VOLONTAIREMENT réduite à la seule colonne KM, contrairement
+          // à la bande des notes (décision 12/08). Les lignes de texte orange des
+          // LTV restent, elles, dans la colonne Établissements et débordent de la
+          // zone : une bande qui les traverserait à moitié serait incohérente.
+          const left = kmCell.offsetLeft;
+          const width = kmCell.offsetWidth;
+
+          const num = (v: unknown): number | null => {
+            const n = parseFloat(String(v ?? "").trim().replace(",", "."));
+            return Number.isFinite(n) ? n : null;
+          };
+
+          // 1) Un rectangle brut par LTV.
+          const raw: Array<{ top: number; bottom: number }> = [];
+          for (const row of ftLtvRows) {
+            const a = num((row as any).kmIni);
+            const b = num((row as any).kmFin);
+            if (a === null || b === null) continue;
+            const y1 = yAt(Math.min(a, b));
+            const y2 = yAt(Math.max(a, b));
+            if (y1 === null || y2 === null) continue;
+            if (y2 - y1 <= 0) continue; // hors du parcours affiché
+            raw.push({ top: y1, bottom: y2 });
+          }
+
+          // 2) Fusion. Le seuil est exprimé en PIXELS et non en kilomètres : il
+          //    s'adapte donc tout seul à la mise à l'échelle, et évite qu'un
+          //    interstice d'un cheveu ne laisse deux bandes distinctes.
+          const MERGE_GAP_PX = 2;
+          raw.sort((x, y) => x.top - y.top);
+          for (const r of raw) {
+            const last = ltv[ltv.length - 1];
+            if (last && r.top - (last.top + last.height) < MERGE_GAP_PX) {
+              const bottom = Math.max(last.top + last.height, r.bottom);
+              last.height = Math.round(bottom - last.top);
+            } else {
+              ltv.push({
+                top: Math.round(r.top),
+                height: Math.round(r.bottom - r.top),
+                left,
+                width,
+              });
+            }
+          }
+        }
+      }
+
+      setLtvBands((prev) =>
+        JSON.stringify(prev) === JSON.stringify(ltv) ? prev : ltv
+      );
       setNoteBands((prev) =>
         JSON.stringify(prev) === JSON.stringify(bands) ? prev : bands
+      );
+      setNoteOverlays((prev) =>
+        JSON.stringify(prev) === JSON.stringify(overlays) ? prev : overlays
       );
     };
 
@@ -3092,7 +3193,7 @@ useEffect(() => {
         apply as EventListener
       );
     };
-  }, [ftScale, rawEntries, infosLtvFolded]);
+  }, [ftScale, rawEntries, infosLtvFolded, ftLtvRows]);
 
   const ltvNotesByRowIndex = useMemo(() => {
     const result = new Map<number, Array<{ text: string; pkA: number; pkB: number }>>();
@@ -6656,19 +6757,45 @@ if (isStandby) {
     const notePosOf = (e: FTEntry | undefined): "au-dessus" | "en-dessous" =>
       (e as any)?.notePosition === "en-dessous" ? "en-dessous" : "au-dessus";
 
+    // Fond pêche de la LIGNE DE TEXTE : SUPPRIMÉ pour toutes les notes
+    // (décision 12/08). C'est désormais la BANDE kilométrique qui porte le
+    // surlignage — les deux coexistaient, et le fond de ligne débordait en plus
+    // sur la colonne Vmax que la bande excluait volontairement.
+    // Seule exception, en SECOURS : une note marquée `surligne` dont
+    // l'intervalle est illisible ou absent n'aurait aucune bande, donc plus
+    // aucune marque. On lui laisse alors son fond de ligne.
+    const noteRowBg = (e: FTEntry | undefined): string =>
+      (e as any)?.noteSurligne && typeof (e as any)?.noteZoneFrom !== "number"
+        ? " ft-note-surligne"
+        : "";
+
+    // ⚠️ Une note qui porte une ZONE kilométrique n'est PLUS une ligne du
+    // tableau : elle est positionnée en surcouche, en haut de sa zone
+    // (décision 12/08). C'est la zone qui commande, pas `position`. Les règles
+    // de créneau ci-dessous ne concernent donc plus que les notes SANS zone.
+    const noteHasZone = (e: FTEntry | undefined): boolean =>
+      typeof (e as any)?.noteZoneFrom === "number";
+
     // Note rendue AVANT la ligne principale i (donc collée à elle : l'espacement
     // du segment précédent est au-dessus d'elle).
     const noteBeforeIsPrev =
       hasNoteBefore &&
+      !noteHasZone(prevEntry) &&
       ((isOdd && notePosOf(prevEntry) === "au-dessus") ||
         (!isOdd && notePosOf(prevEntry) === "en-dessous"));
     const noteBeforeIsNext =
-      !!hasNoteAfter && !isOdd && notePosOf(nextEntry) === "au-dessus";
+      !!hasNoteAfter &&
+      !noteHasZone(nextEntry) &&
+      !isOdd &&
+      notePosOf(nextEntry) === "au-dessus";
 
     // Note rendue APRÈS la ligne principale i mais AVANT son espacement, donc
     // collée à CETTE ligne. Seul cas : train impair + "en-dessous".
     const noteStuckBelow =
-      !!hasNoteAfter && isOdd && notePosOf(nextEntry) === "en-dessous"
+      !!hasNoteAfter &&
+      !noteHasZone(nextEntry) &&
+      isOdd &&
+      notePosOf(nextEntry) === "en-dessous"
         ? (nextEntry as FTEntry)
         : null;
 
@@ -7119,15 +7246,15 @@ const hora = horaFromNormalized || horaFromPdf || horaFrance;
           <td
             className={
               "ft-td ft-v-cell" + vmaxClassForNote +
-              ((nextEntry as any)?.noteSurligne ? " ft-note-surligne" : "")
+              noteRowBg(nextEntry)
             }
           >
             <div className="ft-v-inner text-center"></div>
           </td>
 
-          <td className={"ft-td" + ((nextEntry as any)?.noteSurligne ? " ft-note-surligne" : "")} />
+          <td className={"ft-td" + noteRowBg(nextEntry)} />
 
-          <td className={"ft-td" + ((nextEntry as any)?.noteSurligne ? " ft-note-surligne" : "")}>
+          <td className={"ft-td" + noteRowBg(nextEntry)}>
             {renderDependenciaCell(nextEntry as FTEntry)}
           </td>
 
@@ -7169,15 +7296,15 @@ const hora = horaFromNormalized || horaFromPdf || horaFrance;
           <td
             className={
               "ft-td ft-v-cell" + vmaxClassForNoteBeforeOdd +
-              ((prevEntry as any)?.noteSurligne ? " ft-note-surligne" : "")
+              noteRowBg(prevEntry)
             }
           >
             <div className="ft-v-inner text-center"></div>
           </td>
 
-          <td className={"ft-td" + ((prevEntry as any)?.noteSurligne ? " ft-note-surligne" : "")} />
+          <td className={"ft-td" + noteRowBg(prevEntry)} />
 
-          <td className={"ft-td" + ((prevEntry as any)?.noteSurligne ? " ft-note-surligne" : "")}>
+          <td className={"ft-td" + noteRowBg(prevEntry)}>
             {renderDependenciaCell(prevEntry as FTEntry)}
           </td>
 
@@ -7495,9 +7622,7 @@ right: -1,
     // principale" suffit.
     if (noteStuckBelow) {
       const vmaxClassForNoteBelow = csvZoneOpen ? " ft-v-csv-full" : "";
-      const surl = (noteStuckBelow as any).noteSurligne
-        ? " ft-note-surligne"
-        : "";
+      const surl = noteRowBg(noteStuckBelow);
 
       rows.push(
         <tr className="ft-row-inter" key={`note-stuck-below-${i}`}>
@@ -8006,6 +8131,35 @@ const vmaxClassForLtv =
           mix-blend-mode: normal;
         }
 
+        /* Bande LTV : orange TRES pale, limitee a la colonne KM (les lignes de
+           texte orange des LTV debordent de la zone et sont dans Etablissements).
+           z-index 1, donc sous le peche des notes. Les zones sont fusionnees a la
+           mesure : jamais deux bandes LTV superposees, la teinte reste uniforme. */
+        .ft-ltv-band {
+          position: absolute;
+          background-color: #fff8ec;
+          mix-blend-mode: multiply;
+          pointer-events: none;
+          z-index: 1;
+        }
+
+        .dark .ft-ltv-band {
+          background-color: rgba(255, 200, 120, 0.09);
+          mix-blend-mode: normal;
+        }
+
+        /* Texte d'une note a zone : pose en haut de sa zone, au-dessus de la
+           bande. Volontairement SANS hauteur ni overflow : le texte deborde
+           vers le bas quand sa zone est trop courte pour le contenir.
+           pointer-events auto (et non none comme la bande) pour que le texte
+           reste selectionnable. */
+        .ft-note-overlay {
+          position: absolute;
+          z-index: 3;
+          padding: 0 4px;
+          box-sizing: border-box;
+        }
+
         /* Radio / ETCS : valeur entouree d'un petit cercle (Ⓖ, ①), comme sur le
            document source et l'export PDF de l'editeur. */
         .ft-circled {
@@ -8503,6 +8657,22 @@ const vmaxClassForLtv =
                 Posées en surimpression plutôt qu'en fond de cellule : une zone
                 commence et finit à des PK quelconques, donc au milieu de lignes.
                 `pointer-events: none` → aucun impact sur les clics existants. */}
+            {/* Bandes LTV (orange très pâle), sous les bandes de notes.
+                Déjà fusionnées à la mesure : une LTV imbriquée dans une autre ne
+                produit pas de surcouche, donc pas d'assombrissement parasite. */}
+            {ltvBands.map((b, k) => (
+              <div
+                key={`ltv-band-${k}`}
+                className="ft-ltv-band"
+                style={{
+                  top: b.top,
+                  height: b.height,
+                  left: b.left,
+                  width: b.width,
+                }}
+              />
+            ))}
+
             {noteBands.map((b, k) => (
               <div
                 key={`note-band-${k}`}
@@ -8515,6 +8685,24 @@ const vmaxClassForLtv =
                 }}
               />
             ))}
+
+            {/* Texte des notes à zone, posé EN HAUT de leur zone. Sans hauteur
+                imposée : si le texte est plus haut que sa zone, il DÉBORDE vers
+                le bas (choix du 12/08). Un surlignage qui mentirait sur la
+                géographie serait pire qu'un texte qui dépasse. */}
+            {noteOverlays.map((o, k) => {
+              const e = rawEntries[o.entryIndex];
+              if (!e) return null;
+              return (
+                <div
+                  key={`note-overlay-${k}`}
+                  className="ft-note-overlay"
+                  style={{ top: o.top, left: o.left, width: o.width }}
+                >
+                  {renderDependenciaCell(e)}
+                </div>
+              );
+            })}
           </div>
         </FTScrolling>
 

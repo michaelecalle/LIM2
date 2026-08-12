@@ -173,9 +173,11 @@ function buildFtEntries2026(
     if (row.type === "note") {
       const texte = str(row.texte) ?? "";
       const surligne = row.surligne === true;
-      // Zone kilométrique : utile uniquement pour la bande de surlignage
-      // géographique, donc calculée seulement pour les notes surlignées.
-      const zone = surligne ? parseNoteZone(texte) : null;
+      // Zone kilométrique extraite pour TOUTES les notes qui en portent une,
+      // surlignées ou non (décision 12/08) : elle sert à PLACER la note (en haut
+      // de sa zone), pas seulement à la peindre. Le champ `surligne` ne pilote
+      // que la peinture de la bande — le filtrage se fait donc côté rendu.
+      const zone = parseNoteZone(texte);
 
       return {
         pk: "",
