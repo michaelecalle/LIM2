@@ -136,6 +136,33 @@ function addZoneBars(
   });
 }
 
+/**
+ * Extrait l'intervalle kilométrique d'un texte de note surlignée.
+ *
+ * Formats rencontrés dans le document source (tous acceptés) :
+ *   "80km/h circulation en MODE SR et en BSL — 621.692 al 623.758"
+ *   "155  TASF KM 715.514 al 716.838"        (KM détaché)
+ *   "60km/h … — KM619.933 al 619.500"        (KM collé, bornes DÉCROISSANTES)
+ *
+ * Les bornes sont renvoyées NORMALISÉES en ordre croissant : le document les
+ * écrit dans le sens de circulation, mais une zone géographique n'a pas de sens.
+ *
+ * ⚠️ Le mot « al » seul ne suffit pas : la note "80 AL PASO V3 V4 V6" ne doit
+ * PAS matcher. D'où l'exigence d'un NOMBRE de part et d'autre.
+ */
+function parseNoteZone(texte: string): { from: number; to: number } | null {
+  const m = /(\d{3}(?:[.,]\d{1,3})?)\s*al\s*(?:km\s*)?(\d{3}(?:[.,]\d{1,3})?)/i.exec(
+    texte
+  );
+  if (!m) return null;
+
+  const a = parseFloat(m[1].replace(",", "."));
+  const b = parseFloat(m[2].replace(",", "."));
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+
+  return { from: Math.min(a, b), to: Math.max(a, b) };
+}
+
 function buildFtEntries2026(
   rows: LigneRow2026[],
   direction: Direction,
@@ -145,6 +172,11 @@ function buildFtEntries2026(
     // --- Ligne de note ---
     if (row.type === "note") {
       const texte = str(row.texte) ?? "";
+      const surligne = row.surligne === true;
+      // Zone kilométrique : utile uniquement pour la bande de surlignage
+      // géographique, donc calculée seulement pour les notes surlignées.
+      const zone = surligne ? parseNoteZone(texte) : null;
+
       return {
         pk: "",
         dependencia: "",
@@ -154,9 +186,11 @@ function buildFtEntries2026(
         // (`rowNotes.push(e.note)` puis `push(...e.notes)`) → chaque remarque
         // rouge apparaîtrait deux fois. Bug constaté en test le 11/08.
         notes: texte ? [texte] : [],
-        // Surlignage pêche (champ `surligne` du 2026). Le PLACEMENT (`position`)
-        // n'est volontairement PAS traité pour l'instant (décision 11/08).
-        noteSurligne: row.surligne === true,
+        noteSurligne: surligne,
+        // Placement (champ `position` du 2026) : "en-dessous" = collée au PK
+        // PRÉCÉDENT, "au-dessus" = collée au PK SUIVANT (comportement de juin).
+        notePosition: row.position === "en-dessous" ? "en-dessous" : "au-dessus",
+        ...(zone ? { noteZoneFrom: zone.from, noteZoneTo: zone.to } : {}),
       } as FTEntry;
     }
 

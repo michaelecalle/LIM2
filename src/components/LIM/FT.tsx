@@ -767,6 +767,14 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   // Position verticale "continue" du train (px dans le viewport scrollable)
   const [trainPosYpx, setTrainPosYpx] = useState<number | null>(null);
 
+  /**
+   * Bandes de surlignage géographique des notes (rectangles en px, dans le
+   * repère de `.ft-body-scroll`). Calculées par l'effet de mesure #25, qui est
+   * le seul endroit où la conversion PK → pixel est fiable.
+   */
+  type NoteBand = { top: number; height: number; left: number; width: number };
+  const [noteBands, setNoteBands] = useState<NoteBand[]>([]);
+
 
 
   // --- Continuité ORANGE -> RED (ancrage visuel) + anti-retour arrière en RED ---
@@ -2937,17 +2945,20 @@ useEffect(() => {
         }
       }
 
-      // OFF, ou mode DÉPLIÉ (INFOS/LTV affichés) = layout naturel (gaps à 0).
-      if (!ftScale.enabled || !infosLtvFolded) return;
+      // 2) Mesure des positions des lignes principales (PK ↔ pixels).
+      const measure = () =>
+        Array.from(
+          table.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main")
+        ).map((tr) => {
+          const idx = Number(tr.getAttribute("data-ft-row"));
+          return { idx, top: tr.offsetTop, pk: ftEntryPkNum(rawEntries[idx]) };
+        });
 
-      // 2) Mesure des positions naturelles (gaps à 0) des lignes principales.
-      const mains = Array.from(
-        table.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main")
-      );
-      const info = mains.map((tr) => {
-        const idx = Number(tr.getAttribute("data-ft-row"));
-        return { idx, top: tr.offsetTop, pk: ftEntryPkNum(rawEntries[idx]) };
-      });
+      // OFF, ou mode DÉPLIÉ (INFOS/LTV affichés) = layout naturel (gaps à 0).
+      // ⚠️ On ne sort PLUS de la fonction ici : les bandes de surlignage des
+      // notes se calculent dans les deux cas (cf. plus bas).
+      if (ftScale.enabled && infosLtvFolded) {
+      const info = measure();
 
       // 3) BASE = densité (px/km) du segment le plus CONTRAINT (le plus de
       //    contenu intermédiaire pour la plus courte distance). C'est le plancher
@@ -2964,24 +2975,93 @@ useEffect(() => {
         const naturalGap = b.top - a.top;
         base = Math.max(base, naturalGap / dist);
       }
-      if (base <= 0) return;
+      if (base > 0) {
+        // Étalement effectif = base × multiplicateur (≥ base → proportionnel).
+        const effEtalement =
+          base * (ftScale.multiplier > 0 ? ftScale.multiplier : 1);
 
-      // Étalement effectif = base × multiplicateur choisi (≥ base → proportionnel).
-      const effEtalement = base * (ftScale.multiplier > 0 ? ftScale.multiplier : 1);
-
-      // 4) Pour chaque segment [k, k+1] : extra = max(0, voulu − naturel).
-      for (let k = 0; k < info.length - 1; k++) {
-        const a = info[k];
-        const b = info[k + 1];
-        if (a.pk == null || b.pk == null) continue;
-        const dist = Math.abs(b.pk - a.pk);
-        if (dist <= 0) continue;
-        const naturalGap = b.top - a.top; // distance pixels réelle (gaps à 0)
-        const desired = effEtalement * dist;
-        const extra = Math.max(0, desired - naturalGap);
-        const td = gapTdByIdx.get(a.idx);
-        if (td) td.style.height = `${Math.round(extra)}px`;
+        // 4) Pour chaque segment [k, k+1] : extra = max(0, voulu − naturel).
+        for (let k = 0; k < info.length - 1; k++) {
+          const a = info[k];
+          const b = info[k + 1];
+          if (a.pk == null || b.pk == null) continue;
+          const dist = Math.abs(b.pk - a.pk);
+          if (dist <= 0) continue;
+          const naturalGap = b.top - a.top; // distance pixels réelle (gaps à 0)
+          const desired = effEtalement * dist;
+          const extra = Math.max(0, desired - naturalGap);
+          const td = gapTdByIdx.get(a.idx);
+          if (td) td.style.height = `${Math.round(extra)}px`;
+        }
       }
+      }
+
+      // ── 5) BANDES DE SURLIGNAGE GÉOGRAPHIQUE DES NOTES ──────────────────────
+      // Une note surlignée porte une zone kilométrique (« 619.500 al 619.933 »).
+      // On la peint comme une BANDE VERTICALE couvrant les colonnes KM et
+      // Établissements, à la place d'un simple fond sur la ligne de la note.
+      //
+      // ⚠️ Mesure APRÈS application des espacements : les `offsetTop` viennent
+      // de changer. La conversion PK → pixel est une interpolation linéaire
+      // entre lignes principales — exacte quand la fiche est à l'échelle (la
+      // hauteur du segment est alors proportionnelle à la distance), seulement
+      // indicative sinon (les hauteurs sont celles du contenu).
+      //
+      // Colonnes : la Vmax est volontairement EXCLUE. Elle porte déjà l'orange
+      // des zones CSV, dont le sélecteur (`.ft-v-cell.ft-v-csv-full`, 2 classes)
+      // l'emporterait de toute façon sur le pêche (1 classe).
+      const post = measure().filter(
+        (m): m is { idx: number; top: number; pk: number } => m.pk != null
+      );
+
+      const bands: NoteBand[] = [];
+      if (post.length >= 2) {
+        const firstMain = table.querySelector<HTMLTableRowElement>("tr.ft-row-main");
+        const cells = firstMain?.querySelectorAll<HTMLTableCellElement>("td");
+        const kmCell = cells?.[2];
+        const etabCell = cells?.[3];
+
+        if (kmCell && etabCell) {
+          const left = kmCell.offsetLeft;
+          const width =
+            etabCell.offsetLeft + etabCell.offsetWidth - kmCell.offsetLeft;
+
+          // PK → pixel, par interpolation entre les 2 lignes encadrantes.
+          const yAt = (pk: number): number => {
+            if (pk <= post[0].pk) return post[0].top;
+            const last = post[post.length - 1];
+            if (pk >= last.pk) return last.top;
+            for (let k = 0; k < post.length - 1; k++) {
+              const a = post[k];
+              const b = post[k + 1];
+              if (pk >= a.pk && pk <= b.pk) {
+                const span = b.pk - a.pk;
+                const f = span === 0 ? 0 : (pk - a.pk) / span;
+                return a.top + f * (b.top - a.top);
+              }
+            }
+            return last.top;
+          };
+
+          for (const e of rawEntries) {
+            const from = (e as any)?.noteZoneFrom as number | undefined;
+            const to = (e as any)?.noteZoneTo as number | undefined;
+            if (typeof from !== "number" || typeof to !== "number") continue;
+
+            const y1 = yAt(from);
+            const y2 = yAt(to);
+            const h = Math.round(y2 - y1);
+            if (h <= 0) continue; // zone hors parcours affiché
+            bands.push({ top: Math.round(y1), height: h, left, width });
+          }
+        }
+      }
+
+      // Ne re-rendre que si les rectangles ont réellement changé (cette fonction
+      // est rappelée sur resize / rAF / plis successifs).
+      setNoteBands((prev) =>
+        JSON.stringify(prev) === JSON.stringify(bands) ? prev : bands
+      );
     };
 
     const raf = requestAnimationFrame(apply);
@@ -6553,6 +6633,39 @@ if (isStandby) {
     const prevEntry = i > 0 ? rawEntries[i - 1] : undefined;
     const hasNoteBefore = !!prevEntry && prevEntry.isNoteOnly === true;
 
+    // ── PLACEMENT DES NOTES (champ `position` du format 2026) ─────────────────
+    // Ce qui « colle » une note à un PK, c'est l'ABSENCE d'espacement entre eux :
+    // l'espacement (`ft-scale-gap`) est toujours posé juste après la ligne
+    // principale. Mesuré à l'écran le 12/08 sur 9705 (impair) et 38510 (pair).
+    //
+    // Le tableau est TOUJOURS affiché en PK croissants, mais un train PAIR le
+    // remonte (il circule en PK décroissants). D'où l'inversion des voisins :
+    //
+    //                        PK SUIVANT dans la marche   PK PRÉCÉDENT
+    //   Train IMPAIR (descend)   ligne du dessous (i)      ligne du dessus
+    //   Train PAIR   (remonte)   ligne du dessus           ligne du dessous
+    //
+    // "au-dessus"  = collée au PK SUIVANT   → comportement historique (juin).
+    // "en-dessous" = collée au PK PRÉCÉDENT → colle à l'AUTRE voisin.
+    const notePosOf = (e: FTEntry | undefined): "au-dessus" | "en-dessous" =>
+      (e as any)?.notePosition === "en-dessous" ? "en-dessous" : "au-dessus";
+
+    // Note rendue AVANT la ligne principale i (donc collée à elle : l'espacement
+    // du segment précédent est au-dessus d'elle).
+    const noteBeforeIsPrev =
+      hasNoteBefore &&
+      ((isOdd && notePosOf(prevEntry) === "au-dessus") ||
+        (!isOdd && notePosOf(prevEntry) === "en-dessous"));
+    const noteBeforeIsNext =
+      !!hasNoteAfter && !isOdd && notePosOf(nextEntry) === "au-dessus";
+
+    // Note rendue APRÈS la ligne principale i mais AVANT son espacement, donc
+    // collée à CETTE ligne. Seul cas : train impair + "en-dessous".
+    const noteStuckBelow =
+      !!hasNoteAfter && isOdd && notePosOf(nextEntry) === "en-dessous"
+        ? (nextEntry as FTEntry)
+        : null;
+
     const net = (entry as any).network as ("RFN" | "LFP" | "ADIF" | undefined);
 
 const sitKm =
@@ -6984,7 +7097,7 @@ const hora = horaFromNormalized || horaFromPdf || horaFrance;
       showArrivalSpacer &&
       !(hasNoteAfter && i < rawEntries.length - 1);
 
-    if (!isOdd && hasNoteAfter && i < rawEntries.length - 1) {
+    if (noteBeforeIsNext && i < rawEntries.length - 1) {
       // 👇 Remarque rouge (ligne noteOnly) en premier pour les trains PAIRS
       const vmaxClassForNote = csvZoneOpen ? " ft-v-csv-full" : "";
 
@@ -7027,8 +7140,12 @@ const hora = horaFromNormalized || horaFromPdf || horaFrance;
           <td className="ft-td ft-td-nivel" />
         </tr>
       );
-    } else if (isOdd && hasNoteBefore) {
-      // 👇 Trains IMPAIRS : remarque rouge (prevEntry, ligne noteOnly juste au-dessus)
+    } else if (noteBeforeIsPrev) {
+      // 👇 Note rendue au-dessus de CETTE ligne principale, à laquelle elle est
+      //    donc collée. Couvre deux cas : train IMPAIR + "au-dessus" (la note
+      //    précède la ligne dans le tableau), et train PAIR + "en-dessous" (le
+      //    tableau étant remonté, le PK précédent de la marche est en dessous).
+      //    Remarque rouge (prevEntry, ligne noteOnly juste au-dessus)
       //    + heure d'arrivée de CETTE station, FUSIONNÉES sur une seule ligne au-dessus
       //    de la ligne principale (comme le PDF de l'éditeur). Vaut aussi hors mise à
       //    l'échelle. La note (i-1) est sautée dans sa propre itération via `continue`,
@@ -7365,6 +7482,47 @@ right: -1,
       </tr>
     );
 
+    // Note "en-dessous" d'un train IMPAIR : collée à CETTE ligne principale, donc
+    // rendue ICI — après elle mais AVANT l'espacement du segment. C'est le seul
+    // cas qui exige ce créneau : dans les trois autres (cf. `notePosOf` plus
+    // haut), la ligne cible se trouve sous la note et le créneau "avant la ligne
+    // principale" suffit.
+    if (noteStuckBelow) {
+      const vmaxClassForNoteBelow = csvZoneOpen ? " ft-v-csv-full" : "";
+      const surl = (noteStuckBelow as any).noteSurligne
+        ? " ft-note-surligne"
+        : "";
+
+      rows.push(
+        <tr className="ft-row-inter" key={`note-stuck-below-${i}`}>
+          {(() => {
+            renderedRowIndex++;
+            return <td className="ft-td"></td>;
+          })()}
+
+          <td className={"ft-td ft-v-cell" + vmaxClassForNoteBelow + surl}>
+            <div className="ft-v-inner text-center"></div>
+          </td>
+
+          <td className={"ft-td" + surl} />
+
+          <td className={"ft-td" + surl}>
+            {renderDependenciaCell(noteStuckBelow)}
+          </td>
+
+          {/* Aucune heure ici : l'heure d'arrivée appartient au PK SUIVANT, pas
+              à cette ligne-ci sous laquelle la note vient se coller. */}
+          <td className="ft-td ft-hora-cell" />
+
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td" />
+          <td className="ft-td ft-rc-cell" />
+          <td className="ft-td ft-td-nivel" />
+        </tr>
+      );
+    }
+
     // #25 : ligne d'espacement du segment, posée JUSTE APRÈS la ligne principale
     // A (et AVANT ses lignes intermédiaires : LTV orange, remarques rouges, heure
     // d'arrivée du PK suivant). Ainsi ces intermédiaires restent collées au PK
@@ -7578,6 +7736,9 @@ const vmaxClassForLtv =
           min-height: 0;
           overflow-y: auto;
           -webkit-overflow-scrolling: touch;
+          /* Repere des bandes de surlignage des notes (.ft-note-band), qui sont
+             positionnees en absolu et defilent donc avec le contenu. */
+          position: relative;
         }
 
         .ft-table {
@@ -7817,6 +7978,26 @@ const vmaxClassForLtv =
            teinte que l'export PDF de l'editeur (NOTE_BG #fbe2d5). */
         .ft-note-surligne {
           background-color: #fbe2d5;
+        }
+
+        /* Bande de surlignage GEOGRAPHIQUE d'une note (colonnes KM +
+           Etablissements). Posee PAR-DESSUS le tableau : en mode multiply, le
+           peche sur fond blanc redonne exactement #fbe2d5, et le texte noir
+           reste noir. Le tableau garde donc ses bordures et son texte lisibles
+           sans avoir a rendre les cellules transparentes. */
+        .ft-note-band {
+          position: absolute;
+          background-color: #fbe2d5;
+          mix-blend-mode: multiply;
+          pointer-events: none;
+          z-index: 2;
+        }
+
+        /* En sombre, multiply noircirait tout : on repasse en superposition
+           normale a faible opacite, comme le fond des notes surlignees. */
+        .dark .ft-note-band {
+          background-color: rgba(251, 226, 213, 0.22);
+          mix-blend-mode: normal;
         }
 
         /* Radio / ETCS : valeur entouree d'un petit cercle (Ⓖ, ①), comme sur le
@@ -8311,6 +8492,23 @@ const vmaxClassForLtv =
             <table className="ft-table">
               <tbody>{rows}</tbody>
             </table>
+
+            {/* Bandes de surlignage géographique des notes (zone « X al Y »).
+                Posées en surimpression plutôt qu'en fond de cellule : une zone
+                commence et finit à des PK quelconques, donc au milieu de lignes.
+                `pointer-events: none` → aucun impact sur les clics existants. */}
+            {noteBands.map((b, k) => (
+              <div
+                key={`note-band-${k}`}
+                className="ft-note-band"
+                style={{
+                  top: b.top,
+                  height: b.height,
+                  left: b.left,
+                  width: b.width,
+                }}
+              />
+            ))}
           </div>
         </FTScrolling>
 

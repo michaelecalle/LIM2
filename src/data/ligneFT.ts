@@ -132,6 +132,23 @@ export interface FTEntry {
 
   /** Note surlignée (fond pêche) — champ `surligne` du format 2026. */
   noteSurligne?: boolean;
+
+  /**
+   * Placement de la note — champ `position` du format 2026.
+   *  - "au-dessus"  : note collée au PK SUIVANT (rendue au-dessus de sa ligne).
+   *  - "en-dessous" : note collée au PK PRÉCÉDENT (rendue sous sa ligne).
+   * Remplace la règle de juin « tout collé au PK suivant ».
+   */
+  notePosition?: "au-dessus" | "en-dessous";
+
+  /**
+   * Zone kilométrique décrite par une note surlignée, extraite de son texte
+   * (« … 619.500 al 619.933 »). Bornes NORMALISÉES en PK interne croissant
+   * (from ≤ to), indépendamment du sens d'écriture dans le document.
+   * Absentes si la note ne mentionne pas d'intervalle.
+   */
+  noteZoneFrom?: number;
+  noteZoneTo?: number;
 }
 // -----------------------------------------------------------------------------
 // CSV_ZONES : zones de baisse significative de vitesse (CSV)
