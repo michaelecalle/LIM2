@@ -2193,43 +2193,37 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
     // 1) Priorité : lire l'heure directement dans le DOM de la ligne verrouillée
     let rowMin: number | null = null;
     let rowHoraText: string | null = null;
-    let rowHoraSource: "DOM_DEPART" | "DOM_THEO" | "THEO_FALLBACK" | "NONE" = "NONE";
+    let rowHoraSource:
+      | "DONNEE"
+      | "DOM_DEPART"
+      | "DOM_THEO"
+      | "THEO_FALLBACK"
+      | "NONE" = "NONE";
 
-    const container = scrollContainerRef.current;
+    // ⚠️ CORRIGÉ le 13/08 — on lit la DONNÉE, plus le DOM.
+    //
+    // Cette étape interrogeait `td:nth-child(6) .ft-hora-depart` et
+    // `.ft-hora-theo`. Or depuis la mise en page 2026 : la 6e colonne est
+    // devenue « Pass », le span `.ft-hora-depart` se trouve en colonne 7, et
+    // `.ft-hora-theo` n'existe plus du tout (vérifié dans le DOM : 0 occurrence).
+    // La voie principale ne pouvait donc plus rien produire, et la BASE du mode
+    // horaire n'était plus constituée — d'où l'absence de delta à la sortie de
+    // standby ET l'absence de progression de la position, constatées en ligne
+    // le 13/08 puis reproduites en local.
+    //
+    // 🪤 Le format n'est pas toujours strictement « HH:MM » : l'origine affiche
+    // « 13:06+ ». La reconnaissance ne doit donc PAS être ancrée aux extrémités.
+    const txtLigne = resolveHoraForRowIndex(lockedRowIndex).trim();
+    const m = /(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(txtLigne);
+    if (m) {
+      const hh = Number(m[1]);
+      const mm = Number(m[2]);
+      const ss = m[3] != null ? Number(m[3]) : 0;
 
-    if (container) {
-      const tr = container.querySelector<HTMLTableRowElement>(
-        `tr.ft-row-main[data-ft-row="${lockedRowIndex}"]`
-      );
-
-      if (tr) {
-        const dep = tr.querySelector<HTMLSpanElement>(
-          "td:nth-child(6) .ft-hora-depart"
-        );
-        const theo = tr.querySelector<HTMLSpanElement>(
-          "td:nth-child(6) .ft-hora-theo"
-        );
-
-        const depTxt = (dep?.textContent ?? "").trim();
-        const theoTxt = (theo?.textContent ?? "").trim();
-        const txt = (depTxt || theoTxt || "").trim();
-
-        const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(txt);
-        if (m) {
-          const hh = Number(m[1]);
-          const mm = Number(m[2]);
-          const ss = m[3] != null ? Number(m[3]) : 0;
-
-          if (
-            Number.isFinite(hh) &&
-            Number.isFinite(mm) &&
-            Number.isFinite(ss)
-          ) {
-            rowMin = hh * 60 + mm + ss / 60;
-            rowHoraText = txt;
-            rowHoraSource = depTxt ? "DOM_DEPART" : "DOM_THEO";
-          }
-        }
+      if (Number.isFinite(hh) && Number.isFinite(mm) && Number.isFinite(ss)) {
+        rowMin = hh * 60 + mm + ss / 60;
+        rowHoraText = txtLigne;
+        rowHoraSource = "DONNEE";
       }
     }
 
@@ -6653,37 +6647,28 @@ const isStandby =
     for (let idx = 0; idx < mainRows.length; idx++) {
       const tr = mainRows[idx];
 
-      // On ne considère que les lignes "calibrables" : horaire + dependencia présents
-      const tdHora = tr.querySelector<HTMLTableCellElement>("td:nth-child(6)");
+      // On ne considère que les lignes "calibrables" : horaire + établissement.
+      //
+      // ⚠️ CORRIGÉ le 13/08 — on lit la DONNÉE, plus le DOM.
+      // Ce test lisait l'heure dans `td:nth-child(6)`, colonne codée en dur. Avec
+      // la mise en page 2026 (Bloc, Vmax, KM, Établissements, Arr, Pass, Dép,
+      // Radio, ↗), la 6e colonne est devenue « Pass ». Une gare d'ARRÊT a donc
+      // ses heures en 5 et 7 et une 6e colonne VIDE : elle était jugée non
+      // calibrable, tandis qu'un point de passage restait sélectionnable.
+      // Constaté en ligne le 13/08 : impossible de poser le standby sur Gérone
+      // ni sur Figueres, le clic glissait sur la ligne de passage suivante.
+      // Passer par la donnée rend ce test insensible à l'ordre des colonnes.
+      const rowAttr = tr.getAttribute("data-ft-row");
+      const entryIdx = rowAttr ? parseInt(rowAttr, 10) : -1;
+      const rowEntry = entryIdx >= 0 ? rawEntries[entryIdx] : undefined;
+      if (!rowEntry) continue;
 
-      const horaDep = tr.querySelector<HTMLSpanElement>(
-        "td:nth-child(6) .ft-hora-depart"
-      );
-      const horaTheo = tr.querySelector<HTMLSpanElement>(
-        "td:nth-child(6) .ft-hora-theo"
-      );
+      // `resolveHoraForRowIndex` porte déjà la règle « départ, sinon passage,
+      // sinon arrivée » ET le repli sur les heures France (RFN/LFP).
+      const horaText = resolveHoraForRowIndex(entryIdx);
+      const depText = (rowEntry.dependencia ?? "").toString().trim();
 
-      // 1) source "structurée" (spans) : depart prioritaire, sinon theo
-      let horaText = ((horaDep?.textContent ?? horaTheo?.textContent) ?? "").trim();
-
-      // 2) fallback : texte brut de la cellule (utile si FR n’utilise pas ces spans)
-      if (!horaText) {
-        const raw = (tdHora?.textContent ?? "").trim();
-        const mAny = /(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(raw);
-        if (mAny) horaText = mAny[0];
-      }
-
-      const depCell = tr.querySelector<HTMLDivElement>(".ft-dependencia-cell");
-      let depText = (depCell?.textContent ?? "").trim();
-
-      // fallback : colonne Dependencia (structure FR possible)
-      if (!depText) {
-        const tdDep = tr.querySelector<HTMLTableCellElement>("td:nth-child(4)");
-        depText = (tdDep?.textContent ?? "").trim();
-      }
-
-      const hasHoraAndDep = !!horaText && !!depText;
-      if (!hasHoraAndDep) {
+      if (!horaText || !depText) {
         continue;
       }
 
@@ -7421,7 +7406,11 @@ const hora = horaFromNormalized || horaFrance;
         className={
           "ft-row-main" +
           (isCurrentlyVisible ? " ft-row-visible" : "") +
-          (isSelected ? " ft-row-selected" : "")
+          (isSelected ? " ft-row-selected" : "") +
+          // Marque posée depuis la DONNÉE : le cadre rouge de sélection doit
+          // englober la colonne Dép uniquement quand elle porte une heure
+          // (demandé le 13/08). Le CSS seul ne sait pas tester ça proprement.
+          (departCell.trim() !== "" ? " ft-has-depart" : "")
         }
         key={`main-${i}`}
         data-ft-row={i}
@@ -8525,11 +8514,16 @@ const vmaxClassForLtv =
           color: #60a5fa;
         }
 
-        /* Ligne sélectionnée pour recalage manuel : cadre rouge clignotant S + D + C + H */
+        /* Ligne selectionnee pour recalage manuel : cadre rouge clignotant.
+           Couvre KM + Etablissements + Arr + Pass, et Dep EN PLUS lorsque cette
+           derniere porte une heure (classe ft-has-depart, posee depuis la
+           donnee). Un point de passage n'a pas de depart : le cadre s'arrete
+           alors a la colonne Pass. */
         .ft-row-main.ft-row-selected td:nth-child(3),
         .ft-row-main.ft-row-selected td:nth-child(4),
         .ft-row-main.ft-row-selected td:nth-child(5),
-        .ft-row-main.ft-row-selected td:nth-child(6) {
+        .ft-row-main.ft-row-selected td:nth-child(6),
+        .ft-row-main.ft-row-selected.ft-has-depart td:nth-child(7) {
           border-top: 2px solid red;
           border-bottom: 2px solid red;
           animation: ft-selection-blink 1s step-start infinite;
@@ -8539,7 +8533,16 @@ const vmaxClassForLtv =
           border-left: 2px solid red;
         }
 
+        /* Bord droit : sur Pass par defaut... */
         .ft-row-main.ft-row-selected td:nth-child(6) {
+          border-right: 2px solid red;
+        }
+
+        /* ...et reporte sur Dep quand celle-ci est englobee. */
+        .ft-row-main.ft-row-selected.ft-has-depart td:nth-child(6) {
+          border-right: none;
+        }
+        .ft-row-main.ft-row-selected.ft-has-depart td:nth-child(7) {
           border-right: 2px solid red;
         }
 
