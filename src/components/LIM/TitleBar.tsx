@@ -1165,8 +1165,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const handleMode2026Confirm = (
     train: ManualTrainOption,
     ltvData: NormalizedLtvFile | null,
-    ltvPdfFile: File | null,
-    ftPdfFile: File | null
+    ltvPdfFile: File | null
   ) => {
     setMode2026Open(false)
     ltvPdfDataRef.current = ltvData
@@ -1191,16 +1190,11 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       window.dispatchEvent(new CustomEvent('sim:enable', { detail: { enabled: true } }))
     }
 
-    // Le PDF fiche train (s’il est fourni) est le document affiché en mode SECOURS.
-    // Le PDF LTV, lui, sert uniquement à l’extraction des données LTV (déjà parsé).
-    if (ftPdfFile) {
-      currentPdfFileRef.current = ftPdfFile
-      window.dispatchEvent(new CustomEvent('lim:pdf-raw', {
-        detail: { file: ftPdfFile, storage: demoCtx ? 'demo' : 'local' },
-      }))
-    } else {
-      currentPdfFileRef.current = null
-    }
+    // ⚠️ Plus d'import de PDF fiche train (étape 3 supprimée le 12/08) : le
+    // document affiché en mode SECOURS est désormais le LIVRET FT publié par
+    // l'éditeur, ouvert automatiquement à la page du train courant.
+    // Le PDF LTV, lui, sert uniquement à l'extraction des données LTV (déjà parsé).
+    currentPdfFileRef.current = null
 
     startNormalizedJourneyFromTrain(train, {
       source: 'mode2026_import',

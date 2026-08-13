@@ -22,12 +22,12 @@ type Props = {
   dark: boolean
   trainOptions: ManualTrainOption[]
   onClose: () => void
-  // ltvData/ltvPdfFile optionnels (train sans LTV). ftPdfFile = PDF fiche train (secours), optionnel.
+  // ltvData/ltvPdfFile optionnels (train sans LTV).
+  // ⚠️ Plus de `ftPdfFile` : la fiche train de secours vient du livret FT publié.
   onConfirm: (
     train: ManualTrainOption,
     ltvData: NormalizedLtvFile | null,
-    ltvPdfFile: File | null,
-    ftPdfFile: File | null
+    ltvPdfFile: File | null
   ) => void
   // ----- Mode démo guidé -----
   // Si lockedTrainNumber est fourni, seul ce train est sélectionnable.
@@ -60,13 +60,8 @@ export default function Mode2026Modal({
   const [counts, setCounts] = useState<{ total: number; l50: number; l66: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Etape 3 : PDF fiche train (secours) — optionnel
-  const [ftPdfFile, setFtPdfFile] = useState<File | null>(null)
-  const ftFileInputRef = useRef<HTMLInputElement | null>(null)
-
   // Sélecteurs démo (choix parmi les PDF du ZIP)
   const [ltvChooserOpen, setLtvChooserOpen] = useState(false)
-  const [ftChooserOpen, setFtChooserOpen] = useState(false)
 
   // SECOURS (#18) : dernier normalisé LTV connu, chargé en silence (hors démo).
   // Utilisé si le conducteur démarre sans importer de PDF LTV.
@@ -123,7 +118,7 @@ export default function Mode2026Modal({
     // Secours : aucun PDF importé (hors démo) → utiliser le dernier normalisé connu.
     const effectiveLtv = ltvData ?? (!isDemo ? storedLtv : null)
     if (ltvOnly) { onConfirmLtvOnly?.(effectiveLtv, pdfFile); return }
-    onConfirm(selectedTrain!, effectiveLtv, pdfFile, ftPdfFile)
+    onConfirm(selectedTrain!, effectiveLtv, pdfFile)
   }
 
   return (
@@ -141,7 +136,7 @@ export default function Mode2026Modal({
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-base font-semibold">{ltvOnly ? 'Mode LTV seul' : 'Mode 2026'}</div>
-            <div className="text-[11px] opacity-60 mt-0.5">{ltvOnly ? 'Import du seul PDF LTV — LTV du parcours (PK ≥ 616)' : 'Train requis ; PDF LTV et fiche train optionnels'}</div>
+            <div className="text-[11px] opacity-60 mt-0.5">{ltvOnly ? 'Import du seul PDF LTV — LTV du parcours (PK ≥ 616)' : 'Train requis ; PDF LTV optionnel'}</div>
           </div>
           <button type="button" onClick={onClose}
             className="h-8 px-3 text-xs rounded-md bg-zinc-200/70 text-zinc-800 dark:bg-zinc-700/70 dark:text-zinc-100 font-semibold">
@@ -241,43 +236,10 @@ export default function Mode2026Modal({
           )}
         </div>
 
-        {/* Etape 3 : import du PDF fiche train (masquée en mode LTV seul) */}
-        {!ltvOnly && (
-        <div>
-          <div className="text-xs font-semibold opacity-70 mb-1">
-            3 — PDF fiche train <span className="opacity-60 font-normal">(secours, optionnel)</span>
-          </div>
-          <button type="button"
-            onClick={() => { if (isDemo) setFtChooserOpen(o => !o); else ftFileInputRef.current?.click() }}
-            className="w-full h-10 rounded-xl border text-sm font-semibold transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
-            style={{ borderColor: border }}
-          >
-            {ftPdfFile ? ftPdfFile.name : (isDemo ? 'Choisir la fiche train du ZIP…' : 'Choisir le PDF fiche train…')}
-          </button>
-          {!isDemo && (
-            <input ref={ftFileInputRef} type="file" accept=".pdf" style={{ display: 'none' }}
-              onChange={e => { const f = e.target.files?.[0]; if (f) setFtPdfFile(f) }} />
-          )}
-          {isDemo && ftChooserOpen && (
-            <div className="mt-1 rounded-lg border overflow-hidden" style={{ borderColor: border }}>
-              {demoPdfFiles!.map(f => (
-                <button key={f.name} type="button"
-                  onClick={() => { setFtChooserOpen(false); setFtPdfFile(f) }}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 border-b last:border-b-0"
-                  style={{ borderColor: border }}
-                >
-                  📄 {f.name}
-                </button>
-              ))}
-            </div>
-          )}
-          {ftPdfFile && (
-            <div className="mt-2 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-              Fiche train chargée — disponible en mode secours
-            </div>
-          )}
-        </div>
-        )}
+        {/* ⚠️ L'étape 3 « PDF fiche train (secours) » a été SUPPRIMÉE le 12/08 :
+            les fiches train du mode secours proviennent désormais du LIVRET FT
+            publié par l'éditeur (documents/livret-ft.pdf dans lim-logs), ouvert
+            automatiquement à la page du train. Plus rien à importer à la main. */}
 
         {/* Bouton Demarrer */}
         <button type="button"

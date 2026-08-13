@@ -344,7 +344,7 @@ function trainMeta(trainNumber: number | string | null | undefined) {
   const key = String(trainNumber ?? "").trim();
   if (!key) return undefined;
   return PUBLISHED_DOC.trains?.[key]?.variants?.[0]?.meta as
-    | { origine?: string; destination?: string }
+    | { origine?: string; destination?: string; direction?: string }
     | undefined;
 }
 
@@ -358,4 +358,19 @@ export function getTrainDestination(
   trainNumber: number | string | null | undefined
 ): string | undefined {
   return str(trainMeta(trainNumber)?.destination);
+}
+
+/**
+ * Sens de circulation DÉCLARÉ du train, tel qu'il figure dans le normalisé.
+ *
+ * ⚠️ Ne JAMAIS le déduire de la parité du numéro : elle ne le prédit pas.
+ * 9711, 9713 et 9715 sont IMPAIRS mais circulent en `nordSud` ; 38510 est PAIR
+ * et circule aussi en `nordSud`. C'est la cause du bug du 12/08 où le 9713
+ * (Perpignan → Barcelone) s'affichait dans le sens Barcelone → Perpignan.
+ */
+export function getTrainDirection(
+  trainNumber: number | string | null | undefined
+): Direction | null {
+  const d = str(trainMeta(trainNumber)?.direction);
+  return d === "sudNord" || d === "nordSud" ? d : null;
 }

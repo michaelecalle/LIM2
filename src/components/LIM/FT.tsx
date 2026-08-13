@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   getFtLignePair,
   getFtLigneImpair,
+  getTrainDirection,
 } from "../../data/ligneFT2026.ft.adapter";
 // CSV_ZONES reste pour l'instant issu de l'ancien module (donnée de ligne, pas
 // de train) — à réévaluer, le 2026 portant déjà un booléen `csv` par ligne.
@@ -2732,8 +2733,25 @@ useEffect(() => {
   // ===== 2. LOGIQUE MÉTIER DE SENS ===================================
   //
 
+  /**
+   * ⚠️ NOM HISTORIQUE TROMPEUR — corrigé le 12/08 (urgence 9713).
+   *
+   * Ce drapeau ne désigne PLUS la parité du numéro de train mais le SENS DE
+   * CIRCULATION réel, tel que déclaré dans le normalisé :
+   *   true  = sudNord (Can Tunis → Perpignan, PK croissants)
+   *   false = nordSud (Perpignan → Can Tunis, PK décroissants)
+   *
+   * La parité ne prédit PAS le sens : 9711, 9713, 9715 sont impairs mais
+   * circulent en nordSud, et 38510 est pair et circule aussi en nordSud.
+   * Le 9713 (Perpignan → Barcelone) s'affichait donc à l'envers.
+   *
+   * Repli sur la parité si le sens n'est pas déclaré (train inconnu du
+   * normalisé) : l'ancien comportement, plutôt que rien.
+   */
   const isOdd = useMemo(() => {
     if (trainNumber === null) return null;
+    const declared = getTrainDirection(trainNumber);
+    if (declared) return declared === "sudNord";
     return trainNumber % 2 !== 0;
   }, [trainNumber]);
   const currentCsvSens: CsvSens | null = useMemo(() => {
@@ -2771,17 +2789,24 @@ useEffect(() => {
     let picked: FTEntry[];
     let oriented: FTEntry[];
 
+    // ⚠️ AUCUNE INVERSION (corrigé le 12/08) : les DEUX tables du normalisé sont
+    // déjà stockées dans l'ORDRE DE PARCOURS —
+    //   sudNord : 615.9 CAN TUNIS-AV → 805.5 PERPIGNAN BV
+    //   nordSud : 805.5 PERPIGNAN BV → 615.9 CAN TUNIS-AV
+    // L'ancien `.reverse()` du cas nordSud remettait la fiche en PK croissants,
+    // donc à CONTRE-SENS de la marche (Barcelone en tête pour un train qui va
+    // vers Barcelone). La fiche se lit désormais toujours dans le sens du train.
     if (isOdd) {
       picked = getFtLignePair(trainNumber);
       oriented = picked;
       console.log(
-        "[FT] Sens choisi: IMPAIR (Espagne→France, PK croissants) / Jeu de données = getFtLignePair(trainNumber)"
+        "[FT] Sens choisi: sudNord (Can Tunis→Perpignan, PK croissants) / Jeu de données = getFtLignePair(trainNumber)"
       );
     } else {
       picked = getFtLigneImpair(trainNumber);
-      oriented = [...picked].reverse();
+      oriented = picked;
       console.log(
-        "[FT] Sens choisi: PAIR (France→Espagne, PK décroissants) / Jeu de données = getFtLigneImpair(trainNumber) inversé"
+        "[FT] Sens choisi: nordSud (Perpignan→Can Tunis, PK décroissants) / Jeu de données = getFtLigneImpair(trainNumber)"
       );
     }
 
@@ -6776,25 +6801,24 @@ if (isStandby) {
     const noteHasZone = (e: FTEntry | undefined): boolean =>
       typeof (e as any)?.noteZoneFrom === "number";
 
+    // ⚠️ SIMPLIFIÉ le 12/08 : depuis la suppression du `.reverse()`, l'ordre du
+    // tableau est TOUJOURS celui de la marche, dans les deux sens. La distinction
+    // impair/pair qui compensait l'inversion n'a donc plus lieu d'être — et
+    // `noteBeforeIsNext`, qui ne servait qu'au cas inversé, ne se produit plus.
+    //
     // Note rendue AVANT la ligne principale i (donc collée à elle : l'espacement
     // du segment précédent est au-dessus d'elle).
     const noteBeforeIsPrev =
       hasNoteBefore &&
       !noteHasZone(prevEntry) &&
-      ((isOdd && notePosOf(prevEntry) === "au-dessus") ||
-        (!isOdd && notePosOf(prevEntry) === "en-dessous"));
-    const noteBeforeIsNext =
-      !!hasNoteAfter &&
-      !noteHasZone(nextEntry) &&
-      !isOdd &&
-      notePosOf(nextEntry) === "au-dessus";
+      notePosOf(prevEntry) === "au-dessus";
+    const noteBeforeIsNext = false;
 
     // Note rendue APRÈS la ligne principale i mais AVANT son espacement, donc
-    // collée à CETTE ligne. Seul cas : train impair + "en-dessous".
+    // collée à CETTE ligne.
     const noteStuckBelow =
       !!hasNoteAfter &&
       !noteHasZone(nextEntry) &&
-      isOdd &&
       notePosOf(nextEntry) === "en-dessous"
         ? (nextEntry as FTEntry)
         : null;

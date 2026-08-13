@@ -922,11 +922,12 @@ export default function App() {
                   // Visionneuse canvas (et non iframe) : elle gère la pagination
                   // nativement — utile car un train peut occuper 2 pages — et
                   // n'a pas le défaut d'affichage des iframes PDF sur iOS.
+                  // `applyDarkInvert` laissé à sa valeur par défaut (true) : le
+                  // mode nuit s'applique, comme sur les pages LTV du même écran.
                   <ManualPdfCanvasViewer
                     pdfUrl={livretFtUrl}
                     page={livretFtPage}
                     onPageChange={setLivretFtPage}
-                    applyDarkInvert={false}
                   />
                 ) : (
                   <div className="h-full flex items-center justify-center text-sm text-zinc-400 dark:text-zinc-500">
