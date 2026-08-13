@@ -30,6 +30,26 @@ function ftEntryPkNum(e: any): number | null {
   return null;
 }
 
+/**
+ * Heure portée par une ligne du normalisé 2026 : DÉPART, sinon PASSAGE, sinon ARRIVÉE.
+ *
+ * Équivalent exact de l'ancien champ `hora`, qui valait l'heure de départ dans
+ * les gares d'arrêt et l'heure de passage ailleurs. `hora` n'est plus rempli
+ * depuis le retrait du pont de compatibilité (11/08) : toute lecture directe de
+ * `entry.hora` est donc muette et doit passer par ici.
+ *
+ * ⚠️ Ce n'est que le DÉFAUT. La bonne heure dépend de la question posée — un
+ * recalage de delta à l'arrivée veut l'heure d'ARRIVÉE. Les sites d'appel
+ * doivent être audités et différenciés au cas par cas.
+ */
+function horaFromEntry2026(e: any): string {
+  return (
+    [e?.depart, e?.passage, e?.arrivee]
+      .map((v) => (typeof v === "string" ? v.trim() : ""))
+      .find((v) => v.length > 0) ?? ""
+  );
+}
+
 // === Scroll « flèche épinglée » (#26) — réversible : false = ancien comportement
 // (scroll ligne-par-ligne aligné sur la ligne de référence). true = la flèche
 // (position continue du train) est épinglée à FT_PIN_FRACTION du viewport et
@@ -3061,15 +3081,30 @@ useEffect(() => {
       // PK → pixel, par interpolation entre les 2 lignes principales encadrantes.
       // Déclaré ICI (et non dans le bloc des notes) car les bandes LTU l'utilisent
       // aussi. Renvoie null tant qu'on n'a pas 2 lignes mesurables.
+      // ⚠️ CORRIGÉ le 13/08 — AGNOSTIQUE AU SENS.
+      // Cette fonction supposait `post` trié en PK CROISSANTS. Depuis que la
+      // fiche se lit dans le sens de la marche, un train nordSud produit un
+      // ordre DÉCROISSANT (Perpignan 805.5 → Barcelone 621) : le premier test
+      // `pk <= post[0].pk` devenait vrai pour presque tout PK, les deux bornes
+      // d'une zone renvoyaient la même position, la hauteur était nulle et
+      // TOUT était écarté — bandes LTV, bandes de notes, ET LE TEXTE DES NOTES.
+      // Constaté en production le 13/08 : la note « 80 km/h en MODE SR et en
+      // BSL » n'apparaissait plus du tout sur les trains 9711/9713/9715/38510.
       const yAt = (pk: number): number | null => {
         if (post.length < 2) return null;
-        if (pk <= post[0].pk) return post[0].top;
+        const first = post[0];
         const last = post[post.length - 1];
-        if (pk >= last.pk) return last.top;
+        const croissant = last.pk >= first.pk;
+
+        // Hors de la plage affichée : on plaque sur l'extrémité concernée.
+        if (croissant ? pk <= first.pk : pk >= first.pk) return first.top;
+        if (croissant ? pk >= last.pk : pk <= last.pk) return last.top;
+
         for (let k = 0; k < post.length - 1; k++) {
           const a = post[k];
           const b = post[k + 1];
-          if (pk >= a.pk && pk <= b.pk) {
+          // Encadrement indépendant du sens.
+          if (pk >= Math.min(a.pk, b.pk) && pk <= Math.max(a.pk, b.pk)) {
             const span = b.pk - a.pk;
             const f = span === 0 ? 0 : (pk - a.pk) / span;
             return a.top + f * (b.top - a.top);
@@ -3107,13 +3142,18 @@ useEffect(() => {
             const y1 = yAt(from);
             const y2 = yAt(to);
             if (y1 === null || y2 === null) continue;
-            const h = Math.round(y2 - y1);
+
+            // ⚠️ En sens décroissant, la borne BASSE de la zone est PLUS BAS à
+            // l'écran : on ne peut pas supposer y2 > y1. On prend donc le haut
+            // et la hauteur en valeur absolue.
+            const yHaut = Math.min(y1, y2);
+            const h = Math.round(Math.abs(y2 - y1));
             if (h <= 0) continue; // zone hors du parcours affiché
 
             // Le TEXTE se place en haut de la zone, qu'elle soit peinte ou non :
             // la zone commande le placement de toutes les notes qui en ont une.
             overlays.push({
-              top: Math.round(y1),
+              top: Math.round(yHaut),
               left: textLeft,
               width: textWidth,
               entryIndex: n,
@@ -3121,7 +3161,7 @@ useEffect(() => {
 
             // La PEINTURE, elle, reste pilotée par le seul champ `surligne`.
             if ((e as any)?.noteSurligne) {
-              bands.push({ top: Math.round(y1), height: h, left, width });
+              bands.push({ top: Math.round(yHaut), height: h, left, width });
             }
           }
         }
@@ -3159,8 +3199,12 @@ useEffect(() => {
             const y1 = yAt(Math.min(a, b));
             const y2 = yAt(Math.max(a, b));
             if (y1 === null || y2 === null) continue;
-            if (y2 - y1 <= 0) continue; // hors du parcours affiché
-            raw.push({ top: y1, bottom: y2 });
+            // Même précaution que pour les notes : en sens décroissant, le PK le
+            // plus petit est plus BAS à l'écran.
+            const haut = Math.min(y1, y2);
+            const bas = Math.max(y1, y2);
+            if (bas - haut <= 0) continue; // hors du parcours affiché
+            raw.push({ top: haut, bottom: bas });
           }
 
           // 2) Fusion. Le seuil est exprimé en PIXELS et non en kilomètres : il
@@ -3588,11 +3632,26 @@ function findRowIndexFromPk(targetPk: number | null): number | null {
     const entry = rawEntries[rowIndex];
     if (!entry) return "";
 
-    // 1) Hora directe issue de la FT, si présente
-    const directHora = (entry as any).hora ?? "";
-    if (typeof directHora === "string" && directHora.trim().length > 0) {
-      return directHora.trim();
-    }
+    // 1) Heure portée par la ligne elle-même.
+    //
+    // ⚠️ CORRIGÉ le 13/08. Cette étape lisait `entry.hora`, un champ que
+    // l'adaptateur 2026 ne remplit PLUS depuis le retrait du pont de
+    // compatibilité (11/08). Elle échouait donc pour TOUTES les lignes, et la
+    // fonction retombait sur ses replis — dont aucun ne s'applique en Espagne.
+    // Conséquence constatée en ligne le 13/08 : plus aucune ligne ADIF n'était
+    // éligible au standby (cliquer sur Gérone posait le standby sur la ligne
+    // suivante), et tout ce qui dépend de cette heure était affecté.
+    //
+    // Priorité DÉPART → PASSAGE → ARRIVÉE : c'est l'équivalent exact de l'ancien
+    // `hora`, qui valait l'heure de départ dans les gares d'arrêt et l'heure de
+    // passage ailleurs. Les appelants retrouvent donc leur comportement d'avant
+    // la migration.
+    //
+    // 🔜 À AFFINER : la bonne heure dépend de la QUESTION posée — un recalage de
+    // delta à l'arrivée veut l'heure d'ARRIVÉE, pas celle de départ. Les 9 sites
+    // d'appel doivent être audités un par un et différenciés au cas par cas.
+    const horaLigne = horaFromEntry2026(entry);
+    if (horaLigne) return horaLigne;
 
     // 1bis) Hora France (RFN/LFP) via ftFranceTimes (même logique que l'affichage)
     const net = (entry as any).network as ("RFN" | "LFP" | "ADIF" | undefined);
@@ -5912,7 +5971,6 @@ if (hasFranceFtLocal) {
     }
   );
 
-  let heuresDetecteesCursor = 0;
   let previousHoraForConc: string | null = null;
 
   const firstNonNoteIndex = (() => {
@@ -6093,21 +6151,16 @@ if (hasFranceFtLocal) {
     const departMinutesByIndex: Array<number | null> = new Array(rawEntries.length).fill(null);
     const departHoraTextByIndex: Array<string | null> = new Array(rawEntries.length).fill(null);
 
-    let cursor = 0;
-
     for (let i = 0; i < rawEntries.length; i++) {
       const e = rawEntries[i];
       if ((e as any).isNoteOnly) continue;
 
-      const eligible = isEligible(e);
-
-      // ✅ Source "Espagne" (ADIF) : heures détectées si la ligne est éligible, sinon e.hora
-      const horaAssigned =
-        eligible && cursor < heuresDetectees.length
-          ? heuresDetectees[cursor]
-          : ((e as any).hora ?? "");
-
-      if (eligible && cursor < heuresDetectees.length) cursor++;
+      // ✅ Source "Espagne" (ADIF) : l'heure vient du NORMALISÉ, ligne par ligne.
+      // ⚠️ 13/08 — l'appariement « heures détectées dans le PDF ↔ lignes éligibles »
+      // a été retiré : on n'importe plus de fiche train PDF, `heuresDetectees` est
+      // donc toujours vide et `entry.hora` n'est plus rempli. Les deux sources
+      // étaient taries, ce bloc ne produisait plus aucune heure.
+      const horaAssigned = horaFromEntry2026(e);
 
       // ✅ Source "France" (même logique que l'affichage)
       const net = (e as any).network as ("RFN" | "LFP" | "ADIF" | undefined);
@@ -6281,24 +6334,13 @@ if (hasFranceFtLocal) {
     const departMinutesByIndex: Array<number | null> = new Array(rawEntries.length).fill(null);
     const departHoraTextByIndex: Array<string | null> = new Array(rawEntries.length).fill(null);
 
-    let cursor = 0;
     for (let i = 0; i < rawEntries.length; i++) {
       const e = rawEntries[i] as any;
       if (e?.isNoteOnly) continue;
 
-      const eligible = isEligible(rawEntries[i]);
-
-      const horaFromNormalized =
-        typeof e?.hora === "string" ? e.hora.trim() : "";
-
-      const horaFromPdf =
-        eligible && cursor < heuresDetectees.length
-          ? heuresDetectees[cursor]
-          : "";
-
-      if (eligible && cursor < heuresDetectees.length) cursor++;
-
-      const horaText = (horaFromNormalized || horaFromPdf).trim();
+      // ⚠️ 13/08 — appariement PDF retiré (cf. commentaire du bloc précédent) :
+      // l'heure vient du normalisé, ligne par ligne.
+      const horaText = horaFromEntry2026(e);
       departHoraTextByIndex[i] = horaText.length > 0 ? horaText : null;
 
       // parseHoraToMinutes existe déjà dans ton fichier
@@ -6845,17 +6887,8 @@ const sitKmDisplay = entry.isNoteOnly ? "" : ((entry as any).pk_display ?? sitKm
 // FT France : lookup horaire (clé = PK affiché, mais en virgule comme dans ftFranceTimes)
 const pkKey = (sitKm ?? "").toString().replace(".", ",");
 
-const eligible = isEligible(entry);
-
-const horaFromNormalized =
-  typeof (entry as any).hora === "string"
-    ? (entry as any).hora.trim()
-    : "";
-
-const horaFromPdf =
-  eligible && heuresDetecteesCursor < heuresDetectees.length
-    ? heuresDetectees[heuresDetecteesCursor]
-    : "";
+// ⚠️ 13/08 — appariement PDF retiré : l'heure vient du normalisé, ligne par ligne.
+const horaFromNormalized = horaFromEntry2026(entry);
 
 // Heures France (si dispo) : lookup par n° de train + PK "à la française" (virgule)
 const horaFrance =
@@ -6863,7 +6896,7 @@ const horaFrance =
     ? getFtFranceHhmm(trainNumber, pkKey)
     : "";
 
-const hora = horaFromNormalized || horaFromPdf || horaFrance;
+const hora = horaFromNormalized || horaFrance;
 
     // (Format 2026) Les TROIS heures explicites de la ligne. Déclarées ici car
     // elles servent aussi bien à `arrivalEvents` (plus bas) qu'au surlignage
@@ -6879,9 +6912,6 @@ const hora = horaFromNormalized || horaFromPdf || horaFrance;
     // est désormais une donnée directe (`arrivee`), et le surlignage d'arrêt
     // suit la règle 2026 — plus rien de tout ça n'est nécessaire.
 
-    if (eligible && heuresDetecteesCursor < heuresDetectees.length) {
-      heuresDetecteesCursor++;
-    }
 
     // (Migration 2026) Les colonnes TECN et CONC n'existent plus : les trois
     // colonnes horaires explicites (Arr / Pass / Dép) les remplacent.
