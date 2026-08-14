@@ -822,8 +822,14 @@ export default function FTHorizontal() {
         .ft-h-vbox-csv { fill: #ffd9a3; stroke: #00000033; stroke-width: 1; }
         .ft-h-vlabel { font-size: 11px; font-weight: 700; fill: #111; text-anchor: middle; }
         .ft-h-track { stroke: currentColor; stroke-width: 2; }
-        .ft-h-kmtick { stroke: #00000033; stroke-width: 1; }
-        .dark .ft-h-kmtick { stroke: #ffffff33; }
+        /* Graduations kilométriques — 14/08. À #33 elles plafonnaient à 1.61 de
+           contraste le jour et 1.84 la nuit, soit le seuil du visible. La nuit
+           reçoit plus que le jour : c'est là qu'elles disparaissaient, l'œil
+           adapté à l'obscurité discriminant mal les faibles écarts.
+           La longueur reste bornée aux repères de gare (5 px) pour ne pas
+           inverser la hiérarchie : une gare prime sur un kilomètre. */
+        .ft-h-kmtick { stroke: #00000066; stroke-width: 1.4; }
+        .dark .ft-h-kmtick { stroke: #ffffff80; }
         .ft-h-tick { stroke: currentColor; stroke-width: 1.5; }
         .ft-h-pk { font-size: 10px; fill: currentColor; text-anchor: middle; }
         .ft-h-name { font-size: 11px; font-weight: 700; fill: currentColor; text-anchor: middle; }
@@ -952,7 +958,7 @@ export default function FTHorizontal() {
 
           {/* Graduation kilométrique */}
           {Array.from({ length: Math.floor(maxDist) + 1 }).map((_, km) => (
-            <line key={km} className="ft-h-kmtick" x1={x(km)} y1={baseY - 3} x2={x(km)} y2={baseY + 3} />
+            <line key={km} className="ft-h-kmtick" x1={x(km)} y1={baseY - 5} x2={x(km)} y2={baseY + 3} />
           ))}
 
           {/* Repères LTV — 1re passe : lignes uniquement (ticks + pointillés).

@@ -1,4 +1,5 @@
 import React from "react"
+import TgvInouiLogo from "./TgvInouiLogo"
 
 export type InfoData = {
   tren?: string
@@ -300,6 +301,19 @@ export default function ClassicInfoPanel({
         .classic-root.classic-night, .classic-root.classic-night * { border-color:#e5e7eb; }
         .classic-root.classic-night .tile-yellow, .classic-root.classic-night .tile-yellow * { color:#111111 !important; }
         .classic-root.classic-night .text-zinc-600 { color:#9ca3af; }
+
+        /* Logo TGV inOui — 14/08. L'ancien PNG portait un fond blanc OPAQUE
+           (70 % de l'image) : en mode nuit il restait allumé comme un pavé au
+           milieu du panneau. Remplacé par le SVG officiel, intégré au DOM pour
+           que ses tracés soient recolorables ici — un <img> ne le permet pas.
+           Le jour reprend exactement les teintes de la charte ; la nuit les
+           remonte en luminosité sans changer l'identité de la marque :
+           contraste sur #111214 porté de 3.24 à 11.6 (gris) et de 2.10 à 4.43
+           (carmin). */
+        .lg-tgv   { fill:#63675c; }
+        .lg-inoui { fill:#930c38; }
+        .classic-root.classic-night .lg-tgv   { fill:#c9cdc2; }
+        .classic-root.classic-night .lg-inoui { fill:#e0396b; }
       `}</style>
 
       <div
@@ -371,9 +385,10 @@ export default function ClassicInfoPanel({
         <div className="flex items-stretch border-t-2 border-black">
           {/* Logo TGV inOui. ⚠️ 14/08 — la silhouette du train (2e image) a été
               retirée : purement décorative, elle coûtait de la hauteur au bloc info.
-              Fond BLANC : le bleu de la cellule venait de l'ancien logo OUIGO. */}
+              Le PNG a été remplacé par le SVG officiel (voir TgvInouiLogo) : il
+              n'a pas de fond, et ses couleurs suivent le mode nuit. */}
           <div style={{ width: 'var(--w-tren)' }} className="border-r-2 border-black px-2 py-1 flex items-center justify-center">
-            <img src="/inoui.png" alt="TGV inOui" className="w-full max-w-[80px] h-auto object-contain" />
+            <TgvInouiLogo className="w-full max-w-[80px] h-auto" />
           </div>
 
           <div
