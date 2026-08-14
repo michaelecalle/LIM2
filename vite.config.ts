@@ -40,6 +40,19 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['vite.svg'],
+      workbox: {
+        // ⚠️ CORRIGÉ le 14/08 — le worker pdf.js DOIT être précaché.
+        // Il est émis comme fichier séparé (~1,2 Mo) et n'entrait pas dans le
+        // précache par défaut : il était donc téléchargé À LA DEMANDE, au moment
+        // de l'import du PDF LTV. Sous mauvaise couverture, ce téléchargement
+        // échoue (le parseur abandonne au bout de 15 s) et l'extraction rend
+        // ZÉRO ligne — l'utilisateur l'a vécu le 14/08 : `rowsCount: 0` à 08h16
+        // sous réseau faible, puis `rowsCount: 8` à 09h24 sous bon réseau, avec
+        // le MÊME document. L'extraction est pourtant 100 % locale : c'est son
+        // moteur qui manquait. Le limite par défaut (2 Mio) exclurait ce fichier.
+        globPatterns: ['**/*.{js,css,html,svg,mjs}'],
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+      },
       manifest: {
         name: 'LIM2',
         short_name: 'LIM2',

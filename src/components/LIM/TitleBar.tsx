@@ -60,6 +60,7 @@ import {
   waitForFtRoutePkRange,
   fetchManualLtvRows,
   loadNormalizedLtvRows,
+  cacheLtvNormalized,
 } from './titleBarLtvUtils'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
@@ -1171,6 +1172,10 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   ) => {
     setMode2026Open(false)
     ltvPdfDataRef.current = ltvData
+    // ⚠️ 14/08 — mémoriser localement le LTV qu'on vient d'extraire : c'est lui
+    // qui servira de « dernières LTV connues » au prochain démarrage SANS
+    // couverture. Sans ça, un import réussi était perdu dès l'app fermée.
+    cacheLtvNormalized(ltvData)
     // Conserver le PDF LTV importé pour l'inclure dans le ZIP au STOP.
     currentLtvPdfFileRef.current = ltvPdfFile
     // Rendre le PDF source LTV disponible au mode secours pour la session courante.
@@ -1235,6 +1240,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     setMode2026LtvOnly(false)
 
     ltvPdfDataRef.current = ltvData
+    cacheLtvNormalized(ltvData)  // idem : repli hors couverture (cf. ci-dessus)
     currentLtvPdfFileRef.current = ltvPdfFile
     startupLaunchModeRef.current = 'ltv'
     setActiveStartupMode('ltv')

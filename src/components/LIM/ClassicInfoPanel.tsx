@@ -144,6 +144,11 @@ const SEVEN_SEG: Record<number, string[]> = {
   2: ["a", "b", "g", "e", "d"],
 }
 
+// ⚠️ 14/08 — afficheur LÉGÈREMENT réduit (20×34 → 17×29) pour gagner de la
+// hauteur dans le bloc info. Volontairement modeste : le chiffre reste lisible.
+// Il ne s'agit QUE d'un paramétrage applicatif servant à choisir la courbe
+// empirique — le vrai nombre de moteurs isolés, information de conduite,
+// s'affiche sur le pupitre de la motrice, pas dans cette application.
 function SevenSegmentDigit({ value, active }: { value: number; active: boolean }) {
   const on = SEVEN_SEG[value] ?? SEVEN_SEG[0]
   const lit = active ? MI_ON_DIGIT : MI_OFF
@@ -152,7 +157,7 @@ function SevenSegmentDigit({ value, active }: { value: number; active: boolean }
     <polygon key={id} points={points} fill={on.includes(id) ? lit : dim} />
   )
   return (
-    <svg viewBox="0 0 40 68" width="20" height="34" aria-hidden="true">
+    <svg viewBox="0 0 40 68" width="17" height="29" aria-hidden="true">
       {S("a", "8,3 32,3 27,9 13,9")}
       {S("b", "33,4 33,30 28,25 28,11")}
       {S("c", "33,38 33,64 28,57 28,43")}
@@ -416,7 +421,7 @@ export default function ClassicInfoPanel({
         <div className="flex items-stretch">
           <div
             style={{ width: 'var(--w-tren)', background: yellow }}
-            className={`border-r-2 border-black px-2 py-1 tile-yellow ${trenShouldBlink ? 'classic-blink-strong' : ''} ${(onTrenClick || handleTrenLongPress) ? 'cursor-pointer' : ''}`}
+            className={`border-r-2 border-black px-2 py-1 grid place-items-center text-center tile-yellow ${trenShouldBlink ? 'classic-blink-strong' : ''} ${(onTrenClick || handleTrenLongPress) ? 'cursor-pointer' : ''}`}
             onPointerDown={startTrenLongPress}
             onPointerUp={cancelTrenLongPress}
             onPointerLeave={cancelTrenLongPress}
@@ -431,7 +436,6 @@ export default function ClassicInfoPanel({
                   : undefined
             }
           >
-            <div className="text-[11px] font-semibold leading-none">TREN</div>
             <div
               ref={trenRef}
               className="text-[22px] leading-6 tracking-tight font-extrabold whitespace-nowrap"
@@ -456,33 +460,34 @@ export default function ClassicInfoPanel({
             <div ref={typeRef} className="text-[22px] font-extrabold leading-tight">{D.type || ''}</div>
           </div>
 
-          <div style={{ flex: 1, minWidth: 0 }} className="border-r-2 border-black px-2 py-1">
-            <div className="text-[12px] font-semibold leading-none">ORIGEN/DESTINO :</div>
-            <div className="text-[16px] font-extrabold leading-5 truncate">{D.origenDestino || ''}</div>
+          <div style={{ flex: 1, minWidth: 0 }} className="border-r-2 border-black px-2 py-1 grid place-items-center text-center">
+            <div className="text-[18px] font-extrabold leading-6 truncate max-w-full">{D.origenDestino || ''}</div>
           </div>
 
           <div
             ref={fechaTileRef}
             style={wLastCol ? { width: wLastCol, minWidth: 0, background: yellow } : { flex: 1, minWidth: 0, background: yellow }}
-            className={`tile-yellow px-2 py-1 ${fechaShouldBlink ? 'classic-blink-strong' : ''}`}
+            className={`tile-yellow px-2 py-1 grid place-items-center text-center ${fechaShouldBlink ? 'classic-blink-strong' : ''}`}
           >
-            <div className="text-[11px] font-semibold leading-none">FECHA</div>
-            <div className={`text-[16px] font-extrabold leading-5 truncate ${fechaShouldBlink ? 'classic-blink-text' : ''}`}>{fechaText}</div>
+            <div className={`text-[18px] font-extrabold leading-6 truncate max-w-full ${fechaShouldBlink ? 'classic-blink-text' : ''}`}>{fechaText}</div>
           </div>
         </div>
 
+        {/* ⚠️ 14/08 — ÉTIQUETTES SUPPRIMÉES (TREN, ORIGEN/DESTINO, FECHA,
+            COMPOSICIÓN, MOT. ISOLÉS, MATERIAL, LONGITUD — MASA) pour réduire la
+            hauteur du bloc info : le contenu de chaque case est identifiable sans
+            elles. Le bloc n'existe qu'à l'écran (le mode secours affiche le
+            document source), aucun autre rendu n'est impacté. */}
         <div className="flex items-stretch border-t-2 border-black">
-          {/* Logo TGV inOui : DEUX images empilées (badge puis silhouette du train),
-              même largeur, hauteur au ratio natif (badge 110×54, train 729×156) —
-              identique à l'export PDF 2026 de l'éditeur. Fond BLANC : le bleu de la
-              cellule faisait partie de l'ancien logo OUIGO, il n'a plus lieu d'être. */}
-          <div style={{ width: 'var(--w-tren)' }} className="border-r-2 border-black px-2 py-1 flex flex-col items-center justify-center gap-1">
+          {/* Logo TGV inOui. ⚠️ 14/08 — la silhouette du train (2e image) a été
+              retirée : purement décorative, elle coûtait de la hauteur au bloc info.
+              Fond BLANC : le bleu de la cellule venait de l'ancien logo OUIGO. */}
+          <div style={{ width: 'var(--w-tren)' }} className="border-r-2 border-black px-2 py-1 flex items-center justify-center">
             <img src="/inoui.png" alt="TGV inOui" className="w-full max-w-[80px] h-auto object-contain" />
-            <img src="/inoui-train.png" alt="" className="w-full max-w-[80px] h-auto object-contain" />
           </div>
 
           <div
-            className={`border-r-2 border-black px-2 py-1 text-center tile-yellow ${onCompositionLongPress ? 'cursor-pointer' : ''}`}
+            className={`border-r-2 border-black px-2 py-1 grid place-items-center text-center tile-yellow ${onCompositionLongPress ? 'cursor-pointer' : ''}`}
             style={{ background: yellow, flex: '0 0 auto' }}
             onPointerDown={startCompositionLongPress}
             onPointerUp={cancelCompositionLongPress}
@@ -491,8 +496,7 @@ export default function ClassicInfoPanel({
             onContextMenu={(e) => e.preventDefault()}
             title={onCompositionLongPress ? 'Appui long : basculer la composition UM / US' : undefined}
           >
-            <div className="text-[12px] font-semibold leading-none">COMPOSICIÓN</div>
-            <div className="mt-0.5 text-[18px] font-extrabold tracking-tight">{(D.composicion || '').toUpperCase()}</div>
+            <div className="text-[18px] font-extrabold tracking-tight">{(D.composicion || '').toUpperCase()}</div>
           </div>
 
           {/* MOTEURS ISOLÉS — reproduit les indications de la cabine (pictogramme
@@ -500,7 +504,7 @@ export default function ClassicInfoPanel({
               est borné par la composition : 1 moteur isolé maximum par rame,
               donc max 1 en US et 2 en UM. */}
           <div
-            className={`border-r-2 border-black px-2 py-1 text-center ${onMoteursIsolesLongPress ? 'cursor-pointer' : ''}`}
+            className={`border-r-2 border-black px-2 py-1 grid place-items-center text-center ${onMoteursIsolesLongPress ? 'cursor-pointer' : ''}`}
             style={{ flex: '0 0 auto' }}
             onPointerDown={startMoteursIsolesLongPress}
             onPointerUp={cancelMoteursIsolesLongPress}
@@ -509,8 +513,7 @@ export default function ClassicInfoPanel({
             onContextMenu={(e) => e.preventDefault()}
             title={onMoteursIsolesLongPress ? 'Appui long : nombre de moteurs isolés' : undefined}
           >
-            <div className="text-[12px] font-semibold leading-none">MOT. ISOLÉS</div>
-            <div className="mt-0.5 flex items-center justify-center gap-1.5">
+            <div className="flex items-center justify-center gap-1.5">
               <MoteurIsoleIcon active={moteursIsolesActifs} />
               <SevenSegmentDigit value={moteursIsoles} active={moteursIsolesActifs} />
             </div>
@@ -518,7 +521,7 @@ export default function ClassicInfoPanel({
 
           <div
             style={{ flex: 1, minWidth: 0 }}
-            className={`border-r-2 border-black px-2 py-1 ${onMaterialLongPress ? 'cursor-pointer' : ''}`}
+            className={`border-r-2 border-black px-2 py-1 grid place-items-center text-center ${onMaterialLongPress ? 'cursor-pointer' : ''}`}
             onPointerDown={startMaterialLongPress}
             onPointerUp={cancelMaterialLongPress}
             onPointerLeave={cancelMaterialLongPress}
@@ -528,14 +531,13 @@ export default function ClassicInfoPanel({
           >
             {/* MATERIAL seul : la ligne « LINEA » n'est plus affichée (décision 07/08,
                 ligne supprimée du normalisé et de l'affichage du bloc info). */}
-            <div className="text-[16px] font-extrabold uppercase leading-5">
-              MATERIAL: {(D.material || '').toUpperCase()}
+            <div className="text-[18px] font-extrabold uppercase leading-6 truncate max-w-full">
+              {(D.material || '').toUpperCase()}
             </div>
           </div>
 
-          <div ref={longitudTileRef} style={wLastCol ? { width: wLastCol, minWidth: 0 } : { flex: 1, minWidth: 0 }} className="px-2 py-1">
-            <div className="text-[12px] text-zinc-600 font-semibold leading-none">LONGITUD (M) — MASA (T)</div>
-            <div className="text-[18px] font-extrabold leading-6 mt-0.5">{(D.longitud ?? '')} m — {(D.masa ?? '')} t</div>
+          <div ref={longitudTileRef} style={wLastCol ? { width: wLastCol, minWidth: 0 } : { flex: 1, minWidth: 0 }} className="px-2 py-1 grid place-items-center text-center">
+            <div className="text-[18px] font-extrabold leading-6">{(D.longitud ?? '')} m — {(D.masa ?? '')} t</div>
           </div>
         </div>
       </div>

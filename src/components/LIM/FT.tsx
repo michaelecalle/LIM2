@@ -4133,10 +4133,22 @@ const isRelock = acceptedMode === "relock";
         pk != null &&
         !pkJumpGuardActiveRef.current
       ) {
+        // ⚠️ CORRIGÉ le 14/08 — sens observé mesuré sur `s_km`, PAS sur le PK.
+        // Le PK RÉSEAU n'est pas monotone le long d'un parcours : pour un train
+        // montant, RFN 467→471 et LFP 0.8→44.4 CROISSENT, puis ADIF 752→621
+        // DÉCROÎT. Comparer des PK produisait donc de faux désaccords sur toute
+        // la partie française — 29 relevés sur le 9709 du 14/08, tous entre les
+        // PK 0-50 (LFP) et 460-480 (RFN), alors que le sens déclaré était JUSTE
+        // et que le moteur de position, lui, acceptait 95,2 % des points.
+        // `s_km` est la coordonnée monotone du ruban : c'est déjà ce que
+        // `gpsPkEngine` utilise pour son propre contrôle de sens.
+        const sKmNow = (detail as any)?.s_km;
+        const useSkm = typeof sKmNow === "number" && Number.isFinite(sKmNow);
+        const currentDirCoord = useSkm ? sKmNow : pk;
         const prevPk = dirLastPkRef.current;
 
         if (typeof prevPk === "number" && Number.isFinite(prevPk)) {
-          const dPk = pk - prevPk;
+          const dPk = currentDirCoord - prevPk;
 
           // ignore micro-variations / immobilité
           if (Math.abs(dPk) >= DIR_MIN_DELTA_KM) {
@@ -4196,12 +4208,13 @@ const isRelock = acceptedMode === "relock";
               );
             }
 
-            // mise à jour du PK de référence direction
-            dirLastPkRef.current = pk;
+            // Référence de sens : on mémorise la MÊME coordonnée que celle
+            // comparée (s_km si disponible), sinon on mélangerait les unités.
+            dirLastPkRef.current = currentDirCoord;
           }
         } else {
           // première référence direction
-          dirLastPkRef.current = pk;
+          dirLastPkRef.current = currentDirCoord;
         }
       }
 

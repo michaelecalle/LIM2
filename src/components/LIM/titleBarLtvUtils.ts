@@ -359,24 +359,63 @@ export function loadPdfLtvRows(
 // Lit le dernier normalisé LTV connu (uploadé par l’app à chaque mission réelle)
 // depuis lim-logs (privé). Sert de SECOURS si le conducteur n’a pas son PDF LTV.
 // Retourne null si indisponible (pas de token, réseau, fichier absent…).
-export async function fetchStoredLtvNormalized(): Promise<NormalizedLtvFile | null> {
-  const token = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined
-  if (!token) return null
-  const owner = (import.meta.env.VITE_GITHUB_LOG_OWNER as string | undefined) ?? 'michaelecalle'
-  const repo = (import.meta.env.VITE_GITHUB_LOG_REPO as string | undefined) ?? 'lim-logs'
+/**
+ * Cache local du dernier normalisé LTV connu.
+ *
+ * ⚠️ AJOUTÉ le 14/08 — sans lui, « les dernières LTV connues » venaient
+ * UNIQUEMENT du réseau (`cache: 'no-store'`) : hors couverture, le repli
+ * renvoyait `null` et le conducteur démarrait SANS AUCUNE LTV. C'est
+ * précisément la situation où ce repli doit jouer.
+ */
+const LTV_CACHE_KEY = 'lim:ltv-normalized:last'
+
+function readCachedLtvNormalized(): NormalizedLtvFile | null {
   try {
-    const res = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/contents/ltv-normalized/current.json?t=${Date.now()}`,
-      {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.raw' },
-        cache: 'no-store',
-      }
-    )
-    if (!res.ok) return null
-    return (await res.json()) as NormalizedLtvFile
+    const raw = localStorage.getItem(LTV_CACHE_KEY)
+    if (!raw) return null
+    const data = JSON.parse(raw) as NormalizedLtvFile
+    return Array.isArray(data?.rows) ? data : null
   } catch {
     return null
   }
+}
+
+export function cacheLtvNormalized(data: NormalizedLtvFile | null): void {
+  try {
+    if (data && Array.isArray(data.rows)) {
+      localStorage.setItem(LTV_CACHE_KEY, JSON.stringify(data))
+    }
+  } catch {
+    // Quota dépassé / stockage indisponible : sans gravité, on garde le réseau.
+  }
+}
+
+export async function fetchStoredLtvNormalized(): Promise<NormalizedLtvFile | null> {
+  const token = import.meta.env.VITE_GITHUB_LOG_TOKEN as string | undefined
+  const owner = (import.meta.env.VITE_GITHUB_LOG_OWNER as string | undefined) ?? 'michaelecalle'
+  const repo = (import.meta.env.VITE_GITHUB_LOG_REPO as string | undefined) ?? 'lim-logs'
+
+  if (token) {
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/contents/ltv-normalized/current.json?t=${Date.now()}`,
+        {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.raw' },
+          cache: 'no-store',
+        }
+      )
+      if (res.ok) {
+        const data = (await res.json()) as NormalizedLtvFile
+        // Réseau OK → on rafraîchit le cache pour les démarrages hors couverture.
+        cacheLtvNormalized(data)
+        return data
+      }
+    } catch {
+      // réseau indisponible → on retombe sur le cache local ci-dessous
+    }
+  }
+
+  return readCachedLtvNormalized()
 }
 
 export function loadNormalizedLtvRows(

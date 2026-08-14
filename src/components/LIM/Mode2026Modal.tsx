@@ -208,8 +208,13 @@ export default function Mode2026Modal({
           )}
 
           {/* Resultat du parsing — 3 cas distingués */}
+          {/* ⚠️ 14/08 — alerte RENDUE VISIBLE. Un simple texte rouge de 11 px
+              passait inaperçu : l'échec d'extraction du 14/08 s'est présenté
+              comme un silence. Encadré + pictogramme, on ne peut plus le rater. */}
           {!parsing && parseError && (
-            <div className="mt-2 text-[11px] text-red-500">{parseError}</div>
+            <div className="mt-2 rounded-lg border border-red-400 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-[12px] text-red-700 dark:text-red-300 font-medium">
+              ⚠️ {parseError}
+            </div>
           )}
           {!parsing && !parseError && pdfFile === null && (
             <div className="mt-2 text-[11px] opacity-70 italic">

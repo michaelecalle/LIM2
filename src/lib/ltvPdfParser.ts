@@ -248,6 +248,14 @@ export async function parseLtvPdf2026(file: File): Promise<NormalizedLtvFile> {
   ])
   const numPages = doc.numPages
 
+  // ⚠️ AJOUTÉ le 14/08 — DISTINGUER « lecture impossible » de « aucune LTV ».
+  // Le 14/08, un import sous réseau faible a rendu 0 ligne SANS erreur : à
+  // l'écran, c'était indiscernable d'un PDF réellement vide. Or le moteur pdf.js
+  // n'était tout simplement pas chargé (worker absent du précache, corrigé
+  // depuis). Si le document ne livre AUCUN texte, ce n'est jamais un PDF LTV
+  // valide — le format est du texte natif : on le signale explicitement.
+  let totalTextItems = 0
+
   // Collecter toutes les lignes des sections cibles (050 + 066) en un passage
   const allTargetRows: Array<{ row: RawItem[]; linea: string }> = []
   let currentLinea: string | null = null
@@ -256,6 +264,7 @@ export async function parseLtvPdf2026(file: File): Promise<NormalizedLtvFile> {
   for (let p = 1; p <= numPages; p++) {
     const page = await doc.getPage(p)
     const content = await page.getTextContent()
+    totalTextItems += Array.isArray((content as any).items) ? (content as any).items.length : 0
 
     // Appliquer la rotation de page pour obtenir les coordonnees visuelles
     // (identiques a celles de pdfplumber). Sans cette transformation,
@@ -307,6 +316,17 @@ export async function parseLtvPdf2026(file: File): Promise<NormalizedLtvFile> {
   console.log(`[ltvPdf] extraction terminée : ${allRows.length} LTV (${counts})`)
 
   doc.destroy()
+
+  // Aucun texte lu sur AUCUNE page → la lecture a échoué, ce n'est pas un
+  // document sans LTV. On lève, pour que l'utilisateur voie un vrai message
+  // au lieu d'un silencieux « 0 LTV » (cf. commentaire plus haut).
+  if (totalTextItems === 0) {
+    throw new Error(
+      "Opération impossible : le document n'a pas pu être lu. " +
+        'Si vous êtes hors couverture réseau, réessayez une fois le réseau revenu. ' +
+        'Vous pouvez démarrer avec les dernières LTV connues.'
+    )
+  }
 
   const now = new Date().toISOString()
   // Formater la date PDF (dd/mm/yyyy hh:mm) en ISO si disponible
