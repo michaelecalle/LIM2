@@ -199,6 +199,12 @@ export default function ClassicInfoPanel({
   const fechaText = formatFechaLongFr(D.fecha)
   const fechaShouldBlink = Boolean(parseFechaWide(D.fecha)) && !isFechaToday(D.fecha)
 
+  // ⚠️ 14/08 — le jaune n'est plus un décor PERMANENT (vestige de l'ancien bloc
+  // haut) : il ne s'affiche QUE pendant une alerte, où il sert de support au
+  // clignotement `classic-blink-strong` (qui anime le FOND). Sans fond, l'alerte
+  // serait invisible — d'où le jaune conservé sur TREN (changement de numéro en
+  // attente) et FECHA (date différente du jour), et retiré de COMPOSICIÓN, qui
+  // n'a aucune alerte associée.
   const yellow = 'linear-gradient(180deg,#ffff00 0%,#fffda6 100%)'
 
   // Mesures pour TREN et TYPE (auto), appliquées via variables CSS
@@ -248,145 +254,30 @@ export default function ClassicInfoPanel({
     return () => obs.disconnect()
   }, [])
 
-  const trenLongPressTimerRef = React.useRef<number | null>(null)
-  const trenLongPressTriggeredRef = React.useRef(false)
-  const TREN_LONG_PRESS_DELAY_MS = 500
-
+  // ⚠️ 14/08 — APPUI LONG REMPLACÉ PAR UN APPUI SIMPLE (demande utilisateur).
+  // La temporisation de 500 ms protégeait des appuis accidentels ; à l'usage
+  // réel elle s'est révélée inutile ET source de confusion (on ne sait pas si
+  // l'appui a « pris »). Les quatre cases concernées — numéro de train,
+  // composition, moteurs isolés, matériel — réagissent désormais au premier
+  // contact. Aucun conflit sur TREN : `onTrenClick` n'est fourni QUE lorsqu'un
+  // changement de numéro est en attente, sinon il vaut `undefined` — les deux
+  // actions ne coexistent donc jamais.
   const handleTrenLongPress = onTrenLongPress ?? onTrenDoubleClick
 
-  const clearTrenLongPressTimer = React.useCallback(() => {
-    if (trenLongPressTimerRef.current != null) {
-      window.clearTimeout(trenLongPressTimerRef.current)
-      trenLongPressTimerRef.current = null
-    }
-  }, [])
-
-  React.useEffect(() => {
-    return () => {
-      clearTrenLongPressTimer()
-    }
-  }, [clearTrenLongPressTimer])
-
-  const startTrenLongPress = React.useCallback(() => {
-    if (!handleTrenLongPress) return
-
-    trenLongPressTriggeredRef.current = false
-    clearTrenLongPressTimer()
-
-    trenLongPressTimerRef.current = window.setTimeout(() => {
-      trenLongPressTimerRef.current = null
-      trenLongPressTriggeredRef.current = true
-      handleTrenLongPress()
-    }, TREN_LONG_PRESS_DELAY_MS)
-  }, [clearTrenLongPressTimer, handleTrenLongPress])
-
-  const cancelTrenLongPress = React.useCallback(() => {
-    clearTrenLongPressTimer()
-  }, [clearTrenLongPressTimer])
-
+  // Une seule action par case : valider le changement en attente s'il y en a
+  // un, sinon demander le basculement du numéro affiché.
   const handleTrenTileClick = React.useCallback(() => {
-    if (trenLongPressTriggeredRef.current) {
-      trenLongPressTriggeredRef.current = false
+    if (onTrenClick) {
+      onTrenClick()
       return
     }
+    handleTrenLongPress?.()
+  }, [onTrenClick, handleTrenLongPress])
 
-    onTrenClick?.()
-  }, [onTrenClick])
-  const compositionLongPressTimerRef = React.useRef<number | null>(null)
-
-  const clearCompositionLongPressTimer = React.useCallback(() => {
-    if (compositionLongPressTimerRef.current != null) {
-      window.clearTimeout(compositionLongPressTimerRef.current)
-      compositionLongPressTimerRef.current = null
-    }
-  }, [])
-
-  React.useEffect(() => {
-    return () => {
-      clearCompositionLongPressTimer()
-    }
-  }, [clearCompositionLongPressTimer])
-
-  const startCompositionLongPress = React.useCallback(() => {
-    if (!onCompositionLongPress) return
-
-    clearCompositionLongPressTimer()
-
-    compositionLongPressTimerRef.current = window.setTimeout(() => {
-      compositionLongPressTimerRef.current = null
-      onCompositionLongPress()
-    }, TREN_LONG_PRESS_DELAY_MS)
-  }, [clearCompositionLongPressTimer, onCompositionLongPress])
-
-  const cancelCompositionLongPress = React.useCallback(() => {
-    clearCompositionLongPressTimer()
-  }, [clearCompositionLongPressTimer])
-
-  // Appui long sur MATERIAL → matériel suivant du catalogue (même patron que la
-  // composition ci-dessus). Cycle inerte tant qu'il n'y a qu'un seul matériel.
-  const materialLongPressTimerRef = React.useRef<number | null>(null)
-
-  const clearMaterialLongPressTimer = React.useCallback(() => {
-    if (materialLongPressTimerRef.current != null) {
-      window.clearTimeout(materialLongPressTimerRef.current)
-      materialLongPressTimerRef.current = null
-    }
-  }, [])
-
-  React.useEffect(() => {
-    return () => {
-      clearMaterialLongPressTimer()
-    }
-  }, [clearMaterialLongPressTimer])
-
-  const startMaterialLongPress = React.useCallback(() => {
-    if (!onMaterialLongPress) return
-
-    clearMaterialLongPressTimer()
-
-    materialLongPressTimerRef.current = window.setTimeout(() => {
-      materialLongPressTimerRef.current = null
-      onMaterialLongPress()
-    }, TREN_LONG_PRESS_DELAY_MS)
-  }, [clearMaterialLongPressTimer, onMaterialLongPress])
-
-  const cancelMaterialLongPress = React.useCallback(() => {
-    clearMaterialLongPressTimer()
-  }, [clearMaterialLongPressTimer])
-
-  // Appui long sur MOTEURS ISOLÉS → valeur suivante du cycle (même patron).
-  const moteursIsolesLongPressTimerRef = React.useRef<number | null>(null)
-
-  const clearMoteursIsolesLongPressTimer = React.useCallback(() => {
-    if (moteursIsolesLongPressTimerRef.current != null) {
-      window.clearTimeout(moteursIsolesLongPressTimerRef.current)
-      moteursIsolesLongPressTimerRef.current = null
-    }
-  }, [])
-
-  React.useEffect(() => {
-    return () => {
-      clearMoteursIsolesLongPressTimer()
-    }
-  }, [clearMoteursIsolesLongPressTimer])
-
-  const startMoteursIsolesLongPress = React.useCallback(() => {
-    if (!onMoteursIsolesLongPress) return
-
-    clearMoteursIsolesLongPressTimer()
-
-    moteursIsolesLongPressTimerRef.current = window.setTimeout(() => {
-      moteursIsolesLongPressTimerRef.current = null
-      onMoteursIsolesLongPress()
-    }, TREN_LONG_PRESS_DELAY_MS)
-  }, [clearMoteursIsolesLongPressTimer, onMoteursIsolesLongPress])
-
-  const cancelMoteursIsolesLongPress = React.useCallback(() => {
-    clearMoteursIsolesLongPressTimer()
-  }, [clearMoteursIsolesLongPressTimer])
-
+  // Nombre de moteurs isolés : 0 → pictogramme et afficheur en gris « éteint ».
   const moteursIsoles = Number(D.moteursIsoles ?? 0)
   const moteursIsolesActifs = moteursIsoles > 0
+
   return (
     <div className="select-none">
       <style>{`
@@ -420,19 +311,15 @@ export default function ClassicInfoPanel({
       >
         <div className="flex items-stretch">
           <div
-            style={{ width: 'var(--w-tren)', background: yellow }}
-            className={`border-r-2 border-black px-2 py-1 grid place-items-center text-center tile-yellow ${trenShouldBlink ? 'classic-blink-strong' : ''} ${(onTrenClick || handleTrenLongPress) ? 'cursor-pointer' : ''}`}
-            onPointerDown={startTrenLongPress}
-            onPointerUp={cancelTrenLongPress}
-            onPointerLeave={cancelTrenLongPress}
-            onPointerCancel={cancelTrenLongPress}
+            style={{ width: 'var(--w-tren)', ...(trenShouldBlink ? { background: yellow } : null) }}
+            className={`border-r-2 border-black px-2 py-1 grid place-items-center text-center ${trenShouldBlink ? 'tile-yellow classic-blink-strong' : ''} ${(onTrenClick || handleTrenLongPress) ? 'cursor-pointer' : ''}`}
             onContextMenu={(e) => e.preventDefault()}
             onClick={handleTrenTileClick}
             title={
-              handleTrenLongPress
-                ? 'Appui long : demander le changement de numéro affiché'
-                : onTrenClick
-                  ? 'Valider le changement de numéro affiché'
+              onTrenClick
+                ? 'Valider le changement de numéro affiché'
+                : handleTrenLongPress
+                  ? 'Changer le numéro affiché'
                   : undefined
             }
           >
@@ -466,8 +353,11 @@ export default function ClassicInfoPanel({
 
           <div
             ref={fechaTileRef}
-            style={wLastCol ? { width: wLastCol, minWidth: 0, background: yellow } : { flex: 1, minWidth: 0, background: yellow }}
-            className={`tile-yellow px-2 py-1 grid place-items-center text-center ${fechaShouldBlink ? 'classic-blink-strong' : ''}`}
+            style={{
+              ...(wLastCol ? { width: wLastCol, minWidth: 0 } : { flex: 1, minWidth: 0 }),
+              ...(fechaShouldBlink ? { background: yellow } : null),
+            }}
+            className={`px-2 py-1 grid place-items-center text-center ${fechaShouldBlink ? 'tile-yellow classic-blink-strong' : ''}`}
           >
             <div className={`text-[18px] font-extrabold leading-6 truncate max-w-full ${fechaShouldBlink ? 'classic-blink-text' : ''}`}>{fechaText}</div>
           </div>
@@ -487,14 +377,11 @@ export default function ClassicInfoPanel({
           </div>
 
           <div
-            className={`border-r-2 border-black px-2 py-1 grid place-items-center text-center tile-yellow ${onCompositionLongPress ? 'cursor-pointer' : ''}`}
-            style={{ background: yellow, flex: '0 0 auto' }}
-            onPointerDown={startCompositionLongPress}
-            onPointerUp={cancelCompositionLongPress}
-            onPointerLeave={cancelCompositionLongPress}
-            onPointerCancel={cancelCompositionLongPress}
+            className={`border-r-2 border-black px-2 py-1 grid place-items-center text-center ${onCompositionLongPress ? 'cursor-pointer' : ''}`}
+            style={{ flex: '0 0 auto' }}
+            onClick={onCompositionLongPress}
             onContextMenu={(e) => e.preventDefault()}
-            title={onCompositionLongPress ? 'Appui long : basculer la composition UM / US' : undefined}
+            title={onCompositionLongPress ? 'Basculer la composition UM / US' : undefined}
           >
             <div className="text-[18px] font-extrabold tracking-tight">{(D.composicion || '').toUpperCase()}</div>
           </div>
@@ -506,12 +393,9 @@ export default function ClassicInfoPanel({
           <div
             className={`border-r-2 border-black px-2 py-1 grid place-items-center text-center ${onMoteursIsolesLongPress ? 'cursor-pointer' : ''}`}
             style={{ flex: '0 0 auto' }}
-            onPointerDown={startMoteursIsolesLongPress}
-            onPointerUp={cancelMoteursIsolesLongPress}
-            onPointerLeave={cancelMoteursIsolesLongPress}
-            onPointerCancel={cancelMoteursIsolesLongPress}
+            onClick={onMoteursIsolesLongPress}
             onContextMenu={(e) => e.preventDefault()}
-            title={onMoteursIsolesLongPress ? 'Appui long : nombre de moteurs isolés' : undefined}
+            title={onMoteursIsolesLongPress ? 'Nombre de moteurs isolés' : undefined}
           >
             <div className="flex items-center justify-center gap-1.5">
               <MoteurIsoleIcon active={moteursIsolesActifs} />
@@ -522,12 +406,9 @@ export default function ClassicInfoPanel({
           <div
             style={{ flex: 1, minWidth: 0 }}
             className={`border-r-2 border-black px-2 py-1 grid place-items-center text-center ${onMaterialLongPress ? 'cursor-pointer' : ''}`}
-            onPointerDown={startMaterialLongPress}
-            onPointerUp={cancelMaterialLongPress}
-            onPointerLeave={cancelMaterialLongPress}
-            onPointerCancel={cancelMaterialLongPress}
+            onClick={onMaterialLongPress}
             onContextMenu={(e) => e.preventDefault()}
-            title={onMaterialLongPress ? 'Appui long : matériel suivant' : undefined}
+            title={onMaterialLongPress ? 'Matériel suivant' : undefined}
           >
             {/* MATERIAL seul : la ligne « LINEA » n'est plus affichée (décision 07/08,
                 ligne supprimée du normalisé et de l'affichage du bloc info). */}

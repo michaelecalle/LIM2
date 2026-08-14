@@ -20,6 +20,10 @@ const V_MAX_AXIS    = 300;
 const CHART_H       = 230;
 const MARGIN        = { top: 16, right: 28, bottom: 88, left: 44 };
 const PIN_X_FRACTION = 0.15;
+// Réserve à droite pour la moitié du plus long libellé de gare, qui déborde de
+// son point (libellés centrés). « BARCELONA SANTS » en 11 px gras ≈ 110 px de
+// large, soit ~55 px de débord ; on prend 70 px pour la marge de confort.
+const LABEL_SAFE_RIGHT_PX = 70;
 const DOT_R         = 5;
 const SCROLL_EASE   = 0.12;   // lissage rAF (même valeur que FT_SCROLL_EASE)
 const RUBBER_BAND_MS = 5000;  // délai avant ressort (ms)
@@ -246,18 +250,95 @@ export default function FTHorizontal() {
   // ── Mesure de la boîte ───────────────────────────────────────────────────
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+
+  // ⚠️ 14/08 — l'observateur est attaché PAR LA RÉFÉRENCE, pas dans un effet.
+  // Le composant fait un retour anticipé tant qu'aucun train n'est chargé : au
+  // premier montage la racine n'existe donc pas, et un effet aurait observé
+  // `null` sans jamais réessayer. Une référence de rappel se déclenche à
+  // l'instant précis où le nœud apparaît — ou disparaît.
+  const measureRef = useRef<() => void>(() => {})
+  // Mesure du conteneur : lit la taille RÉELLE du parent, jamais celle de la
+  // fenêtre. Ignore toute mesure nulle (vue masquée par `display:none`).
+  measureRef.current = () => {
+    const parent = rootRef.current?.parentElement
+    if (!parent) return
+    const r = parent.getBoundingClientRect()
+    if (r.width < 50 || r.height < 50) return
+    const w = Math.max(0, Math.round(r.width) - 6)
+    const h = Math.max(0, Math.round(r.height) - 6)
+    setBox(prev => (prev && prev.w === w && prev.h === h ? prev : { w, h }))
+  }
+  const observerRef = useRef<ResizeObserver | null>(null)
+  const observedRef = useRef<HTMLElement | null>(null)
+
+  const attachObserver = React.useCallback(() => {
+    const parent = rootRef.current?.parentElement ?? null
+    if (parent === observedRef.current) return
+    observerRef.current?.disconnect()
+    observerRef.current = null
+    observedRef.current = parent
+    if (parent && typeof ResizeObserver !== "undefined") {
+      const obs = new ResizeObserver(() => measureRef.current())
+      obs.observe(parent)
+      observerRef.current = obs
+      measureRef.current()
+    }
+  }, [])
+
+  const setRootNode = React.useCallback((el: HTMLDivElement | null) => {
+    rootRef.current = el
+    attachObserver()
+  }, [attachObserver])
+
+  useEffect(() => () => { observerRef.current?.disconnect() }, [])
+
+  // ⚠️ 14/08 — filet de sécurité : mesurer À CHAQUE RENDU, avant peinture.
+  // L'observateur ci-dessus couvre les changements de taille « spontanés »
+  // (rotation, pli du LTV), mais la bascule vertical→horizontal passe par un
+  // `display` piloté depuis App : le composant se re-rend alors, et c'est ce
+  // rendu-là qu'on veut saisir. `useLayoutEffect` s'exécute après le commit DOM
+  // et avant la peinture, donc `getBoundingClientRect` renvoie déjà la taille
+  // visible. Sans lui, l'échelle restait figée à sa valeur par défaut jusqu'à un
+  // redimensionnement de fenêtre (constaté le 14/08 sur 39819).
+  React.useLayoutEffect(() => { measureRef.current() })
+
   useEffect(() => {
+    // ⚠️ CORRIGÉ le 14/08 — on mesure le CONTENEUR PARENT, plus la fenêtre.
+    // L'ancien calcul (`window.innerWidth - left`) supposait que la vue allait
+    // jusqu'au bord de l'écran : il annonçait ~1817 px là où le conteneur réel
+    // en fait 1280, soit 40 % de trop. L'échelle « fit-to-width » en héritait et
+    // le parcours débordait. Même défaut de principe que l'auto-mesure de
+    // FTScrolling corrigée le matin même : une taille DÉDUITE de la fenêtre au
+    // lieu d'être LUE sur l'élément qui la porte réellement.
     const measure = () => {
       const el = rootRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      setBox({ w: Math.max(0, window.innerWidth - r.left - 6), h: Math.max(0, window.innerHeight - r.top - 6) });
+      const parent = el?.parentElement;
+      if (!el || !parent) return;
+      const r = parent.getBoundingClientRect();
+      // ⚠️ Ne JAMAIS enregistrer une mesure nulle : la vue horizontale est
+      // masquée par `display:none` tant qu'on est en vertical, et un élément
+      // masqué mesure 0. Enregistrer ce 0 figeait l'échelle sur sa valeur par
+      // défaut, et il fallait un redimensionnement de fenêtre pour s'en sortir.
+      if (r.width < 50 || r.height < 50) return;
+      setBox({
+        w: Math.max(0, Math.round(r.width) - 6),
+        h: Math.max(0, Math.round(r.height) - 6),
+      });
     };
     const remeasure = () => { requestAnimationFrame(() => { measure(); window.setTimeout(measure, 120); }); };
     remeasure();
     window.addEventListener("resize", measure);
     window.addEventListener("lim:ft-scroll-mode",        remeasure as EventListener);
     window.addEventListener("lim:infos-ltv-fold-change", remeasure as EventListener);
+
+    // ⚠️ 14/08 — observation CONTINUE du conteneur, en complément des événements
+    // ci-dessus. Ceux-ci arrivent parfois AVANT que la bascule vertical→horizontal
+    // n'ait pris effet : on mesurait alors un élément encore masqué (0 px) et
+    // l'échelle restait bloquée. L'observateur, lui, se déclenche exactement
+    // quand la taille change réellement — et couvre aussi le pli/dépli du LTV
+    // et la rotation de l'iPad sans dépendre d'un événement particulier.
+    attachObserver();
+
     return () => {
       window.removeEventListener("resize", measure);
       window.removeEventListener("lim:ft-scroll-mode",        remeasure as EventListener);
@@ -285,7 +366,21 @@ export default function FTHorizontal() {
   const routeLenKm = points.length ? points[points.length - 1].dist : 0;
   const effPxPerKm = useMemo(() => {
     if (!box || routeLenKm <= 0) return pxPerKm;
-    const usable = box.w - MARGIN.left - MARGIN.right;
+
+    // ⚠️ CORRIGÉ le 14/08 — la largeur utile part de la BARRE DE POSITION, pas
+    // de la marge gauche : quand la fiche est au début, le premier point est
+    // sous la barre (à PIN_X_FRACTION de la largeur), et le parcours se déploie
+    // à sa DROITE. L'ancien calcul (`box.w - MARGIN.left - MARGIN.right`)
+    // surestimait donc l'espace d'environ 46 % sur un iPad : l'échelle sortait
+    // trop grande et un parcours court débordait à droite au lieu de tenir.
+    // Constaté sur 38510 et 39819 (5,1 km), capture du 14/08.
+    const pinX = Math.max(MARGIN.left + 8, box.w * PIN_X_FRACTION);
+
+    // Marge de sécurité à droite : les libellés sont centrés sur leur point
+    // (`text-anchor: middle`), donc la MOITIÉ du nom de la gare terminus dépasse
+    // à droite de son tick. Sans cette réserve, « BARCELONA SANTS » serait
+    // tronqué au bord de l'écran.
+    const usable = box.w - pinX - MARGIN.right - LABEL_SAFE_RIGHT_PX;
     if (usable <= 0) return pxPerKm;
     return Math.max(pxPerKm, usable / routeLenKm);
   }, [pxPerKm, box, routeLenKm]);
@@ -706,7 +801,7 @@ export default function FTHorizontal() {
 
   return (
     <div
-      ref={rootRef}
+      ref={setRootNode}
       className="ft-h-wrap"
       style={{
         position: "relative",
@@ -972,9 +1067,22 @@ export default function FTHorizontal() {
       {box && (() => {
         const barTop = MARGIN.top;
         const barBot = MARGIN.top + chartH;
-        const iconX  = MARGIN.left;
-        const iconW  = Math.max(0, pinXPx - MARGIN.left - 10);
+        // ⚠️ CORRIGÉ le 14/08 — la silhouette a une TAILLE FIXE et se place
+        // DERRIÈRE la barre de position.
+        //
+        // Avant, sa largeur valait `pinXPx - MARGIN.left - 10` : elle s'étirait
+        // pour remplir l'espace disponible derrière le train. Au départ, la
+        // barre est presque collée à la marge gauche, donc cet espace est quasi
+        // nul → silhouette écrasée puis tronquée (constaté sur 38510 et 39819,
+        // capture du 14/08). Un train a une longueur constante : son dessin
+        // aussi. Ratio natif de l'image : 1526×152, soit ~10:1.
         const iconH  = 26;
+        const iconW  = Math.round(iconH * 10.04)   // ratio natif, pas de déformation
+        // Le nez du train colle à la barre ; la queue s'étend en arrière. Si le
+        // train n'a pas encore « toute la place » derrière lui (début de
+        // parcours), on le décale vers l'avant pour qu'il reste ENTIÈREMENT
+        // visible, plutôt que de le rogner.
+        const iconX  = Math.max(MARGIN.left, pinXPx - iconW - 6);
         const iconY  = barBot - iconH + 4;
         return (
           <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>

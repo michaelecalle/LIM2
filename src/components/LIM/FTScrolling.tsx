@@ -127,6 +127,13 @@ const FTScrolling: React.FC<FTScrollingProps> = ({
         overflowY: "auto",
         position: "relative", // ✅ nécessaire pour l’overlay
       }}
+      // ⚠️ 14/08 — BORDURE-TÉMOIN (idée de l'utilisateur), stylée dans FT.tsx
+      // (`.ft-scroll-frame`) pour suivre le thème jour/nuit. Elle borne le CADRE
+      // défilant, pas le tableau : elle reste donc toujours en bas de la zone
+      // visible. D'où sa vertu de contrôle immédiat — bordure visible = la fiche
+      // tient dans l'écran ; bordure absente = elle déborde. Posée sur le
+      // tableau, elle défilerait avec le contenu et ne prouverait rien.
+      className="ft-scroll-frame"
       onScroll={onScroll} // c’est CE conteneur qui scroll
     >
       {/* ✅ Couche overlay "collée au viewport" du conteneur scrollable */}

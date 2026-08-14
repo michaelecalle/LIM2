@@ -7966,6 +7966,16 @@ const vmaxClassForLtv =
 
         }
 
+        /* Bordure-témoin du cadre défilant de la fiche (cf. FTScrolling) :
+           visible = la fiche tient dans l'écran ; absente = elle déborde. */
+        .ft-scroll-frame {
+          border-bottom: 2px solid #000;
+          box-sizing: border-box;
+        }
+        .dark .ft-scroll-frame {
+          border-bottom-color: #fff;
+        }
+
         .ft-scroll-x {
           width: 100%;
           height: 100%;
