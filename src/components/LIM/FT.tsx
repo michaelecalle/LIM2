@@ -8637,16 +8637,25 @@ const vmaxClassForLtv =
       </div>
 
       {/* FT ES (moteur existant, inchangé) */}
+      {/* ⚠️ 14/08 — colonne flex pleine hauteur : l'en-tête fixe garde sa
+          hauteur naturelle et FTScrolling prend LE RESTE (flex 1). Nécessaire
+          depuis que l'application est plafonnée à l'écran (App `h-[100dvh]`) :
+          c'est ce qui borne réellement le corps scrollable de la fiche. */}
       <div
-        style={{ display: effectiveFtView === "ES" ? "block" : "none" }}
+        style={{
+          display: effectiveFtView === "ES" ? "flex" : "none",
+          flexDirection: "column",
+          minHeight: 0,
+          height: "100%",
+        }}
         className={
           "ft-scroll-x " +
           (variant === "modern" ? "ft-modern-wrap" : "ft-classic-wrap")
         }
       >
 
-        {/* En-tête fixe */}
-        <table className="ft-table">
+        {/* En-tête fixe — hauteur naturelle, jamais compressé par le flex */}
+        <table className="ft-table" style={{ flexShrink: 0 }}>
           <thead>
             <tr className="whitespace-nowrap">
               {/* En-têtes format 2026 (calqués sur l'export PDF de l'éditeur,

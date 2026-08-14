@@ -701,7 +701,17 @@ export default function App() {
   }, [])
 
   return (
-    <main className="p-2 sm:p-4 min-h-[100dvh] flex flex-col">
+    // ⚠️ CORRIGÉ le 14/08 — hauteur PLAFONNÉE à l'écran (`h-[100dvh]` +
+    // `overflow-hidden`), plus un simple plancher (`min-h`). Sans plafond, dès
+    // que le contenu dépassait l'écran c'était la PAGE ENTIÈRE qui défilait :
+    // un scroll manuel dans la fiche train emportait toute l'application, la
+    // TitleBar disparaissait et, sur iPad, impossible de la faire revenir —
+    // donc plus de bouton STOP, donc pas d'export des journaux (vécu en ligne
+    // le 14/08 ; récupéré de justesse en réduisant/rouvrant l'app). Toute la
+    // chaîne interne était déjà écrite pour un parent borné (`flex-1 min-h-0`
+    // + `overflow-auto` à chaque étage) : chaque panneau défile désormais en
+    // interne et la TitleBar reste toujours visible.
+    <main className="p-2 sm:p-4 h-[100dvh] overflow-hidden flex flex-col">
       {/* conteneur principal */}
       <div className="flex-1 min-h-0 flex flex-col">
         {/* Bandeau titre */}

@@ -112,7 +112,18 @@ const FTScrolling: React.FC<FTScrollingProps> = ({
         }
       }}
       style={{
-        maxHeight: maxHeight,
+        // ⚠️ 14/08 — dimensionnement par FLEX, plus par auto-mesure.
+        // L'ancien `maxHeight: innerHeight − top` était la béquille compensant
+        // la page sans plafond : mesuré trop tôt il valait parfois 0 (fiche
+        // invisible), et il était recalé à coups de setTimeout sur chaque
+        // pli/dépli (fragile iPad). Depuis que l'app est plafonnée à l'écran
+        // (App `h-[100dvh]`) et que le wrapper de la fiche est une colonne
+        // flex, `flex: 1` donne exactement la hauteur restante — en continu,
+        // sans mesure. `maxHeight` est conservé en garde-fou UNIQUEMENT s'il
+        // est plausible (> 100 px), le temps de valider sur iPad.
+        flex: "1 1 0%",
+        minHeight: 0,
+        maxHeight: maxHeight > 100 ? maxHeight : undefined,
         overflowY: "auto",
         position: "relative", // ✅ nécessaire pour l’overlay
       }}
