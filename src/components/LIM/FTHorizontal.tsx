@@ -1067,22 +1067,9 @@ export default function FTHorizontal() {
       {box && (() => {
         const barTop = MARGIN.top;
         const barBot = MARGIN.top + chartH;
-        // ⚠️ CORRIGÉ le 14/08 — la silhouette a une TAILLE FIXE et se place
-        // DERRIÈRE la barre de position.
-        //
-        // Avant, sa largeur valait `pinXPx - MARGIN.left - 10` : elle s'étirait
-        // pour remplir l'espace disponible derrière le train. Au départ, la
-        // barre est presque collée à la marge gauche, donc cet espace est quasi
-        // nul → silhouette écrasée puis tronquée (constaté sur 38510 et 39819,
-        // capture du 14/08). Un train a une longueur constante : son dessin
-        // aussi. Ratio natif de l'image : 1526×152, soit ~10:1.
+        const iconX  = MARGIN.left;
+        const iconW  = Math.max(0, pinXPx - MARGIN.left - 10);
         const iconH  = 26;
-        const iconW  = Math.round(iconH * 10.04)   // ratio natif, pas de déformation
-        // Le nez du train colle à la barre ; la queue s'étend en arrière. Si le
-        // train n'a pas encore « toute la place » derrière lui (début de
-        // parcours), on le décale vers l'avant pour qu'il reste ENTIÈREMENT
-        // visible, plutôt que de le rogner.
-        const iconX  = Math.max(MARGIN.left, pinXPx - iconW - 6);
         const iconY  = barBot - iconH + 4;
         return (
           <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
