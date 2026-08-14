@@ -603,15 +603,20 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   // ===== Mise à l'échelle de la fiche train (#25) — option + multiplicateur. =====
   // La BASE (densité px/km) est calculée automatiquement par FT (segment le plus
   // contraint) ; ici on ne règle qu'un MULTIPLICATEUR (1× = compact proportionnel).
-  const [ftScaleEnabled, setFtScaleEnabled] = useState(() => {
-    try { return localStorage.getItem('lim:ft-scale') === '1' } catch { return false }
-  })
+  // ⚠️ 14/08 — VOLONTAIREMENT NON RESTAURÉ au démarrage (demande utilisateur).
+  // L'état était relu depuis localStorage : la case revenait donc cochée alors
+  // que la mise à l'échelle, elle, est suspendue tant que INFOS/LTV sont
+  // dépliés. La case affichait le MÉMORISÉ, l'écran montrait l'ACTIF — d'où la
+  // manœuvre absurde « décocher puis recocher » pour l'activer réellement.
+  // L'application ouvre maintenant toujours désactivée, case décochée : les deux
+  // concordent. Seul le multiplicateur reste mémorisé (c'est une préférence).
+  const [ftScaleEnabled, setFtScaleEnabled] = useState(false)
   const [ftScaleMult, setFtScaleMult] = useState(() => {
     try { const v = parseFloat(localStorage.getItem('lim:ft-scale-mult') ?? '0.2'); return Number.isFinite(v) && v > 0 ? v : 0.2 } catch { return 0.2 }
   })
   useEffect(() => {
     try {
-      localStorage.setItem('lim:ft-scale', ftScaleEnabled ? '1' : '0')
+      // `lim:ft-scale` n'est plus écrit : plus personne ne le relit (cf. ci-dessus).
       localStorage.setItem('lim:ft-scale-mult', String(ftScaleMult))
     } catch {}
     // FT écoute cet événement et se re-rend en direct.

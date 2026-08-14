@@ -122,9 +122,12 @@ export default function FT({ variant = "classic" }: FTProps) {
   // `multiplier` = facteur appliqué à la BASE auto-calculée (densité du segment
   // le plus contraint). 1× = le plus compact en restant proportionnel.
   const [ftScale, setFtScale] = useState<{ enabled: boolean; multiplier: number }>(() => {
+    // ⚠️ 14/08 — `enabled` démarre TOUJOURS à false, jamais relu de localStorage
+    // (cf. le commentaire jumeau dans TitleBar) : la case et l'état réel doivent
+    // concorder au chargement. Le multiplicateur, lui, reste une préférence.
     try {
       return {
-        enabled: localStorage.getItem("lim:ft-scale") === "1",
+        enabled: false,
         multiplier: parseFloat(localStorage.getItem("lim:ft-scale-mult") ?? "0.2") || 0.2,
       };
     } catch {
@@ -814,6 +817,14 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
    * peinture → teinte uniforme (décision 12/08).
    */
   const [ltvBands, setLtvBands] = useState<NoteBand[]>([]);
+
+  /**
+   * Graduations kilométriques de la colonne KM (mode mise à l'échelle seulement).
+   * Positionnées sur `pk_internal`, PK CONTINU sur toute la ligne : les PK
+   * affichés, eux, changent de repère selon le réseau (RFN, LFP, ADIF) et
+   * repartent à zéro, ce qui rendrait la graduation incohérente aux transitions.
+   */
+  const [kmTicks, setKmTicks] = useState<Array<{ top: number; left: number; width: number }>>([]);
 
 
 
@@ -3135,6 +3146,7 @@ useEffect(() => {
 
       const bands: NoteBand[] = [];
       const overlays: NoteOverlay[] = [];
+      const ticks: Array<{ top: number; left: number; width: number }> = [];
       if (post.length >= 2) {
         const firstMain = table.querySelector<HTMLTableRowElement>("tr.ft-row-main");
         const cells = firstMain?.querySelectorAll<HTMLTableCellElement>("td");
@@ -3146,6 +3158,26 @@ useEffect(() => {
           const left = kmCell.offsetLeft;
           const width =
             etabCell.offsetLeft + etabCell.offsetWidth - kmCell.offsetLeft;
+
+          // Graduations kilométriques : UNIQUEMENT quand la mise à l'échelle est
+          // réellement active. Hors échelle, l'espacement des lignes ne traduit
+          // aucune distance — des traits « au kilomètre » y seraient un mensonge.
+          if (ftScale.enabled && infosLtvFolded) {
+            const pks = post
+              .map((p) => p.pk)
+              .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+            if (pks.length >= 2) {
+              const tickLeft = kmCell.offsetLeft + 2;
+              const tickWidth = Math.max(6, Math.round(kmCell.offsetWidth * 0.4));
+              const premier = Math.ceil(Math.min(...pks));
+              const dernier = Math.floor(Math.max(...pks));
+              for (let km = premier; km <= dernier; km++) {
+                const y = yAt(km);
+                if (y === null) continue;
+                ticks.push({ top: Math.round(y), left: tickLeft, width: tickWidth });
+              }
+            }
+          }
 
           // Emprise du TEXTE : Établissements SEULEMENT. Le déborder sur la
           // colonne KM le ferait chevaucher les valeurs de PK, qui restent
@@ -3257,6 +3289,9 @@ useEffect(() => {
       );
       setNoteOverlays((prev) =>
         JSON.stringify(prev) === JSON.stringify(overlays) ? prev : overlays
+      );
+      setKmTicks((prev) =>
+        JSON.stringify(prev) === JSON.stringify(ticks) ? prev : ticks
       );
     };
 
@@ -8280,6 +8315,22 @@ const vmaxClassForLtv =
           mix-blend-mode: normal;
         }
 
+        /* Graduations kilométriques (mode mise à l'échelle uniquement) — 14/08.
+           TÉMOIN DE VIE avant tout : le 13/08 la fiche est restée figée sans que
+           ce soit visible, faute de pouvoir distinguer « bloquée » de « zone
+           sans inscription ». Ces traits bougent au défilement même là où il n'y
+           a rien d'écrit.
+           Cantonnées à la colonne KM et volontairement COURTES (40 % de sa
+           largeur) : une séparation de ligne traverse toute la cellule, une
+           graduation non — aucune confusion possible. */
+        .ft-km-tick {
+          position: absolute;
+          height: 1px;
+          background-color: rgba(0, 0, 0, 0.28);
+          pointer-events: none;
+        }
+        .dark .ft-km-tick { background-color: rgba(255, 255, 255, 0.34); }
+
         /* Texte d'une note a zone : pose en haut de sa zone, au-dessus de la
            bande. Volontairement SANS hauteur ni overflow : le texte deborde
            vers le bas quand sa zone est trop courte pour le contenir.
@@ -8825,6 +8876,16 @@ const vmaxClassForLtv =
                   left: b.left,
                   width: b.width,
                 }}
+              />
+            ))}
+
+            {/* Graduations kilométriques — sous les bandes de notes, dans la
+                seule colonne KM (cf. `.ft-km-tick`). */}
+            {kmTicks.map((t, k) => (
+              <div
+                key={`km-tick-${k}`}
+                className="ft-km-tick"
+                style={{ top: t.top, left: t.left, width: t.width }}
               />
             ))}
 
