@@ -115,6 +115,13 @@ export default function FT({ variant = "classic" }: FTProps) {
   // Réf DOM de la flèche : en scroll épinglé, on pilote son `top` à 60 fps pour
   // qu'elle reste figée à 1/3 (et descende proprement en début/fin de parcours).
   const pinnedArrowRef = React.useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Encart de diagnostic du scroll intelligent (mode test uniquement, 14/08).
+   * Rempli en DOM direct depuis la boucle d'épinglage — jamais via un état React,
+   * pour ne pas provoquer de re-rendu à chaque image.
+   */
+  const ftDiagRef = React.useRef<HTMLDivElement | null>(null);
   // ligne "active" quand on est en mode horaire (play)
   const [activeRowIndex, setActiveRowIndex] = useState<number>(0);
 
@@ -1389,6 +1396,9 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
     // (= displayY − scrollTop), et le contenu glisse en douceur car displayY
     // glisse en douceur. En début/fin (scroll borné), la flèche descend/remonte.
     let displayY: number | null = null;
+    // Journalisation du diagnostic : 1 ligne/seconde, pour retrouver l'épisode
+    // dans les logs de session sans les noyer (la boucle tourne à 60 Hz).
+    let dernierJournal = 0;
 
     const loop = () => {
       if (!running) return;
@@ -1425,6 +1435,56 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
           arrowEl.style.top = `${Math.round(displayY - c.scrollTop)}px`;
         }
       }
+
+      // ── DIAGNOSTIC scroll intelligent (14/08) ────────────────────────────
+      // Volontairement HORS du bloc conditionnel ci-dessus : quand le scroll ne
+      // s'exécute pas, ce qui compte est justement de savoir LAQUELLE des
+      // conditions l'a bloqué. Placé à l'intérieur, l'affichage se figerait en
+      // même temps que le scroll et ne dirait rien.
+      // Écriture en DOM direct, comme la flèche : aucun re-rendu à 60 fps.
+      const diag = ftDiagRef.current;
+      if (diag && c) {
+        const H = c.clientHeight;
+        const rect = c.getBoundingClientRect();
+        // LE point à surveiller : le cadre déborde-t-il sous l'écran ? Si oui,
+        // `clientHeight` annonce une zone plus grande que celle réellement vue,
+        // et la ligne active est épinglée au tiers d'une zone dont le bas est
+        // invisible — hypothèse n°1 de l'utilisateur.
+        const debord = Math.round(rect.bottom - window.innerHeight);
+        const gaps = c.querySelectorAll<HTMLElement>("tr.ft-scale-gap td");
+        let sommeGaps = 0;
+        for (const td of Array.from(gaps)) sommeGaps += td.offsetHeight;
+        const blocage = !autoScrollEnabledRef.current
+          ? "AUTO-SCROLL OFF"
+          : isManualScrollRef.current
+          ? "SCROLL MANUEL"
+          : trueY == null
+          ? "POSITION INCONNUE"
+          : "actif";
+        diag.textContent =
+          `zone visible ${H}  ·  débord sous écran ${debord > 0 ? "+" + debord : debord}\n` +
+          `contenu ${Math.round(c.scrollHeight)}  ·  scroll ${Math.round(c.scrollTop)} / ${Math.round(Math.max(0, c.scrollHeight - H))}\n` +
+          `train ${trueY == null ? "—" : Math.round(trueY)}  ·  lissé ${displayY == null ? "—" : Math.round(displayY)}  ·  visé ${Math.round(Math.max(0, Math.min((displayY ?? 0) - H * FT_PIN_FRACTION, Math.max(0, c.scrollHeight - H))))}\n` +
+          `espacements ${gaps.length} lignes / ${Math.round(sommeGaps)} px  ·  ${blocage}`;
+        diag.style.color = debord > 2 ? "#fca5a5" : "#a7f3d0";
+
+        const now = Date.now();
+        if (now - dernierJournal > 1000) {
+          dernierJournal = now;
+          console.log("[FT][SCROLL-DIAG]", {
+            zoneVisible: H,
+            debordSousEcran: debord,
+            hauteurContenu: Math.round(c.scrollHeight),
+            scrollCourant: Math.round(c.scrollTop),
+            scrollMax: Math.round(Math.max(0, c.scrollHeight - H)),
+            positionTrain: trueY == null ? null : Math.round(trueY),
+            lignesEspacement: gaps.length,
+            pxEspacement: Math.round(sommeGaps),
+            etat: blocage,
+          });
+        }
+      }
+
       raf = requestAnimationFrame(loop);
     };
 
@@ -3168,7 +3228,10 @@ useEffect(() => {
               .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
             if (pks.length >= 2) {
               const tickLeft = kmCell.offsetLeft + 2;
-              const tickWidth = Math.max(6, Math.round(kmCell.offsetWidth * 0.4));
+              // 20 % de la colonne : moitié de la longueur d'origine (choix de
+              // l'utilisateur après essai à l'écran, 14/08). Assez court pour
+              // qu'aucune confusion avec une séparation de ligne ne soit possible.
+              const tickWidth = Math.max(4, Math.round(kmCell.offsetWidth * 0.2));
               const premier = Math.ceil(Math.min(...pks));
               const dernier = Math.floor(Math.max(...pks));
               for (let km = premier; km <= dernier; km++) {
@@ -8878,6 +8941,29 @@ const vmaxClassForLtv =
                 }}
               />
             ))}
+
+            {/* Encart de diagnostic du scroll intelligent (mode test). Posé en
+                `fixed` : il doit rester lisible même si le cadre défilant
+                déborde sous l'écran — c'est précisément ce qu'il sert à
+                détecter. Vert = le cadre tient dans l'écran, rouge = il déborde. */}
+            {testModeEnabled && (
+              <div
+                ref={ftDiagRef}
+                style={{
+                  position: "fixed",
+                  right: 6,
+                  bottom: 6,
+                  zIndex: 9999,
+                  background: "rgba(0,0,0,0.82)",
+                  color: "#a7f3d0",
+                  font: "600 11px/1.35 ui-monospace, monospace",
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  whiteSpace: "pre",
+                  pointerEvents: "none",
+                }}
+              />
+            )}
 
             {/* Graduations kilométriques — sous les bandes de notes, dans la
                 seule colonne KM (cf. `.ft-km-tick`). */}
