@@ -2137,17 +2137,24 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
       );
 
       const parseMinutesFromRow = (tr: HTMLTableRowElement): number | null => {
-        const dep = tr.querySelector<HTMLSpanElement>(
-          "td:nth-child(6) .ft-hora-depart"
-        );
-        const theo = tr.querySelector<HTMLSpanElement>(
-          "td:nth-child(6) .ft-hora-theo"
-        );
+        // ⚠️ CORRIGÉ le 13/08 — on lit la DONNÉE, plus le DOM.
+        //
+        // Même défaut que dans `captureBaseFromRowIndex` : cette fonction
+        // interrogeait `td:nth-child(6) .ft-hora-depart` / `.ft-hora-theo`, or
+        // la 6e colonne est devenue « Pass » et `.ft-hora-theo` n'existe plus.
+        // C'est la base capturée dans le cas COURANT — quand aucune ligne de
+        // standby n'a été choisie — donc son échec fige la progression en marche
+        // normale, pas seulement en sortie de standby.
+        //
+        // 🪤 Reconnaissance NON ancrée : l'origine affiche « 13:06+ ».
+        const rowAttr = tr.getAttribute("data-ft-row");
+        const rowIdx = rowAttr ? parseInt(rowAttr, 10) : NaN;
+        const txt = Number.isFinite(rowIdx)
+          ? resolveHoraForRowIndex(rowIdx).trim()
+          : "";
 
-        const txt = ((dep?.textContent ?? theo?.textContent) ?? "").trim();
-
-        // Accepte HH:MM et HH:MM:SS
-        const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(txt);
+        // Accepte HH:MM et HH:MM:SS, avec ou sans suffixe.
+        const m = /(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(txt);
         if (!m) return null;
 
         const hh = Number(m[1]);
@@ -5987,7 +5994,13 @@ if (hasFranceFtLocal) {
 
   function parseHoraToMinutes(h?: string | null): number | null {
     if (!h) return null;
-    const m = /^(\d{1,2}):(\d{2})$/.exec(h.trim());
+    // ⚠️ CORRIGÉ le 13/08 — reconnaissance NON ancrée. Les heures du normalisé
+    // peuvent porter un suffixe (l'origine affiche « 13:06+ ») : l'ancienne
+    // regex `^HH:MM$` rejetait ces valeurs. Conséquence mesurée : Perpignan
+    // n'avait pas d'heure théorique, donc PAS de point d'interpolation, et la
+    // position horaire restait clouée jusqu'à la première ligne suivante datée
+    // (13:12) — soit 6 minutes d'immobilité au départ. 4e occurrence du piège.
+    const m = /(\d{1,2}):(\d{2})/.exec(h.trim());
     if (!m) return null;
     const hh = Number(m[1]);
     const mm = Number(m[2]);
