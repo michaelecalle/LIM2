@@ -74,6 +74,8 @@ import {
   setSdmSessionTrain,
 } from '../../data/ligneFT.normalized.adapter'
 import { useLigneFt2026TrainOptions } from '../../data/ligneFT2026.adapter'
+// Sens de circulation DÉCLARÉ (jamais déduit de la parité du numéro).
+import { getTrainDirection } from '../../data/ligneFT2026.ft.adapter'
 
 // ⚠️ FT France = fonctionnalité ABANDONNÉE (on a fusionné FR+ES). Neutralisée le 2026-06-08 :
 // l'auto-switch "zone Figueres" réveillait l'overlay FT France quand le train restait vert/stable
@@ -2382,7 +2384,11 @@ ${coords}
   const [expectedDir, setExpectedDir] = useState<ExpectedDir | null>(null)
   const expectedDirRef = useRef<ExpectedDir | null>(null)
   const expectedDirLockedRef = useRef(false)
-  const expectedDirSourceRef = useRef<'train_number' | 'manual' | null>(null)
+  // `normalized_direction` = sens DÉCLARÉ dans le normalisé (source de référence
+  // depuis le 13/08) ; `train_number` = ancien repli par parité du numéro.
+  const expectedDirSourceRef = useRef<
+    'normalized_direction' | 'train_number' | 'manual' | null
+  >(null)
   const expectedDirTrainRef = useRef<string | null>(null)
 
   const emitExpectedDir = (dir: ExpectedDir, meta: { source: string }) => {
@@ -2412,22 +2418,51 @@ ${coords}
     const trainChanged = expectedDirTrainRef.current !== trainDisplay
     if (!trainChanged && expectedDirLockedRef.current) return
 
-    const dir: ExpectedDir = n % 2 === 0 ? 'DOWN' : 'UP'
+    // ⚠️ CORRIGÉ le 13/08 — le sens attendu vient du SENS DÉCLARÉ, plus de la parité.
+    //
+    // Ce sens pilote le moteur de position : il sert à écarter les relevés dont
+    // le déplacement contredit la marche (`rejected_direction`), et il arme un
+    // cliquet qui interdit tout retour vers un référentiel « plus au sud »
+    // (`applyDirectionalPkRefFloor`, actif uniquement en sens UP).
+    //
+    // Ça marchait tant que le numéro AFFICHÉ était le français : 9712 pair →
+    // DOWN, ce qui est juste pour un train descendant. La migration 2026 affiche
+    // désormais l'espagnol seul (`initial_rule_es_only`) : 9713 est IMPAIR, donc
+    // la parité renvoie UP pour un train qui descend. Tout s'inverse.
+    // Mesuré sur les journaux : le 9712 du 24/06 acceptait 97,4 % des positions
+    // et n'a JAMAIS rejeté pour cause de sens ; le 9713 du 13/08 tombe à 85,6 %,
+    // avec 28 rejets de sens qui en entraînent 278 pour saut, par verrouillage.
+    //
+    // ⚠️ Le sens est exprimé sur la coordonnée MONOTONE `s_km`, pas sur le PK
+    // réseau : celui-ci croît sur RFN et LFP puis décroît sur ADIF pour un même
+    // train, il ne peut donc pas servir de référence de sens.
+    //   sudNord (Can Tunis → Perpignan, s_km croissant)  = UP
+    //   nordSud (Perpignan → Can Tunis, s_km décroissant) = DOWN
+    // Repli sur la parité si le train n'est pas déclaré (ancien comportement).
+    const declaredDirection = getTrainDirection(trainDisplay)
+    const dir: ExpectedDir = declaredDirection
+      ? (declaredDirection === 'sudNord' ? 'UP' : 'DOWN')
+      : (n % 2 === 0 ? 'DOWN' : 'UP')
 
     expectedDirLockedRef.current = true
     expectedDirTrainRef.current = trainDisplay
-    expectedDirSourceRef.current = 'train_number'
+    expectedDirSourceRef.current = declaredDirection
+      ? 'normalized_direction'
+      : 'train_number'
     setExpectedDir(dir)
 
     logTestEvent('direction:lock', {
-      source: 'train_number',
+      // Étiquette FIDÈLE à la source réellement retenue : indispensable pour
+      // diagnostiquer un journal (c'est elle qui a révélé le défaut du 13/08).
+      source: expectedDirSourceRef.current ?? 'train_number',
+      declaredDirection: declaredDirection ?? null,
       train: trainDisplay,
       expectedDir: dir,
       pkTrend: dir === 'UP' ? 'increasing' : 'decreasing',
       trainChanged,
     })
 
-    emitExpectedDir(dir, { source: 'train_number' })
+    emitExpectedDir(dir, { source: expectedDirSourceRef.current ?? 'train_number' })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trainDisplay])
 
