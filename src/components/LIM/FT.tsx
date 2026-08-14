@@ -3376,6 +3376,94 @@ useEffect(() => {
     };
   }, [ftScale, rawEntries, infosLtvFolded, ftLtvRows]);
 
+  /**
+   * Journal du SCROLL INTELLIGENT — 14/08, pour les logs de session.
+   *
+   * ⚠️ Pourquoi `logTestEvent` et pas `console.log` : RIEN n'intercepte la
+   * console dans l'application. Une trace console reste sur l'appareil et
+   * n'arrive jamais dans le ZIP envoyé au STOP — donc inutilisable pour les
+   * essais sur iPad, où se font tous les tests réels.
+   *
+   * On journalise le CONSTAT (ce qui est réellement affiché dans le DOM), pas
+   * l'intention du code : c'est le seul moyen de trancher un symptôme
+   * intermittent. Les colonnes sont retrouvées par leur INTITULÉ lu dans
+   * l'en-tête, jamais par un indice en dur — c'est cette famille d'erreur qui
+   * a produit quatre bugs distincts cette semaine.
+   *
+   * Une entrée UNIQUEMENT quand la situation change, sinon le journal serait
+   * noyé et inexploitable.
+   */
+  const dernierResumeScrollRef = React.useRef<string>("");
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const emettre = () => {
+      const entetes = Array.from(
+        document.querySelectorAll<HTMLElement>("table.ft-table thead th.ft-th")
+      ).map((th) =>
+        (th.getAttribute("aria-label") || th.textContent || "").trim()
+      );
+      // Colonnes que le scroll intelligent doit maintenir visibles.
+      const suivies = ["Bloc", "Vmax", "Rampe", "Radio"];
+
+      const rows = Array.from(
+        el.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main")
+      );
+      const haut = el.scrollTop;
+      const bas = haut + el.clientHeight;
+      const visibles = rows.filter(
+        (r) => r.offsetTop + r.offsetHeight >= haut && r.offsetTop <= bas
+      );
+
+      const colonnes: Record<
+        string,
+        { affiche: string | null; ligne: number | null }
+      > = {};
+      for (const nom of suivies) {
+        const idx = entetes.indexOf(nom);
+        if (idx < 0) continue;
+        let trouve: { affiche: string; ligne: number } | null = null;
+        for (const r of visibles) {
+          const txt =
+            r.querySelectorAll("td")[idx]?.textContent?.trim() ?? "";
+          if (txt) {
+            trouve = {
+              affiche: txt,
+              ligne: Number(r.getAttribute("data-ft-row")),
+            };
+            break;
+          }
+        }
+        colonnes[nom] = trouve ?? { affiche: null, ligne: null };
+      }
+
+      const gaps = el.querySelectorAll<HTMLElement>("tr.ft-scale-gap td");
+      let pxGap = 0;
+      for (const td of Array.from(gaps)) pxGap += td.offsetHeight;
+
+      const payload = {
+        plage: [visibleRows.first, visibleRows.last],
+        lignesPrincipalesVisibles: visibles.length,
+        hauteurVisible: el.clientHeight,
+        echelle: {
+          active: ftScale.enabled && infosLtvFolded,
+          multiplicateur: ftScale.multiplier,
+          lignesGap: gaps.length,
+          pxGap: Math.round(pxGap),
+        },
+        colonnes,
+      };
+
+      const resume = JSON.stringify(payload);
+      if (resume === dernierResumeScrollRef.current) return;
+      dernierResumeScrollRef.current = resume;
+      logTestEvent("ft:scroll-intelligent", payload);
+    };
+    // Après le rendu, sinon on lit le DOM d'avant.
+    const raf = requestAnimationFrame(emettre);
+    return () => cancelAnimationFrame(raf);
+  }, [visibleRows, ftScale, infosLtvFolded]);
+
   const ltvNotesByRowIndex = useMemo(() => {
     const result = new Map<number, Array<{ text: string; pkA: number; pkB: number }>>();
 
