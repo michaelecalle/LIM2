@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 // Données de ligne + métadonnées train : normalisé 2026 publié (fichier embarqué).
-import { getFtLignePair, getFtLigneImpair, getTrainOrigine, getTrainDestination } from "../../data/ligneFT2026.ft.adapter";
+import { getFtEntriesOriented, getTrainOrigine, getTrainDestination } from "../../data/ligneFT2026.ft.adapter";
 import type { FTEntry } from "../../data/ligneFT";
 
 // ============================================================================
@@ -106,8 +106,10 @@ export default function FTHorizontalSchedule() {
   // ── Calcul des points horaires ─────────────────────────────────────────────
   const { stops, distEnd } = useMemo(() => {
     if (trainNumber === null) return { stops: [] as Stop[], distEnd: 0 };
-    const isOdd = trainNumber % 2 !== 0;
-    const oriented: FTEntry[] = isOdd ? getFtLignePair(trainNumber) : [...getFtLigneImpair(trainNumber)].reverse();
+    // ⚠️ 13/08 : sens issu du normalisé (plus de parité), PLUS d'inversion —
+    // même orientation que FTHorizontal, sinon la barre horaire et le graphe
+    // ne parleraient plus du même parcours.
+    const oriented: FTEntry[] = getFtEntriesOriented(trainNumber);
 
     // Troncature au parcours (identique à FTHorizontal / FT.tsx)
     let first = 0, last = oriented.length - 1;

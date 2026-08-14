@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { getStationsInTravelOrder } from '../../data/ligneFT.normalized.adapter'
+import { isTrainSudNord } from '../../data/ligneFT2026.ft.adapter'
 
 export type SdmDraftStation = { name: string; pk: string; arr: string; dep: string }
 export type SdmDraft = {
@@ -62,7 +63,10 @@ export default function SdmModal({ dark, onClose, onConfirm }: Props) {
 
   const numValid = /^\d+$/.test(trainNumber.trim())
   const num = numValid ? parseInt(trainNumber.trim(), 10) : null
-  const isPair = num != null && num % 2 === 0
+  // ⚠️ 13/08 : sens issu du normalisé quand le train y est déclaré (la parité
+  // est fausse pour 9711/9713/9715) ; parité en repli pour un numéro inconnu
+  // (cas fréquent ici : la SDM peut viser un train hors normalisé).
+  const isPair = num != null && isTrainSudNord(num) === false
 
   // Etablissements dans l'ordre du sens de circulation (depend de la parite).
   const stations = useMemo(

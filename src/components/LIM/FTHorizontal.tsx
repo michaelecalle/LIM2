@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import tgv2n2Url from "../../assets/tgv2n2-profile.png";
 // Données de ligne + métadonnées train : normalisé 2026 publié (fichier embarqué).
-import { getFtLignePair, getFtLigneImpair, getTrainOrigine, getTrainDestination } from "../../data/ligneFT2026.ft.adapter";
+import { getFtEntriesOriented, isTrainSudNord, getTrainOrigine, getTrainDestination } from "../../data/ligneFT2026.ft.adapter";
 import type { FTEntry } from "../../data/ligneFT";
 import { useTrainDist } from "../../hooks/useTrainDist";
 import type { TDPoint } from "../../hooks/useTrainDist";
@@ -116,12 +116,13 @@ export default function FTHorizontal() {
   const active = ftScrollMode === "horizontal";
 
   // ── Points de la ligne (ordre de parcours) ────────────────────────────────
-  const isOdd = trainNumber === null ? null : trainNumber % 2 !== 0;
+  // ⚠️ 13/08 : sens issu du normalisé (plus de parité) et PLUS d'inversion —
+  // les deux tables sont stockées dans l'ordre de parcours. L'ancienne parité
+  // affichait 9711/9713/9715 (impairs mais nordSud) à contre-sens en horizontal.
+  const isOdd = trainNumber === null ? null : isTrainSudNord(trainNumber);
   const points: Pt[] = useMemo(() => {
     if (isOdd === null) return [];
-    const oriented: FTEntry[] = isOdd
-      ? getFtLignePair(trainNumber!)
-      : [...getFtLigneImpair(trainNumber!)].reverse();
+    const oriented: FTEntry[] = getFtEntriesOriented(trainNumber!);
 
     let first = 0, last = oriented.length - 1;
     if (routeStart && routeEnd) {
@@ -164,15 +165,12 @@ export default function FTHorizontal() {
         if (e.note)                 rowNotes.push(e.note);
         if (Array.isArray(e.notes)) rowNotes.push(...e.notes);
         if (rowNotes.length > 0) {
-          if (!isOdd && out.length > 0) {
-            // nordSud renversé (trains pairs) : la note suit sa gare dans l'array → on l'attache
-            // à la gare qui vient d'être ajoutée (out[last]), pas à la suivante.
-            out[out.length - 1].notes.push(...rowNotes);
-          } else {
-            // sudNord direct (trains impairs) ou note avant la première gare : la note
-            // précède sa gare dans l'array → on accumule pour la prochaine gare.
-            pendingNotes.push(...rowNotes);
-          }
+          // ⚠️ 13/08 : le tableau n'est PLUS JAMAIS renversé (ordre de parcours
+          // dans les deux sens). L'ancien cas spécial `!isOdd` compensait le
+          // `.reverse()` des trains pairs — il attacherait aujourd'hui la note à
+          // la MAUVAISE gare. La note précède désormais toujours sa gare dans
+          // l'array → on accumule pour la prochaine gare, dans les deux sens.
+          pendingNotes.push(...rowNotes);
         }
         continue;
       }

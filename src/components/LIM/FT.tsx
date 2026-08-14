@@ -6,7 +6,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   getFtLignePair,
   getFtLigneImpair,
-  getTrainDirection,
+  isTrainSudNord,
 } from "../../data/ligneFT2026.ft.adapter";
 // CSV_ZONES reste pour l'instant issu de l'ancien module (donnée de ligne, pas
 // de train) — à réévaluer, le 2026 portant déjà un booléen `csv` par ligne.
@@ -2146,7 +2146,8 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
         // standby n'a été choisie — donc son échec fige la progression en marche
         // normale, pas seulement en sortie de standby.
         //
-        // 🪤 Reconnaissance NON ancrée : l'origine affiche « 13:06+ ».
+        // 🪤 Reconnaissance NON ancrée : l'origine affiche « 13:06+ »
+        // (= 13:06:30, cf. parseHoraToMinutes — sémantique 2026 du « + »).
         const rowAttr = tr.getAttribute("data-ft-row");
         const rowIdx = rowAttr ? parseInt(rowAttr, 10) : NaN;
         const txt = Number.isFinite(rowIdx)
@@ -2163,7 +2164,8 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
 
         if (!Number.isFinite(hh) || !Number.isFinite(mm) || !Number.isFinite(ss)) return null;
 
-        return hh * 60 + mm + ss / 60;
+        // « + » après l'heure = +30 s (format 2026).
+        return hh * 60 + mm + ss / 60 + (/\+/.test(txt) ? 0.5 : 0);
       };
 
       let firstHoraMin: number | null = null;
@@ -2228,7 +2230,9 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
       const ss = m[3] != null ? Number(m[3]) : 0;
 
       if (Number.isFinite(hh) && Number.isFinite(mm) && Number.isFinite(ss)) {
-        rowMin = hh * 60 + mm + ss / 60;
+        // « + » après l'heure = +30 s (format 2026, cf. parseHoraToMinutes).
+        const demi = /\+/.test(txtLigne) ? 0.5 : 0;
+        rowMin = hh * 60 + mm + ss / 60 + demi;
         rowHoraText = txtLigne;
         rowHoraSource = "DONNEE";
       }
@@ -2769,12 +2773,10 @@ useEffect(() => {
    * Repli sur la parité si le sens n'est pas déclaré (train inconnu du
    * normalisé) : l'ancien comportement, plutôt que rien.
    */
-  const isOdd = useMemo(() => {
-    if (trainNumber === null) return null;
-    const declared = getTrainDirection(trainNumber);
-    if (declared) return declared === "sudNord";
-    return trainNumber % 2 !== 0;
-  }, [trainNumber]);
+  const isOdd = useMemo(
+    () => (trainNumber === null ? null : isTrainSudNord(trainNumber)),
+    [trainNumber]
+  );
   const currentCsvSens: CsvSens | null = useMemo(() => {
     if (isOdd === null) return null;
     return isOdd ? "IMPAIR" : "PAIR";
@@ -5451,12 +5453,12 @@ const isRelock = acceptedMode === "relock";
     // IMPORTANT :
     // on reprend exactement la même orientation que rawEntries
     // pour éviter un seed calculé dans le mauvais sens.
-    let baseOriented: FTEntry[];
-    if (isOddFlag) {
-      baseOriented = getFtLignePair(trainNumber);
-    } else {
-      baseOriented = [...getFtLigneImpair(trainNumber)].reverse();
-    }
+    // ⚠️ 13/08 : PLUS d'inversion — rawEntries n'inverse plus (les deux tables
+    // sont stockées dans l'ordre de parcours). L'ancien `.reverse()` ici cassait
+    // précisément l'invariant que ce commentaire promet.
+    const baseOriented: FTEntry[] = isOddFlag
+      ? getFtLignePair(trainNumber)
+      : getFtLigneImpair(trainNumber);
 
     const idxStart = baseOriented.findIndex(
       (e) => !e.isNoteOnly && e.pk === pkStart
@@ -5995,17 +5997,22 @@ if (hasFranceFtLocal) {
   function parseHoraToMinutes(h?: string | null): number | null {
     if (!h) return null;
     // ⚠️ CORRIGÉ le 13/08 — reconnaissance NON ancrée. Les heures du normalisé
-    // peuvent porter un suffixe (l'origine affiche « 13:06+ ») : l'ancienne
-    // regex `^HH:MM$` rejetait ces valeurs. Conséquence mesurée : Perpignan
-    // n'avait pas d'heure théorique, donc PAS de point d'interpolation, et la
-    // position horaire restait clouée jusqu'à la première ligne suivante datée
-    // (13:12) — soit 6 minutes d'immobilité au départ. 4e occurrence du piège.
-    const m = /(\d{1,2}):(\d{2})/.exec(h.trim());
+    // peuvent porter un suffixe : l'ancienne regex `^HH:MM$` rejetait ces
+    // valeurs. Conséquence mesurée : Perpignan (« 13:06+ ») n'avait pas d'heure
+    // théorique, donc PAS de point d'interpolation, et la position horaire
+    // restait clouée jusqu'à la première ligne suivante datée (13:12).
+    //
+    // ⚠️ SÉMANTIQUE DU « + » (précisée par l'utilisateur le 14/08, nouveauté du
+    // format 2026) : un « + » après l'heure = +30 SECONDES. « 13:06+ » = 13:06:30.
+    // D'où le retour en minutes FLOTTANTES (+0.5) — ne pas arrondir ici.
+    const txt = h.trim();
+    const m = /(\d{1,2}):(\d{2})/.exec(txt);
     if (!m) return null;
     const hh = Number(m[1]);
     const mm = Number(m[2]);
     if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-    return hh * 60 + mm;
+    const demi = /\+/.test(txt) ? 0.5 : 0;
+    return hh * 60 + mm + demi;
   }
 
   function formatMinutesToHora(totalMinutes: number): string {

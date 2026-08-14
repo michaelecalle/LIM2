@@ -75,7 +75,7 @@ import {
 } from '../../data/ligneFT.normalized.adapter'
 import { useLigneFt2026TrainOptions } from '../../data/ligneFT2026.adapter'
 // Sens de circulation DÉCLARÉ (jamais déduit de la parité du numéro).
-import { getTrainDirection } from '../../data/ligneFT2026.ft.adapter'
+import { getTrainDirection, isTrainSudNord } from '../../data/ligneFT2026.ft.adapter'
 
 // ⚠️ FT France = fonctionnalité ABANDONNÉE (on a fusionné FR+ES). Neutralisée le 2026-06-08 :
 // l'auto-switch "zone Figueres" réveillait l'overlay FT France quand le train restait vert/stable
@@ -2294,10 +2294,12 @@ ${coords}
         : NaN
 
     const hasNumeroFrance = typeof numeroFr === 'string' && numeroFr.trim() !== ''
+    // ⚠️ 13/08 : « démarre en France » = train nordSud (part de Perpignan), lu
+    // dans le normalisé — la parité (ancien critère) est fausse pour 9713 & co.
     const shouldStartInFrance =
       hasNumeroFrance &&
       Number.isFinite(numeroEsAsNumber) &&
-      numeroEsAsNumber % 2 === 0
+      isTrainSudNord(numeroEsAsNumber) === false
 
     const displayedSide: NumberingSide = shouldStartInFrance ? 'FR' : 'ES'
 

@@ -26,6 +26,27 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     index_ruban: 5353,
     label: 'FIGUERES-VILAFANT',
   },
+  // ── Ancres PCA (14/08) — PK OFFICIELS lus dans « L50 FGV - BSN.pdf »
+  // (valeur du POSTE, pas de la caseta ; le normalisé arrondit aux 100 m).
+  // Positions dérivées de l'interpolation existante puis calées au point de
+  // ruban le plus proche (écart ≤ 5 m) : NEUTRES tant que non contrôlées sur
+  // le terrain — à vérifier en roulant, puis affiner si besoin.
+  {
+    pk: 738.165,
+    s_km: 122.359062,
+    lat: 42.1691567,
+    lon: 2.9132258,
+    index_ruban: 4897,
+    label: 'PCA PONTOS',
+  },
+  {
+    pk: 726.157,
+    s_km: 110.406857,
+    lat: 42.0737160,
+    lon: 2.8493313,
+    index_ruban: 4419,
+    label: 'PCA VILADEMULS',
+  },
   {
     pk: 714.748,
     s_km: 99.051602,
@@ -51,6 +72,14 @@ export const ANCRES_PK_S: AnchorPkS[] = [
     label: "VILOBI D'ONYAR",
   },
   {
+    pk: 691.880,
+    s_km: 75.968596,
+    lat: 41.7940621,
+    lon: 2.6999768,
+    index_ruban: 3042,
+    label: 'PCA RIUDARENES',
+  },
+  {
     pk: 682.015,
     s_km: 66.072167,
     lat: 41.7402867,
@@ -67,12 +96,28 @@ export const ANCRES_PK_S: AnchorPkS[] = [
   label: 'RIELLS-A. V.',
 },
   {
+    pk: 670.544,
+    s_km: 54.643267,
+    lat: 41.6957312,
+    lon: 2.4883191,
+    index_ruban: 2187,
+    label: 'PCA SANT CELONI',
+  },
+  {
     pk: 662.641,
     s_km: 46.749753,
     lat: 41.6494339,
     lon: 2.4219488,
     index_ruban: 1871,
     label: 'LLINARS-A. V.',
+  },
+  {
+    pk: 654.100,
+    s_km: 38.210214,
+    lat: 41.6037968,
+    lon: 2.3411087,
+    index_ruban: 1529,
+    label: 'PCA LA ROCA',
   },
 {
   pk: 640.547,
@@ -81,7 +126,7 @@ export const ANCRES_PK_S: AnchorPkS[] = [
   lon: 2.2194426,
   index_ruban: 986,
   label: 'BIF. MOLLET',
-},,
+},
   {
     pk: 627.739,
     s_km: 11.918290,

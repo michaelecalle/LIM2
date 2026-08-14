@@ -374,3 +374,40 @@ export function getTrainDirection(
   const d = str(trainMeta(trainNumber)?.direction);
   return d === "sudNord" || d === "nordSud" ? d : null;
 }
+
+/**
+ * SOURCE UNIQUE DE VÉRITÉ pour le sens d'un train (13/08).
+ *
+ * `true` = sudNord (Can Tunis → Perpignan, s_km croissant),
+ * `false` = nordSud, `null` = numéro inexploitable.
+ *
+ * Priorité au sens DÉCLARÉ du normalisé ; repli sur la parité du numéro pour un
+ * train inconnu (ancien comportement). ⚠️ La parité seule est FAUSSE pour
+ * 9711/9713/9715 (impairs mais nordSud) — cause des bugs du 13/08. Tout code qui
+ * refait `n % 2` de son côté est un bug en sursis : passer par ici.
+ */
+export function isTrainSudNord(
+  trainNumber: number | string | null | undefined
+): boolean | null {
+  const declared = getTrainDirection(trainNumber);
+  if (declared) return declared === "sudNord";
+  const n =
+    typeof trainNumber === "number"
+      ? trainNumber
+      : parseInt(String(trainNumber ?? "").trim(), 10);
+  if (!Number.isFinite(n)) return null;
+  return n % 2 !== 0;
+}
+
+/**
+ * Entrées FT dans l'ORDRE DE PARCOURS du train — les deux tables du normalisé
+ * étant déjà stockées dans l'ordre de parcours, il n'y a JAMAIS d'inversion à
+ * faire (le `.reverse()` historique remettait la fiche à contre-sens).
+ */
+export function getFtEntriesOriented(
+  trainNumber: number | string | null | undefined
+): FTEntry[] {
+  const sudNord = isTrainSudNord(trainNumber);
+  if (sudNord == null) return [];
+  return sudNord ? getFtLignePair(trainNumber) : getFtLigneImpair(trainNumber);
+}

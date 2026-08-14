@@ -1,5 +1,6 @@
 import React from "react"
 import { getFtFranceHhmm } from "../../data/ftFranceTimes"
+import { isTrainSudNord } from "../../data/ligneFT2026.ft.adapter"
 
 type Row = {
   sig?: string
@@ -200,7 +201,11 @@ function detectNightFromDom(): boolean {
 
 function getDirectionFromTrainNumber(trainNumber?: number | null) {
   if (trainNumber == null) return null
-  return trainNumber % 2 === 0 ? "FR_TO_ES" : "ES_TO_FR"
+  // ⚠️ 13/08 : sens issu du normalisé (la parité est FAUSSE pour 9711/9713/9715,
+  // impairs mais nordSud). nordSud = Perpignan → Barcelone = FR_TO_ES.
+  const sudNord = isTrainSudNord(trainNumber)
+  if (sudNord == null) return null
+  return sudNord ? "ES_TO_FR" : "FR_TO_ES"
 }
 
 function isFigueresPk(pk?: string) {
