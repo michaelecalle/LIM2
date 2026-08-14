@@ -115,13 +115,6 @@ export default function FT({ variant = "classic" }: FTProps) {
   // Réf DOM de la flèche : en scroll épinglé, on pilote son `top` à 60 fps pour
   // qu'elle reste figée à 1/3 (et descende proprement en début/fin de parcours).
   const pinnedArrowRef = React.useRef<HTMLDivElement | null>(null);
-
-  /**
-   * Encart de diagnostic du scroll intelligent (mode test uniquement, 14/08).
-   * Rempli en DOM direct depuis la boucle d'épinglage — jamais via un état React,
-   * pour ne pas provoquer de re-rendu à chaque image.
-   */
-  const ftDiagRef = React.useRef<HTMLDivElement | null>(null);
   // ligne "active" quand on est en mode horaire (play)
   const [activeRowIndex, setActiveRowIndex] = useState<number>(0);
 
@@ -211,13 +204,110 @@ export default function FT({ variant = "classic" }: FTProps) {
 
 
 
+  /**
+   * Recalcule la plage de lignes principales réellement à l'écran.
+   *
+   * ⚠️ 14/08 — EXTRAIT de `handleScroll`, où il était enfermé. Le « scroll
+   * intelligent » (réaffichage d'une valeur dont la ligne-label est sortie de
+   * l'écran) s'appuie entièrement sur cette plage. Or activer la mise à
+   * l'échelle, bouger le curseur d'espacement ou replier le bloc info
+   * déplacent massivement les lignes SANS produire le moindre évènement de
+   * défilement : la plage restait celle d'avant, et les valeurs étaient
+   * réaffichées sur des lignes devenues hors écran. D'où des colonnes Bloc,
+   * Vmax et rampe vides — constaté par l'utilisateur le 14/08, et cohérent
+   * avec le fait que tout fonctionne tant que la mise à l'échelle est coupée.
+   * Appelée désormais au défilement ET à chaque changement de mise en page
+   * (cf. l'observateur de redimensionnement plus bas).
+   */
+  const recalculerPlageVisible = React.useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const scrollTop = el.scrollTop;
+    const clientHeight = el.clientHeight;
+
+    // 1) on récupère les lignes principales
+    const rowEls = el.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main");
+    if (!rowEls.length) return;
+
+    // 2) première ligne dont le bas est sous le haut du viewport
+    let firstVisible = 0;
+    for (let i = 0; i < rowEls.length; i++) {
+      const r = rowEls[i];
+      if (r.offsetTop + r.offsetHeight >= scrollTop) {
+        firstVisible = i;
+        break;
+      }
+    }
+
+    // 3) dernière ligne dont le haut est encore dans le viewport
+    const viewportBottom = scrollTop + clientHeight;
+    let lastVisible = firstVisible;
+    for (let i = firstVisible; i < rowEls.length; i++) {
+      if (rowEls[i].offsetTop <= viewportBottom) lastVisible = i;
+      else break;
+    }
+
+    // Indices « réels » (data-ft-row) si disponibles.
+    const firstDataAttr = rowEls[firstVisible]?.getAttribute("data-ft-row") ?? "";
+    const lastDataAttr = rowEls[lastVisible]?.getAttribute("data-ft-row") ?? "";
+    const firstDataRow = firstDataAttr ? parseInt(firstDataAttr, 10) : null;
+    const lastDataRow = lastDataAttr ? parseInt(lastDataAttr, 10) : null;
+
+    const nextFirst =
+      typeof firstDataRow === "number" && Number.isFinite(firstDataRow)
+        ? firstDataRow
+        : firstVisible;
+    const nextLast =
+      typeof lastDataRow === "number" && Number.isFinite(lastDataRow)
+        ? lastDataRow
+        : lastVisible;
+
+    // #26 : ne re-rendre la FT que si la plage a réellement changé — le scroll
+    // épinglé déclenche un évènement scroll ~60 fps.
+    if (
+      nextFirst !== visibleRowsRef.current.first ||
+      nextLast !== visibleRowsRef.current.last
+    ) {
+      visibleRowsRef.current = { first: nextFirst, last: nextLast };
+      setVisibleRows({ first: nextFirst, last: nextLast });
+    }
+  }, []);
+
+  /**
+   * ⚠️ 14/08 — Recalcul de la plage visible SANS évènement de défilement.
+   *
+   * Un observateur de redimensionnement plutôt qu'une liste d'évènements : la
+   * mise à l'échelle, le curseur d'espacement, le pli/dépli du bloc info, la
+   * rotation de l'iPad et le chargement d'un train changent tous la géométrie
+   * du tableau, mais aucun n'émet de `scroll`. Les énumérer un par un revenait
+   * à en oublier un au prochain ajout ; observer la taille les couvre tous, y
+   * compris ceux qui n'existent pas encore.
+   */
+  const plageObserverRef = React.useRef<ResizeObserver | null>(null);
+  const observerLaPlageVisible = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      plageObserverRef.current?.disconnect();
+      plageObserverRef.current = null;
+      if (!el || typeof ResizeObserver === "undefined") return;
+      const ro = new ResizeObserver(() => {
+        // Après le reflow, sinon on mesure la géométrie d'avant.
+        requestAnimationFrame(() =>
+          recalculerPlageVisible(scrollContainerRef.current)
+        );
+      });
+      ro.observe(el); // hauteur visible : pli/dépli, rotation
+      const table = el.querySelector("table.ft-table");
+      if (table) ro.observe(table); // hauteur du contenu : mise à l'échelle
+      plageObserverRef.current = ro;
+    },
+    [recalculerPlageVisible]
+  );
+  React.useEffect(() => () => plageObserverRef.current?.disconnect(), []);
+
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     scrollContainerRef.current = el;
 
     const scrollTop = el.scrollTop;
-
-    const clientHeight = el.clientHeight;
 
     // --- Gestion scroll manuel vs scroll automatique ---
     if (autoScrollEnabled) {
@@ -266,61 +356,10 @@ export default function FT({ variant = "classic" }: FTProps) {
       }
     }
 
-    // 1) on récupère les lignes principales
-    const rowEls = el.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main");
-    if (!rowEls.length) return;
-
-    // 2) première ligne dont le bas est sous le haut du viewport
-    let firstVisible = 0;
-    for (let i = 0; i < rowEls.length; i++) {
-      const r = rowEls[i];
-      const top = r.offsetTop;
-      const bottom = top + r.offsetHeight;
-      if (bottom >= scrollTop) {
-        firstVisible = i;
-        break;
-      }
-    }
-
-    // 3) dernière ligne dont le haut est encore dans le viewport
-    const viewportBottom = scrollTop + clientHeight;
-    let lastVisible = firstVisible;
-    for (let i = firstVisible; i < rowEls.length; i++) {
-      const r = rowEls[i];
-      const top = r.offsetTop;
-      if (top <= viewportBottom) {
-        lastVisible = i;
-      } else {
-        break;
-      }
-    }
-
-    // 🔎 Debug : mapping "index dans rowEls" -> "data-ft-row"
-    const firstDataAttr = rowEls[firstVisible]?.getAttribute("data-ft-row") ?? "";
-    const lastDataAttr = rowEls[lastVisible]?.getAttribute("data-ft-row") ?? "";
-    const firstDataRow = firstDataAttr ? parseInt(firstDataAttr, 10) : null;
-    const lastDataRow = lastDataAttr ? parseInt(lastDataAttr, 10) : null;
-
-    // on met à jour le state : ✅ indices "réels" (data-ft-row) si disponibles
-    const nextFirst =
-      typeof firstDataRow === "number" && Number.isFinite(firstDataRow)
-        ? firstDataRow
-        : firstVisible;
-
-    const nextLast =
-      typeof lastDataRow === "number" && Number.isFinite(lastDataRow)
-        ? lastDataRow
-        : lastVisible;
-
-    // #26 : ne re-rendre la FT (et ne logguer) que si la plage visible a
-    // réellement changé — le scroll épinglé déclenche un event scroll ~60 fps.
-    if (
-      nextFirst !== visibleRowsRef.current.first ||
-      nextLast !== visibleRowsRef.current.last
-    ) {
-      visibleRowsRef.current = { first: nextFirst, last: nextLast };
-      setVisibleRows({ first: nextFirst, last: nextLast });
-    }
+    // La plage visible est calculée par `recalculerPlageVisible` (voir plus
+    // haut), appelée aussi hors défilement — sinon toute modification de mise
+    // en page la laissait périmée.
+    recalculerPlageVisible(el);
   };
 
 
@@ -1396,9 +1435,6 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
     // (= displayY − scrollTop), et le contenu glisse en douceur car displayY
     // glisse en douceur. En début/fin (scroll borné), la flèche descend/remonte.
     let displayY: number | null = null;
-    // Journalisation du diagnostic : 1 ligne/seconde, pour retrouver l'épisode
-    // dans les logs de session sans les noyer (la boucle tourne à 60 Hz).
-    let dernierJournal = 0;
 
     const loop = () => {
       if (!running) return;
@@ -1436,54 +1472,6 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
         }
       }
 
-      // ── DIAGNOSTIC scroll intelligent (14/08) ────────────────────────────
-      // Volontairement HORS du bloc conditionnel ci-dessus : quand le scroll ne
-      // s'exécute pas, ce qui compte est justement de savoir LAQUELLE des
-      // conditions l'a bloqué. Placé à l'intérieur, l'affichage se figerait en
-      // même temps que le scroll et ne dirait rien.
-      // Écriture en DOM direct, comme la flèche : aucun re-rendu à 60 fps.
-      const diag = ftDiagRef.current;
-      if (diag && c) {
-        const H = c.clientHeight;
-        const rect = c.getBoundingClientRect();
-        // LE point à surveiller : le cadre déborde-t-il sous l'écran ? Si oui,
-        // `clientHeight` annonce une zone plus grande que celle réellement vue,
-        // et la ligne active est épinglée au tiers d'une zone dont le bas est
-        // invisible — hypothèse n°1 de l'utilisateur.
-        const debord = Math.round(rect.bottom - window.innerHeight);
-        const gaps = c.querySelectorAll<HTMLElement>("tr.ft-scale-gap td");
-        let sommeGaps = 0;
-        for (const td of Array.from(gaps)) sommeGaps += td.offsetHeight;
-        const blocage = !autoScrollEnabledRef.current
-          ? "AUTO-SCROLL OFF"
-          : isManualScrollRef.current
-          ? "SCROLL MANUEL"
-          : trueY == null
-          ? "POSITION INCONNUE"
-          : "actif";
-        diag.textContent =
-          `zone visible ${H}  ·  débord sous écran ${debord > 0 ? "+" + debord : debord}\n` +
-          `contenu ${Math.round(c.scrollHeight)}  ·  scroll ${Math.round(c.scrollTop)} / ${Math.round(Math.max(0, c.scrollHeight - H))}\n` +
-          `train ${trueY == null ? "—" : Math.round(trueY)}  ·  lissé ${displayY == null ? "—" : Math.round(displayY)}  ·  visé ${Math.round(Math.max(0, Math.min((displayY ?? 0) - H * FT_PIN_FRACTION, Math.max(0, c.scrollHeight - H))))}\n` +
-          `espacements ${gaps.length} lignes / ${Math.round(sommeGaps)} px  ·  ${blocage}`;
-        diag.style.color = debord > 2 ? "#fca5a5" : "#a7f3d0";
-
-        const now = Date.now();
-        if (now - dernierJournal > 1000) {
-          dernierJournal = now;
-          console.log("[FT][SCROLL-DIAG]", {
-            zoneVisible: H,
-            debordSousEcran: debord,
-            hauteurContenu: Math.round(c.scrollHeight),
-            scrollCourant: Math.round(c.scrollTop),
-            scrollMax: Math.round(Math.max(0, c.scrollHeight - H)),
-            positionTrain: trueY == null ? null : Math.round(trueY),
-            lignesEspacement: gaps.length,
-            pxEspacement: Math.round(sommeGaps),
-            etat: blocage,
-          });
-        }
-      }
 
       raf = requestAnimationFrame(loop);
     };
@@ -3356,6 +3344,12 @@ useEffect(() => {
       setKmTicks((prev) =>
         JSON.stringify(prev) === JSON.stringify(ticks) ? prev : ticks
       );
+
+      // ⚠️ 14/08 — Les espacements viennent de déplacer les lignes : la plage
+      // visible est périmée à cet instant précis, et c'est elle qui décide du
+      // réaffichage des valeurs (Bloc, Vmax, rampe). Recalcul explicite ici,
+      // en plus de l'observateur, pour ne pas dépendre du seul reflow.
+      recalculerPlageVisible(scrollContainerRef.current);
     };
 
     const raf = requestAnimationFrame(apply);
@@ -7129,7 +7123,13 @@ const hora = horaFromNormalized || horaFrance;
     // lignes principales visibles
     const visibleStart = visibleRows.first;
     const visibleEnd = visibleRows.last;
-    const targetVisible = visibleStart + 1; // on vise la 2e ligne principale visible
+    // ⚠️ 14/08 — On vise la 2e ligne principale visible QUAND ELLE EXISTE.
+    // Sans mise à l'échelle il y en a toujours une dizaine à l'écran ; avec,
+    // un seul intervalle peut occuper tout l'écran. `visibleStart + 1`
+    // désignait alors une ligne hors plage et la condition ci-dessous ne
+    // pouvait jamais être remplie : la valeur n'était réaffichée nulle part,
+    // d'où les colonnes vides constatées le 14/08.
+    const targetVisible = Math.min(visibleStart + 1, visibleEnd);
 
     const isTargetVisibleRow =
       mainRowCounter >= targetVisible && mainRowCounter <= visibleEnd;
@@ -7635,7 +7635,9 @@ right: -1,
 
             if (!labelIsVisible) {
               const segStillVisible = i >= visibleStart && i <= visibleEnd;
-              const targetVisible = visibleStart + 1; // même logique que VMAX/RC
+              // Même logique que VMAX/RC, y compris le repli sur la 1re ligne
+              // quand une seule est visible (cf. commentaire plus haut).
+              const targetVisible = Math.min(visibleStart + 1, visibleEnd);
               const isGoodSpot =
                 segStillVisible &&
                 mainRowCounter >= targetVisible &&
@@ -8818,6 +8820,9 @@ const vmaxClassForLtv =
           onScroll={handleScroll}
           onContainerRef={(el) => {
             scrollContainerRef.current = el;
+            // Le conteneur n'est connu qu'ici : c'est le seul moment sûr pour
+            // brancher l'observateur qui tient la plage visible à jour.
+            observerLaPlageVisible(el);
           }}
           overlay={
             (() => {
@@ -8941,29 +8946,6 @@ const vmaxClassForLtv =
                 }}
               />
             ))}
-
-            {/* Encart de diagnostic du scroll intelligent (mode test). Posé en
-                `fixed` : il doit rester lisible même si le cadre défilant
-                déborde sous l'écran — c'est précisément ce qu'il sert à
-                détecter. Vert = le cadre tient dans l'écran, rouge = il déborde. */}
-            {testModeEnabled && (
-              <div
-                ref={ftDiagRef}
-                style={{
-                  position: "fixed",
-                  right: 6,
-                  bottom: 6,
-                  zIndex: 9999,
-                  background: "rgba(0,0,0,0.82)",
-                  color: "#a7f3d0",
-                  font: "600 11px/1.35 ui-monospace, monospace",
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                  whiteSpace: "pre",
-                  pointerEvents: "none",
-                }}
-              />
-            )}
 
             {/* Graduations kilométriques — sous les bandes de notes, dans la
                 seule colonne KM (cf. `.ft-km-tick`). */}
