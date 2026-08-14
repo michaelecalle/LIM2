@@ -852,11 +852,51 @@ export default function FTHorizontal() {
         ))}
       </svg>
 
+      {/* ── Overlay position : barre + TGV (non scrollable) ─────────────────
+          ⚠️ 14/08 — CALQUE ARRIÈRE (demande utilisateur).
+          Ce bloc était rendu EN DERNIER, donc au-dessus de tout : la silhouette
+          masquait les heures et les noms de gare qui passaient sous elle.
+          Il est maintenant rendu AVANT le graphique, en zIndex 0, le graphique
+          étant remonté en zIndex 1. Ordre obtenu, de haut en bas :
+            inscriptions (heures, noms, PK) > bandes de tunnel > barre + silhouette.
+          Les bandes de tunnel étant semi-transparentes (alpha 0.22) et calées au
+          pixel sur la silhouette (mêmes y = baseY−22 et hauteur 26), elles la
+          TEINTENT au lieu de l'effacer : l'effet d'entrée en tunnel est conservé,
+          le train passant désormais réellement dessous.
+          Le profil en long reste dans le graphique, donc au-dessus de la
+          silhouette : voile gris à 11 % jugé non gênant par l'utilisateur. */}
+      {box && (() => {
+        const barTop = MARGIN.top;
+        const barBot = MARGIN.top + chartH;
+        const iconX  = MARGIN.left;
+        const iconW  = Math.max(0, pinXPx - MARGIN.left - 10);
+        const iconH  = 26;
+        const iconY  = barBot - iconH + 4;
+        return (
+          <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
+            <svg width={box.w} height={box.h} style={{ display: "block" }}>
+              {/* Barre verticale de position (verte = GPS, rouge = horaire/standby) */}
+              <line
+                x1={pinXPx} y1={barTop} x2={pinXPx} y2={barBot}
+                stroke={barStroke} strokeWidth="2" opacity="0.9"
+              />
+              {/* Pictogramme TGV 2N2 */}
+              <image
+                href={tgv2n2Url}
+                x={iconX} y={iconY}
+                width={iconW} height={iconH}
+                preserveAspectRatio="xMidYMid meet"
+              />
+            </svg>
+          </div>
+        );
+      })()}
+
       {/* ── Graphique scrollable ─────────────────────────────────────────── */}
       <div
         ref={scrollDivRef}
         id="ft-h-chart-scroll"
-        style={{ flex: 1, overflowX: "auto", overflowY: "hidden" }}
+        style={{ flex: 1, overflowX: "auto", overflowY: "hidden", position: "relative", zIndex: 1 }}
         onScroll={handleScroll}
         onClick={handleChartClick}
       >
@@ -1063,33 +1103,6 @@ export default function FTHorizontal() {
         </svg>
       </div>
 
-      {/* ── Overlay position : barre + TGV (non scrollable) ─────────────── */}
-      {box && (() => {
-        const barTop = MARGIN.top;
-        const barBot = MARGIN.top + chartH;
-        const iconX  = MARGIN.left;
-        const iconW  = Math.max(0, pinXPx - MARGIN.left - 10);
-        const iconH  = 26;
-        const iconY  = barBot - iconH + 4;
-        return (
-          <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
-            <svg width={box.w} height={box.h} style={{ display: "block" }}>
-              {/* Barre verticale de position (verte = GPS, rouge = horaire/standby) */}
-              <line
-                x1={pinXPx} y1={barTop} x2={pinXPx} y2={barBot}
-                stroke={barStroke} strokeWidth="2" opacity="0.9"
-              />
-              {/* Pictogramme TGV 2N2 */}
-              <image
-                href={tgv2n2Url}
-                x={iconX} y={iconY}
-                width={iconW} height={iconH}
-                preserveAspectRatio="xMidYMid meet"
-              />
-            </svg>
-          </div>
-        );
-      })()}
     </div>
   );
 }
