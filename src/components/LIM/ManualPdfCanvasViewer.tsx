@@ -171,6 +171,69 @@ export default function ManualPdfCanvasViewer({
   const canGoPrevious = page > 1 && !loading
   const canGoNext = pageCount > 0 && page < pageCount && !loading
 
+  // ── Changement de page par GLISSEMENT VERTICAL en butée (demande 12/08) ────
+  // Le glissement HORIZONTAL est déjà pris en mode secours (bascule fiche ↔ LTV) :
+  // on n'y touche pas. Ici, quand la page est défilée jusqu'en bas et qu'on
+  // continue vers le haut, on passe à la suivante ; en butée haute, à la
+  // précédente. Le seuil évite de tourner la page sur un simple élan.
+  const OVERSCROLL_PX = 60
+  const overscrollRef = useRef(0)
+  const touchStartYRef = useRef<number | null>(null)
+
+  const atTop = () => (containerRef.current?.scrollTop ?? 0) <= 1
+  const atBottom = () => {
+    const el = containerRef.current
+    if (!el) return false
+    return el.scrollTop + el.clientHeight >= el.scrollHeight - 1
+  }
+
+  const consumeOverscroll = (delta: number) => {
+    // delta > 0 : geste vers le HAUT (on veut avancer dans le document)
+    if (delta > 0 && atBottom() && canGoNext) {
+      overscrollRef.current += delta
+      if (overscrollRef.current >= OVERSCROLL_PX) {
+        overscrollRef.current = 0
+        goToPage(page + 1)
+        // La page suivante s'ouvre par le HAUT (lecture naturelle).
+        requestAnimationFrame(() => { if (containerRef.current) containerRef.current.scrollTop = 0 })
+      }
+      return
+    }
+    if (delta < 0 && atTop() && canGoPrevious) {
+      overscrollRef.current += -delta
+      if (overscrollRef.current >= OVERSCROLL_PX) {
+        overscrollRef.current = 0
+        goToPage(page - 1)
+        // On remonte : la page précédente s'ouvre par le BAS, on enchaîne la lecture.
+        requestAnimationFrame(() => {
+          const el = containerRef.current
+          if (el) el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
+        })
+      }
+      return
+    }
+    overscrollRef.current = 0
+  }
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartYRef.current = e.touches[0]?.clientY ?? null
+    overscrollRef.current = 0
+  }
+  const onTouchMove = (e: React.TouchEvent) => {
+    const y0 = touchStartYRef.current
+    const y = e.touches[0]?.clientY
+    if (y0 == null || y == null) return
+    // Doigt qui remonte = on avance dans le document → delta positif.
+    consumeOverscroll(y0 - y)
+    touchStartYRef.current = y
+  }
+  const onTouchEnd = () => {
+    touchStartYRef.current = null
+    overscrollRef.current = 0
+  }
+  // Molette / trackpad : même logique, pour pouvoir tester sans tablette.
+  const onWheel = (e: React.WheelEvent) => consumeOverscroll(e.deltaY)
+
   return (
     <div
       className="h-full min-h-0 flex flex-col"
@@ -222,6 +285,10 @@ export default function ManualPdfCanvasViewer({
       <div
         ref={containerRef}
         className="min-h-0 flex-1 overflow-auto p-3"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onWheel={onWheel}
         style={{
           backgroundColor: document.documentElement.classList.contains('dark') ? '#000000' : '#e4e4e7',
         }}

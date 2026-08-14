@@ -69,6 +69,7 @@ import {
 import ManualPdfCanvasViewer from "./components/LIM/ManualPdfCanvasViewer"
 // Mentions de la version de ligne (affichées dans le cadre « prochain arrêt »).
 import { getLigneMentions } from "./data/ligneFT2026.ft.adapter"
+import { findLinea050Anchor } from "./lib/redPdfParser"
 import { renderPdfDataToImages } from "./lib/redPdfParser"
 
 /**
@@ -168,6 +169,11 @@ export default function App() {
   const [secoursDoc, setSecoursDoc] = React.useState<"ft" | "ltv">("ft")
   const [ltvPageImages, setLtvPageImages] = React.useState<string[]>([])
   const ltvSessionLoadedRef = React.useRef(false)
+  // Ancre « LÍNEA 050 » du PDF LTV : page (1-indexée) + position en FRACTION de
+  // la hauteur de page. Sert à ouvrir le mode secours sur la partie utile.
+  const ltvAnchorRef = React.useRef<{ page: number; yRatio: number } | null>(null)
+  const ltvScrollRef = React.useRef<HTMLDivElement | null>(null)
+  const ltvAnchorAppliedRef = React.useRef(false)
   const ltvAvailable = ltvPageImages.length > 0
   const secoursTouchXRef = React.useRef<number | null>(null)
 
@@ -549,10 +555,18 @@ export default function App() {
       const file = (e as CustomEvent).detail?.file as File | undefined
       if (!file) return
       file.arrayBuffer()
-        .then((buf) => renderPdfDataToImages(buf))
-        .then((imgs) => {
+        .then(async (buf) => {
+          // ⚠️ L'ancre doit être cherchée AVANT le rendu : pdf.js consomme
+          // (detache) l'ArrayBuffer passé à getDocument.
+          const anchor = await findLinea050Anchor(buf.slice(0))
+          const imgs = await renderPdfDataToImages(buf)
+          return { imgs, anchor }
+        })
+        .then(({ imgs, anchor }) => {
           if (imgs.length === 0) return
           ltvSessionLoadedRef.current = true // la session prime sur le repli distant
+          ltvAnchorRef.current = anchor
+          ltvAnchorAppliedRef.current = false
           setLtvPageImages(imgs)
         })
         .catch((err) => console.warn("[App] rendu LTV (session) échoué", err))
@@ -569,10 +583,17 @@ export default function App() {
     if (ltvSessionLoadedRef.current || ltvPageImages.length > 0) return
     let cancelled = false
     fetchLtvSourcePdfBytes()
-      .then((buf) => (buf ? renderPdfDataToImages(buf) : []))
-      .then((imgs) => {
+      .then(async (buf) => {
+        if (!buf) return { imgs: [] as string[], anchor: null }
+        const anchor = await findLinea050Anchor(buf.slice(0))
+        const imgs = await renderPdfDataToImages(buf)
+        return { imgs, anchor }
+      })
+      .then(({ imgs, anchor }) => {
         if (cancelled || imgs.length === 0) return
         if (ltvSessionLoadedRef.current) return // une session est arrivée entre-temps
+        ltvAnchorRef.current = anchor
+        ltvAnchorAppliedRef.current = false
         setLtvPageImages(imgs)
       })
       .catch((err) => console.warn("[App] rendu LTV (lim-logs) échoué", err))
@@ -699,6 +720,40 @@ export default function App() {
     window.addEventListener("lim:next-stop", h as EventListener)
     return () => window.removeEventListener("lim:next-stop", h as EventListener)
   }, [])
+
+  // Mode secours LTV — ouvrir directement sur la section « LÍNEA 050 » plutôt
+  // que sur la page 1 (demande du 12/08). L'ancre donne la page et une FRACTION
+  // de hauteur ; les pages étant affichées en largeur fluide, on convertit au
+  // moment de l'affichage, une fois les images mesurables. Appliqué UNE SEULE
+  // FOIS par jeu d'images : ensuite le conducteur défile librement.
+  React.useEffect(() => {
+    if (pdfMode !== "red" || secoursDoc !== "ltv") return
+    if (ltvPageImages.length === 0) return
+    if (ltvAnchorAppliedRef.current) return
+    const anchor = ltvAnchorRef.current
+    if (!anchor) return
+
+    let tries = 0
+    const apply = () => {
+      const box = ltvScrollRef.current
+      const imgs = box?.querySelectorAll<HTMLImageElement>("img")
+      const target = imgs?.[anchor.page - 1]
+      // Images pas encore mesurables (chargement) : on retente brièvement.
+      if (!box || !target || target.offsetHeight === 0) {
+        if (tries++ < 20) window.setTimeout(apply, 100)
+        return
+      }
+      ltvAnchorAppliedRef.current = true
+      // ⚠️ L'en-tête « LÍNEA 050 » se trouve TRÈS BAS dans sa page (mesuré à
+      // 98 % de la hauteur sur le PDF du 14/08) : s'y caler exactement
+      // n'afficherait qu'une bande vide, le tableau utile étant sur la page
+      // SUIVANTE. On amène donc l'en-tête en HAUT de la zone visible, ce qui
+      // enchaîne naturellement sur son contenu.
+      const y = target.offsetTop + anchor.yRatio * target.offsetHeight
+      box.scrollTop = Math.max(0, y - 12)
+    }
+    apply()
+  }, [pdfMode, secoursDoc, ltvPageImages])
 
   return (
     // ⚠️ CORRIGÉ le 14/08 — hauteur PLAFONNÉE à l'écran (`h-[100dvh]` +
@@ -878,6 +933,7 @@ export default function App() {
               onTouchEnd={onSecoursTouchEnd}
             >
               <div
+                ref={ltvScrollRef}
                 className={
                   isDark
                     ? "h-full rounded-2xl bg-black/80 overflow-auto"

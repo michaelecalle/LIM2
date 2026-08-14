@@ -48,6 +48,56 @@ export async function renderPdfDataToImages(data: ArrayBuffer, scale = 1.6): Pro
   return images
 }
 
+/**
+ * Localise la section « LÍNEA 050 » dans un PDF LTV (demande du 12/08 : ouvrir
+ * le mode secours directement sur la partie utile, pas sur la page 1).
+ *
+ * Réutilise EXACTEMENT le motif éprouvé du parseur LTV (`ltvPdfParser.ts`) :
+ * `L.{0,4}NEA\s+050`, volontairement tolérant car pdf.js restitue « LÍNEA » de
+ * façon variable selon l'encodage.
+ *
+ * Renvoie la page (1-indexée) et la position VERTICALE en FRACTION de la hauteur
+ * de page (0 = haut, 1 = bas) — pas en pixels : les pages sont affichées en
+ * largeur fluide, donc leur hauteur à l'écran varie. Null si non trouvée.
+ */
+export async function findLinea050Anchor(
+  data: ArrayBuffer
+): Promise<{ page: number; yRatio: number } | null> {
+  const loadingTask = pdfjsLib.getDocument({ data })
+  try {
+    const pdf: PDFDocumentProxy = await Promise.race([
+      loadingTask.promise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => { loadingTask.destroy(); reject(new Error('PDF worker timeout')) }, 15_000)
+      ),
+    ])
+
+    const RE_LINEA_050 = /L.{0,4}NEA\s*050/i
+
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p)
+      const content = await page.getTextContent()
+      const height = page.getViewport({ scale: 1 }).height
+
+      for (const item of content.items as Array<{ str?: string; transform?: number[] }>) {
+        const txt = (item?.str ?? '').trim()
+        if (!txt || !RE_LINEA_050.test(txt)) continue
+
+        // transform[5] = y en repère PDF (origine EN BAS) → fraction depuis le HAUT.
+        const y = Array.isArray(item.transform) ? item.transform[5] : null
+        const yRatio =
+          typeof y === 'number' && Number.isFinite(y) && height > 0
+            ? Math.min(1, Math.max(0, (height - y) / height))
+            : 0
+        return { page: p, yRatio }
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 async function handleRedPdf(file: File) {
   try {
     const buf = await file.arrayBuffer()
