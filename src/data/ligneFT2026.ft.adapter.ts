@@ -47,10 +47,16 @@ type LigneRow2026 = {
 
 type Horaire2026 = { arrivee?: string; passage?: string; depart?: string };
 
+export type LigneMention = { titre?: string; contenu?: string };
+
 export type LigneFt2026Doc = {
   ligneVersions?: Record<
     string,
-    { sudNord?: LigneRow2026[]; nordSud?: LigneRow2026[] }
+    {
+      sudNord?: LigneRow2026[];
+      nordSud?: LigneRow2026[];
+      mentions?: LigneMention[];
+    }
   >;
   trains?: Record<
     string,
@@ -410,4 +416,22 @@ export function getFtEntriesOriented(
   const sudNord = isTrainSudNord(trainNumber);
   if (sudNord == null) return [];
   return sudNord ? getFtLignePair(trainNumber) : getFtLigneImpair(trainNumber);
+}
+
+/**
+ * MENTIONS de la version de ligne (saisies dans l'éditeur, ex. « Vitesses
+ * limites en rouge pour circulation en MODE SR, BSL »). Affichées dans le
+ * cadre « prochain arrêt » (demande du 13/08). ⚠️ `titre` peut être vide.
+ */
+export function getLigneMentions(): LigneMention[] {
+  const versions = PUBLISHED_DOC.ligneVersions ?? {};
+  const first = versions[Object.keys(versions)[0] ?? ""];
+  const list = first?.mentions;
+  if (!Array.isArray(list)) return [];
+  return list.filter(
+    (m) =>
+      m &&
+      ((typeof m.titre === "string" && m.titre.trim() !== "") ||
+        (typeof m.contenu === "string" && m.contenu.trim() !== ""))
+  );
 }

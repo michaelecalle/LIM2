@@ -3018,7 +3018,19 @@ useEffect(() => {
           table.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main")
         ).map((tr) => {
           const idx = Number(tr.getAttribute("data-ft-row"));
-          return { idx, top: tr.offsetTop, pk: ftEntryPkNum(rawEntries[idx]) };
+          return {
+            idx,
+            top: tr.offsetTop,
+            // ⚠️ Ancre kilométrique d'une ligne = son CENTRE, pas son bord haut :
+            // une ligne représente un POINT (son PK). Ancrer les bandes sur
+            // `offsetTop` faisait démarrer le surlignage LTV de Figueres sur le
+            // HAUT de la ligne « Limite ADIF-LFPSA » — visuellement côté LFP,
+            // alors que la zone (752.309) est 91 m au sud de la limite (752.4).
+            // Constaté par l'utilisateur le 14/08. `top` reste le bord haut
+            // (l'algorithme d'espacement mesure des écarts entre bords, inchangé).
+            centre: tr.offsetTop + tr.offsetHeight / 2,
+            pk: ftEntryPkNum(rawEntries[idx]),
+          };
         });
 
       // OFF, ou mode DÉPLIÉ (INFOS/LTV affichés) = layout naturel (gaps à 0).
@@ -3078,7 +3090,8 @@ useEffect(() => {
       // des zones CSV, dont le sélecteur (`.ft-v-cell.ft-v-csv-full`, 2 classes)
       // l'emporterait de toute façon sur le pêche (1 classe).
       const post = measure().filter(
-        (m): m is { idx: number; top: number; pk: number } => m.pk != null
+        (m): m is { idx: number; top: number; centre: number; pk: number } =>
+          m.pk != null
       );
 
       // PK → pixel, par interpolation entre les 2 lignes principales encadrantes.
@@ -3093,6 +3106,10 @@ useEffect(() => {
       // TOUT était écarté — bandes LTV, bandes de notes, ET LE TEXTE DES NOTES.
       // Constaté en production le 13/08 : la note « 80 km/h en MODE SR et en
       // BSL » n'apparaissait plus du tout sur les trains 9711/9713/9715/38510.
+      // ⚠️ 14/08 — ancré sur le CENTRE des lignes (cf. `measure`) : une ligne
+      // représente un POINT kilométrique, pas son bord haut. L'ancrage sur
+      // `offsetTop` faisait démarrer la bande LTV de Figueres sur le HAUT de la
+      // ligne « Limite ADIF-LFPSA » — visuellement côté LFP (constat 14/08).
       const yAt = (pk: number): number | null => {
         if (post.length < 2) return null;
         const first = post[0];
@@ -3100,8 +3117,8 @@ useEffect(() => {
         const croissant = last.pk >= first.pk;
 
         // Hors de la plage affichée : on plaque sur l'extrémité concernée.
-        if (croissant ? pk <= first.pk : pk >= first.pk) return first.top;
-        if (croissant ? pk >= last.pk : pk <= last.pk) return last.top;
+        if (croissant ? pk <= first.pk : pk >= first.pk) return first.centre;
+        if (croissant ? pk >= last.pk : pk <= last.pk) return last.centre;
 
         for (let k = 0; k < post.length - 1; k++) {
           const a = post[k];
@@ -3110,10 +3127,10 @@ useEffect(() => {
           if (pk >= Math.min(a.pk, b.pk) && pk <= Math.max(a.pk, b.pk)) {
             const span = b.pk - a.pk;
             const f = span === 0 ? 0 : (pk - a.pk) / span;
-            return a.top + f * (b.top - a.top);
+            return a.centre + f * (b.centre - a.centre);
           }
         }
-        return last.top;
+        return last.centre;
       };
 
       const bands: NoteBand[] = [];
@@ -3300,13 +3317,14 @@ useEffect(() => {
         const entry = rawEntries[i] as any;
         if (!entry || entry.isNoteOnly) continue;
 
-        const net = String(entry.network ?? "").trim();
-
-        // Les LTV actuelles sont sur la partie ADIF.
-        // Si le réseau est connu et non ADIF, on évite de poser la remarque dessus.
-        if (net && net !== "ADIF") continue;
-
-        const rowPk = parsePk(entry.pk_adif ?? entry.pk);
+        // ⚠️ CORRIGÉ le 14/08 — éligible = toute ligne qui PORTE un pk_adif,
+        // au lieu de filtrer sur l'étiquette réseau. La ligne « Limite
+        // ADIF-LFPSA » porte les DEUX PK mais est étiquetée LFP (premier champ
+        // présent dans le sens de marche) : l'ancien filtre la sautait, aucune
+        // ligne ADIF n'atteignait 752.309, et le repli accrochait la LTV de
+        // Figueres à la gare elle-même — les lignes orange pendaient SOUS
+        // FIGUERES alors que la zone commence AVANT (constat utilisateur 14/08).
+        const rowPk = parsePk(entry.pk_adif);
         if (rowPk === null) continue;
 
         if (firstAdifIndex === null) {
@@ -4968,6 +4986,27 @@ const isRelock = acceptedMode === "relock";
                     detail: { active: false, source: "departure" },
                   })
                 );
+
+                // ⚠️ CORRIGÉ le 14/08 — lever AUSSI l'indicateur standby (🕑
+                // orange clignotant de la TitleBar) ICI, au départ confirmé.
+                // Avant, la levée n'était émise que par l'effet [referenceMode]
+                // lors d'une TRANSITION vers GPS, avec verrou déjà null. Sur un
+                // parcours GPS propre (39819 du 14/08), il n'y a AUCUNE
+                // transition après le départ : l'indicateur restait orange tout
+                // le trajet. (Les parcours à mode instable, eux, finissaient par
+                // le lever « par hasard » à une oscillation — 27× sur le 9713.)
+                window.dispatchEvent(
+                  new CustomEvent("lim:hourly-mode", {
+                    detail: {
+                      enabled: autoScrollEnabledRef.current,
+                      standby: false,
+                    },
+                  })
+                );
+                logTestEvent("ft:standby:visual-clear", {
+                  reason: "departure_confirmed",
+                  autoScrollEnabled: autoScrollEnabledRef.current,
+                });
 
                 if (delta > GPS_ARRET_DEPARTURE_MAX_KM) {
                   // Couche 2 (#20) : reprise implausiblement loin du point figé => c'était un TUNNEL
@@ -7947,38 +7986,45 @@ const vmaxClassForLtv =
           font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
 
+        /* ⚠️ CORRIGÉ le 14/08 — largeurs pour DIX colonnes (format 2026 :
+           Bloc, Vmax, KM, Établissements, Arr, Pass, Dép, Radio, ↗, ETCS).
+           L'ancien bloc déclarait ONZE colonnes dont la somme faisait 100 % pour
+           11 : les 10 réelles ne totalisaient que 96 % et le navigateur
+           redistribuait le reste à sa façon — d'où les bordures de colonnes qui
+           ne tombaient plus où les éléments positionnés en % les attendaient
+           (indicateur de position décalé horizontalement, point 2 du 13/08).
+           Harmonisation esthétique demandée le 14/08 : largeurs ÉGALES par
+           groupes — Bloc = Vmax (9 %), Arr = Pass = Dép (6 %), et
+           Radio = ↗ = ETCS (6 %). Somme exacte : 100 %. */
         .ft-table th:nth-child(1),
-        .ft-table td:nth-child(1) { width: 13%; }
+        .ft-table td:nth-child(1) { width: 9%; }
 
         .ft-table th:nth-child(2),
-        .ft-table td:nth-child(2) { width: 5%; }
+        .ft-table td:nth-child(2) { width: 9%; }
 
         .ft-table th:nth-child(3),
-        .ft-table td:nth-child(3) { width: 9%; }
+        .ft-table td:nth-child(3) { width: 9.4%; }
 
         .ft-table th:nth-child(4),
-        .ft-table td:nth-child(4) { width: 35%; }
+        .ft-table td:nth-child(4) { width: 36.6%; }
 
         .ft-table th:nth-child(5),
-        .ft-table td:nth-child(5) { width: 5%; }
+        .ft-table td:nth-child(5) { width: 6%; }
 
         .ft-table th:nth-child(6),
-        .ft-table td:nth-child(6) { width: 7%; }
+        .ft-table td:nth-child(6) { width: 6%; }
 
         .ft-table th:nth-child(7),
-        .ft-table td:nth-child(7) { width: 5%; }
+        .ft-table td:nth-child(7) { width: 6%; }
 
         .ft-table th:nth-child(8),
-        .ft-table td:nth-child(8) { width: 5%; }
+        .ft-table td:nth-child(8) { width: 6%; }
 
         .ft-table th:nth-child(9),
         .ft-table td:nth-child(9) { width: 6%; }
 
         .ft-table th:nth-child(10),
         .ft-table td:nth-child(10) { width: 6%; }
-
-        .ft-table th:nth-child(11),
-        .ft-table td:nth-child(11) { width: 4%; }
 
         .dark .ft-table {
           border: 2px solid #fff;

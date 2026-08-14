@@ -42,14 +42,9 @@ function displayPk(e: FTEntry): string {
   return String(e.pk ?? "");
 }
 
-function parseHora(s: string): number | null {
-  const m = /^(\d{1,2}):(\d{2})/.exec((s ?? "").trim());
-  return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
-}
-function fmtMin(m: number): string {
-  const t = ((m % 1440) + 1440) % 1440;
-  return `${Math.floor(t / 60).toString().padStart(2, "0")}:${(t % 60).toString().padStart(2, "0")}`;
-}
+// (Format 2026) `parseHora` / `fmtMin` supprimés : ils ne servaient qu'à
+// reconstituer l'arrivée par soustraction (`hora − com`) — l'arrivée est
+// désormais une donnée directe (`arrivee`).
 function normName(s: string): string {
   return s.toLowerCase().replace(/ /g, " ").replace(/[-–]/g, " ")
     .replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
@@ -177,12 +172,22 @@ export default function FTHorizontal() {
 
       const pk = entryPk(e)!;
       if (typeof e.vmax === "number" && Number.isFinite(e.vmax)) curV = e.vmax;
-      const hora = (e.hora ?? "").trim();
-      const comN = parseInt((e.com ?? "").toString(), 10);
-      const hasCom = Number.isFinite(comN) && comN > 0;
-      const depMin = parseHora(hora);
-      const arr  = hasCom && depMin != null ? fmtMin(depMin - comN) : null;
-      const tecn = (((e as any).tecn ?? (e as any).tecnico ?? "") as string).trim();
+      // ⚠️ CORRIGÉ le 14/08 — (Format 2026) trois heures EXPLICITES.
+      // Ce bloc lisait encore `e.hora` / `e.com` / `e.tecn`, champs que
+      // l'adaptateur 2026 ne remplit PLUS depuis le retrait du pont (11/08) :
+      // plus AUCUNE heure ni pastille jaune ne s'affichait en mode horizontal
+      // (constat utilisateur du 14/08 sur le 39819).
+      const arrTxt  = (((e as any).arrivee ?? "") as string).trim();
+      const passTxt = (((e as any).passage ?? "") as string).trim();
+      const depTxt  = (((e as any).depart ?? "") as string).trim();
+      // Heure principale : départ, sinon passage, sinon arrivée (le terminus
+      // n'a qu'une arrivée) — même règle que la fiche verticale.
+      const hora = depTxt || passTxt || arrTxt;
+      // Arrivée affichée en petit AU-DESSUS, seulement quand elle ne fait pas
+      // déjà office d'heure principale (gares d'arrêt avec arrivée + départ).
+      const arr  = arrTxt && hora !== arrTxt ? arrTxt : null;
+      // Arrêt (pastille jaune) — règle 2026 : une arrivée et/ou un départ.
+      const isStop2026 = arrTxt !== "" || depTxt !== "";
       const net  = ((e as any).network ?? null) as string | null;
 
       // Notes propres à cette entrée + notes isNoteOnly en attente
@@ -200,7 +205,7 @@ export default function FTHorizontal() {
         csv:        !!(e as any).csv,
         hora,
         arr,
-        yellow:     validIdx === 0 || validIdx === validCount - 1 || hasCom || tecn !== "",
+        yellow:     validIdx === 0 || validIdx === validCount - 1 || isStop2026,
         notes:      [...pendingNotes, ...ownNotes],
       });
 

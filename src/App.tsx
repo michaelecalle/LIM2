@@ -67,6 +67,8 @@ import {
   fetchLivretFtPageIndex,
 } from "./lib/managedDocs"
 import ManualPdfCanvasViewer from "./components/LIM/ManualPdfCanvasViewer"
+// Mentions de la version de ligne (affichées dans le cadre « prochain arrêt »).
+import { getLigneMentions } from "./data/ligneFT2026.ft.adapter"
 import { renderPdfDataToImages } from "./lib/redPdfParser"
 
 /**
@@ -986,7 +988,7 @@ export default function App() {
             {/* Bloc "prochaine arrêt" — affiché en mode plié (vertical ou horizontal), à la place du LTV */}
             {foldInfosLtv && (
               <div className={
-                "mt-1 min-w-0 h-[70px] flex flex-col items-center justify-center gap-0.5 select-none px-4 rounded-xl border " +
+                "mt-1 min-w-0 min-h-[70px] flex flex-col items-center justify-center gap-0.5 select-none px-4 py-1 rounded-xl border " +
                 (isDark
                   ? "bg-zinc-800/60 border-zinc-700/50 text-zinc-100"
                   : "bg-zinc-50 border-zinc-200 text-zinc-900")
@@ -1027,6 +1029,21 @@ export default function App() {
                   </div>
                 )}
 
+                {/* Mentions de la version de ligne (éditeur) — demande du 13/08.
+                    Ex. « Vitesses limites en rouge pour circulation en MODE SR,
+                    BSL » : la légende des notes rouges. ⚠️ titre souvent vide. */}
+                {getLigneMentions().map((m, i) => (
+                  <div
+                    key={`mention-${i}`}
+                    className={
+                      "text-[10px] italic text-center leading-tight " +
+                      (isDark ? "text-red-400/90" : "text-red-700/90")
+                    }
+                  >
+                    {m.titre?.trim() ? <strong>{m.titre.trim()} : </strong> : null}
+                    {m.contenu?.trim() ?? ""}
+                  </div>
+                ))}
               </div>
             )}
 

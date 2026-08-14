@@ -59,8 +59,11 @@ function pkToU(pk: number, net: "ADIF" | "LFP" | "RFN"): number {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function parseMin(s: string): number | null {
-  const m = /^(\d{1,2}):(\d{2})/.exec((s ?? "").trim());
-  return m ? +m[1] * 60 + +m[2] : null;
+  const txt = (s ?? "").trim();
+  const m = /^(\d{1,2}):(\d{2})/.exec(txt);
+  if (!m) return null;
+  // « + » après l'heure = +30 s (notation SNCF du format 2026, ex. « 13:06+ »).
+  return +m[1] * 60 + +m[2] + (/\+/.test(txt) ? 0.5 : 0);
 }
 
 function nowMinFloat(): number {
