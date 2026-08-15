@@ -85,6 +85,47 @@ import { getTrainDirection, isTrainSudNord } from '../../data/ligneFT2026.ft.ada
 // Suppression complète de la machinerie FT France = dette technique (fin de dév).
 const FT_FRANCE_AUTOSWITCH_ENABLED = false
 
+// Course du curseur d'espacement de la fiche train (#25), rétabli le 15/08.
+//
+// ⚠️ LE MULTIPLICATEUR EST UN NOMBRE D'ÉCRANS. La hauteur du plus grand
+// intervalle vaut `mult × densiteReference × plusGrandIntervalle`, or
+// `densiteReference = hauteurVisible / (plusGrandIntervalle × 1,05)` : le plus
+// grand intervalle se simplifie et il reste `mult × hauteurVisible / 1,05`. Le
+// multiplicateur dit donc, à 5 % près, combien d'écrans occupe le plus grand
+// intervalle de la fiche — sur n'importe quel train et n'importe quel écran.
+// C'est pourquoi le MAXIMUM reste une constante : il porte déjà une contrainte
+// physique invariante (jamais plus de ~3,8 écrans pour un intervalle). L'indexer
+// sur le seuil d'exactitude la ferait au contraire varier d'un train à l'autre.
+// ⚠️ 15/08 — Ce n'est PLUS le maximum de la course, mais le seuil d'ALERTE.
+// Au-delà, la fiche reste rigoureusement exacte, elle est seulement très étalée
+// (un intervalle approche les 4 écrans) : le curseur passe à l'orange pour le
+// dire, sans rien interdire.
+const FT_SCALE_MULT_ALERTE = 4
+/**
+ * Maximum de la course : `2 × seuil d'exactitude`, plancher à FT_SCALE_MULT_ALERTE.
+ *
+ * ⚠️ Pourquoi indexé sur le seuil et non fixe. En développant,
+ * `2 × seuil × hauteurVisible / 1,05 = 2 × base × plusGrandIntervalle` : la
+ * hauteur visible se simplifie. La borne est donc INVARIANTE EN ABSOLU et offre
+ * toujours 100 % de marge au-dessus de l'exactitude, que les blocs INFOS/LTV
+ * soient pliés ou non. Un maximum fixe, lui, garantissait un nombre d'écrans
+ * constant mais laissait par moments presque aucune marge : en mode déplié le
+ * seuil monte à 3,3× sur le 9705, il ne restait que 0,7 de course au-dessus.
+ * Cette contrainte-là est désormais portée par la couleur d'alerte, pas par la
+ * borne — ce qui est atteignable et ce qui est raisonnable sont deux choses.
+ *
+ * Le plancher à 4 évite de RÉDUIRE la course sur un train court : avec un seuil
+ * de 1,0×, `2 × seuil` vaudrait 2,0 là où on allait jusqu'à 4 jusqu'ici.
+ */
+const bornerMax = (seuil: number | null) =>
+  seuil === null
+    ? FT_SCALE_MULT_ALERTE
+    : Math.max(FT_SCALE_MULT_ALERTE, Math.ceil(seuil * 2 * 10) / 10)
+// Le MINIMUM, lui, est dynamique : c'est le POINT MORT annoncé par FT, en
+// dessous duquel plus aucun segment n'est écarté (le curseur ne ferait plus
+// rien). Repli à 0,5 tant que FT n'a pas mesuré.
+const FT_SCALE_MULT_MIN_DEFAUT = 0.5
+
 type NumberingSide = 'ES' | 'FR'
 
 type DisplayedTrainNumberState = {
@@ -601,8 +642,9 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   }, [touchIndicatorEnabled])
 
   // ===== Mise à l'échelle de la fiche train (#25) — option + multiplicateur. =====
-  // La BASE (densité px/km) est calculée automatiquement par FT (segment le plus
-  // contraint) ; ici on ne règle qu'un MULTIPLICATEUR (1× = compact proportionnel).
+  // La DENSITÉ DE RÉFÉRENCE (px/km) est calculée automatiquement par FT — celle
+  // pour laquelle le plus grand intervalle de la fiche remplit un écran ; ici on
+  // ne règle qu'un MULTIPLICATEUR (1× = cette référence).
   // ⚠️ 14/08 — VOLONTAIREMENT NON RESTAURÉ au démarrage (demande utilisateur).
   // L'état était relu depuis localStorage : la case revenait donc cochée alors
   // que la mise à l'échelle, elle, est suspendue tant que INFOS/LTV sont
@@ -612,19 +654,110 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   // concordent. Seul le multiplicateur reste mémorisé (c'est une préférence).
   const [ftScaleEnabled, setFtScaleEnabled] = useState(false)
   /**
-   * ⚠️ 14/08 — Le multiplicateur n'est plus réglable : le curseur a été retiré.
-   * FT applique désormais la densité maximale qu'elle calcule elle-même à
-   * partir du plus grand intervalle de la fiche et de la hauteur visible, et
-   * ignore cette valeur. Elle n'est conservée que pour la forme de l'évènement
-   * `lim:ft-scale`, afin de ne pas toucher au contrat entre les deux
-   * composants.
+   * ⚠️ 15/08 — Curseur RÉTABLI (retiré le 14/08). Il avait été retiré parce que
+   * sa course utile s'écrasait à 0,2-0,3 : la densité était alors PLAFONNÉE pour
+   * qu'aucun intervalle ne dépasse la hauteur d'écran, faute de quoi on le
+   * traversait sans aucune ligne affichée, donc sans Bloc, Vmax ni rampe. La
+   * refonte du scroll intelligent (couche en surimpression) a supprimé cette
+   * contrainte : le plafond est devenu une simple RÉFÉRENCE, et le multiplicateur
+   * retrouve une course réelle. Cf. FT.tsx, `densiteReference`.
+   *
+   * Valeur COURANTE du curseur. Elle n'est PAS mémorisée telle quelle : c'est
+   * l'écart au seuil qui l'est (cf. `ftScaleOffset`).
    */
-  const ftScaleMult = 1
+  const [ftScaleMult, setFtScaleMult] = useState(1)
+  /**
+   * Seuil de proportionnalité exacte, annoncé par FT (`lim:ft-scale-exact`).
+   * À partir de ce multiplicateur, TOUS les segments atteignent la hauteur que
+   * leur distance commande : la fiche cesse d'être approximative. Au-delà elle
+   * le reste — c'est un plancher, pas un plafond, donc on ne borne PAS le
+   * curseur dessus (ce serait retirer précisément la plage exacte).
+   * `null` = inconnu (mise à l'échelle inactive, FT n'a rien mesuré).
+   */
+  const [ftScaleMultExact, setFtScaleMultExact] = useState<number | null>(null)
+  /**
+   * Point mort annoncé par FT : en dessous, plus aucun segment n'est écarté et
+   * la fiche est identique au mode non mis à l'échelle. Borne basse de la
+   * course — descendre plus bas ne ferait plus rien du tout.
+   */
+  const [ftScaleMultPlancher, setFtScaleMultPlancher] = useState<number | null>(null)
+  /**
+   * ⚠️ VERDICT calculé par FT, jamais déduit ici. La tentation est grande de
+   * colorier en vert dès que `ftScaleMult >= ftScaleMultExact` — c'est faux sur
+   * un train court : le garde-fou de remplissage abaisse l'étalement réel APRÈS
+   * le multiplicateur, et l'exactitude annoncée n'existe plus. Seul FT connaît
+   * la valeur finale.
+   */
+  const [ftScaleExact, setFtScaleExact] = useState(false)
+  /**
+   * Fiche SATURÉE : le parcours tient dans l'écran et le remplit déjà. Le
+   * multiplicateur n'a plus aucun effet — on masque le curseur plutôt que de
+   * proposer un réglage inerte.
+   */
+  const [ftScaleSature, setFtScaleSature] = useState(false)
   useEffect(() => {
+    const h = (e: Event) => {
+      const d = (e as CustomEvent).detail
+      const nb = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+      setFtScaleMultExact(nb(d?.multiplicateur))
+      setFtScaleMultPlancher(nb(d?.plancher))
+      setFtScaleExact(!!d?.exact)
+      setFtScaleSature(!!d?.sature)
+    }
+    window.addEventListener('lim:ft-scale-exact', h as EventListener)
+    return () => window.removeEventListener('lim:ft-scale-exact', h as EventListener)
+  }, [])
+  // Bornes effectives de la course, recalculées à chaque annonce.
+  const ftScaleMin = ftScaleMultPlancher ?? FT_SCALE_MULT_MIN_DEFAUT
+  const ftScaleMax = bornerMax(ftScaleMultExact)
+
+  /**
+   * ── PRÉFÉRENCE D'ESPACEMENT : un ÉCART, pas une valeur ────────────────────
+   *
+   * Ce que le conducteur retient, c'est « un peu plus serré que l'exact », pas
+   * « 2,4× ». Et 2,4× ne veut pas la même chose d'un train à l'autre : le seuil
+   * d'exactitude dépend du contenu de la fiche et de la hauteur visible, donc de
+   * l'orientation de l'iPad. Mémoriser la valeur absolue transporterait un
+   * réglage qui n'a plus de sens sur le train suivant.
+   *
+   * On mémorise donc `multiplicateur − seuil`. Le réglage se recalibre tout seul
+   * à chaque train et à chaque rotation, en gardant l'habitude de conduite.
+   *
+   * ⚠️ Clé NOUVELLE (`lim:ft-scale-offset`). L'ancienne `lim:ft-scale-mult`
+   * contenait une valeur absolue de deux sémantiques successives : la relire
+   * comme un écart n'aurait aucun sens. Elle n'est plus ni lue ni écrite.
+   */
+  const [ftScaleOffset, setFtScaleOffset] = useState(() => {
     try {
-      // `lim:ft-scale` n'est plus écrit : plus personne ne le relit (cf. ci-dessus).
-      localStorage.setItem('lim:ft-scale-mult', String(ftScaleMult))
-    } catch {}
+      const v = parseFloat(localStorage.getItem('lim:ft-scale-offset') ?? '0')
+      return Number.isFinite(v) ? v : 0
+    } catch { return 0 }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('lim:ft-scale-offset', String(ftScaleOffset)) } catch {}
+  }, [ftScaleOffset])
+
+  /**
+   * Recalage du curseur sur `seuil + écart`.
+   *
+   * ⚠️ Il y a un œuf et une poule : FT ne calcule le seuil que pendant que la
+   * mise à l'échelle est active. À l'instant où la case est cochée il est encore
+   * inconnu — la fiche est donc mesurée une première fois à la valeur courante,
+   * puis recalée. Ce sursaut est assumé (validé par l'utilisateur le 15/08).
+   * Il ne peut PAS osciller : `base` est mesuré espacements remis à zéro et la
+   * densité de référence ne dépend que du plus grand intervalle et de la hauteur
+   * visible — aucun des deux ne dépend du multiplicateur.
+   */
+  useEffect(() => {
+    if (!ftScaleEnabled || ftScaleMultExact === null) return
+    const cible = Math.min(
+      ftScaleMax,
+      Math.max(ftScaleMin, Math.round((ftScaleMultExact + ftScaleOffset) * 10) / 10)
+    )
+    setFtScaleMult(prev => (Math.abs(prev - cible) < 0.05 ? prev : cible))
+  }, [ftScaleEnabled, ftScaleMultExact, ftScaleOffset, ftScaleMin, ftScaleMax])
+
+  useEffect(() => {
     // FT écoute cet événement et se re-rend en direct.
     window.dispatchEvent(new CustomEvent('lim:ft-scale', {
       detail: { enabled: ftScaleEnabled, multiplier: ftScaleMult },
@@ -5012,6 +5145,15 @@ setAutoScrollStartedOnce(next)
               {/* Mise à l'échelle de la fiche train (#25) — VERTICAL uniquement */}
               {ftScrollMode === 'vertical' && (
                 <>
+                  {/* ⚠️ 15/08 — Case de nouveau disponible EN PERMANENCE. Elle a
+                      été grisée quelques heures en mode déplié, parce que FT y
+                      suspendait la mise à l'échelle : la bande de fiche visible
+                      étant courte, l'étalement n'y montrait que du vide, sans
+                      Bloc ni Vmax ni rampe. La couche en surimpression a levé
+                      cette limite (cf. `infosLtvFolded` dans FT.tsx) — la mise à
+                      l'échelle vaut désormais dans les deux modes, avec un seuil
+                      d'exactitude et des bornes de curseur qui se recalculent au
+                      pli comme au dépli. */}
                   <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
                     <span>Mise à l'échelle de la fiche train</span>
                     <input
@@ -5021,20 +5163,102 @@ setAutoScrollStartedOnce(next)
                       className="h-4 w-4 cursor-pointer accent-blue-600"
                     />
                   </label>
-                  {/* ⚠️ 14/08 — Curseur d'espacement RETIRÉ. La densité est
-                      plafonnée pour qu'aucun intervalle ne dépasse la hauteur
-                      d'écran (sinon on traverse un intervalle sans aucune ligne
-                      affichée, donc sans Bloc, Vmax ni rampe). Ce plafond
-                      réduisait la course utile à 0,2-0,3 sur la ligne complète :
-                      un réglage sans choix réel. Cocher la case applique
-                      désormais la densité maximale, calculée par FT à partir du
-                      plus grand intervalle de la fiche et de la hauteur visible. */}
-                  {ftScaleEnabled && (
-                    <div className="pl-2 pb-1 text-[10px] text-zinc-600 dark:text-zinc-300 leading-tight">
-                      Espacement proportionnel maximal, ajusté à la fiche et à la
-                      hauteur d'écran. Jamais de compression sous le contenu réel.
+                  {/* ⚠️ 15/08 — Curseur d'espacement RÉTABLI (cf. le commentaire
+                      sur `ftScaleMult`). 1× = le plus grand intervalle de la
+                      fiche remplit un écran ; au-delà il le dépasse, ce qui ne
+                      pose plus de problème depuis que les valeurs de colonne ne
+                      dépendent plus d'une ligne visible. */}
+                  {/* Parcours court : la fiche tient dans l'écran et le remplit.
+                      Le curseur serait sans aucun effet — on l'enlève et on dit
+                      pourquoi, plutôt que de laisser croire à un réglage. */}
+                  {ftScaleEnabled && ftScaleSature && (
+                    <div className="pl-2 pb-1 text-[10px] leading-tight text-zinc-500 dark:text-zinc-400">
+                      Parcours court : la fiche entière tient dans l'écran et le
+                      remplit. L'espacement n'est pas réglable ici.
                     </div>
                   )}
+
+                  {ftScaleEnabled && !ftScaleSature && (() => {
+                    // TROIS états, deux informations distinctes :
+                    //  bleu   = en deçà du seuil, la fiche est approximative ;
+                    //  vert   = au-delà, elle est rigoureusement proportionnelle ;
+                    //  orange = exacte MAIS très étalée (un intervalle approche
+                    //           les 4 écrans). Pas une faute, un avertissement —
+                    //           d'où l'orange et non le rouge.
+                    // ⚠️ `exact` vient de FT, il n'est PAS recalculé ici.
+                    const exact = ftScaleExact
+                    const tresEtale = ftScaleMult > FT_SCALE_MULT_ALERTE
+                    const teinteTexte = tresEtale
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : exact
+                      ? 'text-green-600 dark:text-green-400'
+                      : null
+                    return (
+                      <div className="pl-2 pb-1 text-xs text-zinc-600 dark:text-zinc-300 space-y-2">
+                        <div>
+                          <div className="flex justify-between items-center gap-2">
+                            <span className="flex items-center gap-2">
+                              Espacement
+                              {/* Retour au seuil. N'apparaît QUE s'il y a un
+                                  écart à annuler : le reste du temps elle
+                                  encombrerait le panneau pour rien. Ne remet
+                                  QUE l'écart d'espacement — ni la case, ni quoi
+                                  que ce soit d'autre (choix utilisateur 15/08). */}
+                              {ftScaleMultExact !== null && Math.abs(ftScaleOffset) >= 0.05 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setFtScaleOffset(0)}
+                                  className="text-[10px] text-blue-600 dark:text-blue-400 underline underline-offset-2 px-1 py-0.5 -my-0.5"
+                                >
+                                  Revenir au seuil
+                                </button>
+                              )}
+                            </span>
+                            <span className={teinteTexte ? teinteTexte + ' font-semibold' : undefined}>
+                              {ftScaleMult.toFixed(1)}×
+                            </span>
+                          </div>
+                          <input type="range" min={ftScaleMin} max={ftScaleMax} step={0.1} value={ftScaleMult}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value)
+                              setFtScaleMult(v)
+                              // C'est l'ÉCART au seuil qui devient la préférence.
+                              // Tant que le seuil est inconnu on ne l'enregistre
+                              // pas : un écart calculé sur rien serait faux.
+                              if (ftScaleMultExact !== null) {
+                                setFtScaleOffset(Math.round((v - ftScaleMultExact) * 10) / 10)
+                              }
+                            }}
+                            className={
+                              'w-full cursor-pointer ' +
+                              (tresEtale
+                                ? 'accent-amber-500'
+                                : exact
+                                ? 'accent-green-600'
+                                : 'accent-blue-600')
+                            } />
+                          {/* Le seuil n'est connu qu'une fois la fiche mesurée
+                              par FT : tant qu'il manque, on n'affiche rien
+                              plutôt qu'une valeur inventée. */}
+                          {ftScaleMultExact !== null && (
+                            <div className={
+                              'text-[10px] leading-tight ' +
+                              (teinteTexte ?? 'text-zinc-600 dark:text-zinc-300 opacity-80')
+                            }>
+                              {/* « environ » : le multiplicateur vaut le nombre
+                                  d'écrans à la marge de 5 % près (cf. bornerMax). */}
+                              {tresEtale
+                                ? `Très étalé : exact (seuil ${ftScaleMultExact.toFixed(1)}×), mais le plus grand intervalle occupe environ ${ftScaleMult.toFixed(1)} écrans.`
+                                : exact
+                                ? `Proportionnel exact (seuil ${ftScaleMultExact.toFixed(1)}×) : les distances sont à l'échelle sur toute la fiche.`
+                                : `Approximatif. Proportionnel exact à partir de ${ftScaleMultExact.toFixed(1)}×.`}
+                            </div>
+                          )}
+                          <div className="text-[10px] opacity-70 leading-tight">1× = le plus grand intervalle de la fiche tient dans un écran. En dessous = plus compact. Au-dessus = plus étalé, les longs intervalles dépassent l'écran. Jamais de compression sous le contenu réel.</div>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </>
               )}
 

@@ -166,33 +166,56 @@ export default function FT({ variant = "classic" }: FTProps) {
   const [activeRowIndex, setActiveRowIndex] = useState<number>(0);
 
   // Mise à l'échelle FT (#25) : reçu de TitleBar (option + multiplicateur), live.
-  // `multiplier` = facteur appliqué à la BASE auto-calculée (densité du segment
-  // le plus contraint). 1× = le plus compact en restant proportionnel.
-  const [ftScale, setFtScale] = useState<{ enabled: boolean; multiplier: number }>(() => {
-    // ⚠️ 14/08 — `enabled` démarre TOUJOURS à false, jamais relu de localStorage
-    // (cf. le commentaire jumeau dans TitleBar) : la case et l'état réel doivent
-    // concorder au chargement. Le multiplicateur, lui, reste une préférence.
-    try {
-      return {
-        enabled: false,
-        multiplier: parseFloat(localStorage.getItem("lim:ft-scale-mult") ?? "0.2") || 0.2,
-      };
-    } catch {
-      return { enabled: false, multiplier: 0.2 };
-    }
+  // ⚠️ 15/08 — `multiplier` s'applique à la DENSITÉ DE RÉFÉRENCE (le plus grand
+  // intervalle de la fiche remplit un écran), plus à la densité du segment le
+  // plus contraint. 1× est donc le repère naturel, pas un minimum : en dessous
+  // c'est plus compact, au-dessus plus étalé.
+  // ⚠️ Aucune lecture de localStorage ici : la préférence appartient à TitleBar,
+  // qui mémorise l'ÉCART AU SEUIL d'exactitude et non une valeur absolue. FT ne
+  // fait que recevoir la valeur courante. `enabled` démarre toujours à false —
+  // la case et l'état réel doivent concorder au chargement (correctif 14/08).
+  const [ftScale, setFtScale] = useState<{ enabled: boolean; multiplier: number }>({
+    enabled: false,
+    multiplier: 1,
   });
   useEffect(() => {
     const h = (e: Event) => {
       const d = (e as CustomEvent).detail;
-      if (d) setFtScale({ enabled: !!d.enabled, multiplier: Number(d.multiplier) || 1 });
+      if (!d) return;
+      // ⚠️ À l'ACTIVATION, on oublie la dernière signature annoncée pour forcer
+      // une réémission de `lim:ft-scale-exact`. L'évènement n'est sinon émis
+      // qu'au CHANGEMENT de valeur : un auditeur qui arrive après coup — ou qui
+      // a été remonté — n'apprendrait jamais le seuil, et le curseur resterait
+      // sans légende. Constaté le 15/08 en instrumentant depuis la console.
+      if (d.enabled) dernierMultExactRef.current = null;
+      setFtScale({ enabled: !!d.enabled, multiplier: Number(d.multiplier) || 1 });
     };
     window.addEventListener("lim:ft-scale", h as EventListener);
     return () => window.removeEventListener("lim:ft-scale", h as EventListener);
   }, []);
+  /**
+   * Dernières bornes annoncées à TitleBar — seuil d'exactitude et point mort,
+   * sous forme de signature « seuil|plancher » — pour n'émettre
+   * `lim:ft-scale-exact` qu'au changement. L'effet de mesure tourne à chaque
+   * reflow : sans ce garde, l'évènement partirait des dizaines de fois par
+   * seconde.
+   */
+  const dernierMultExactRef = React.useRef<string | null>(null);
 
-  // Mode déplié (INFOS/LTV affichés) : la zone FT visible est minuscule, la mise
-  // à l'échelle n'a aucun sens (on ne verrait que de l'espace vide) → on la coupe.
-  // `folded` (TitleBar) : true = FT seule (échelle pertinente), false = déplié.
+  // Pli des blocs INFOS/LTV. `folded` (TitleBar) : true = FT seule, false = déplié.
+  //
+  // ⚠️ 15/08 — LA MISE À L'ÉCHELLE N'Y EST PLUS CONDITIONNÉE. Elle était coupée
+  // en mode déplié parce que la bande de fiche visible y est courte : l'étalement
+  // n'y montrait « que de l'espace vide », donc ni Bloc, ni Vmax, ni rampe. C'est
+  // exactement la panne que la couche en surimpression a supprimée — les cinq
+  // valeurs sont désormais présentes même sans une seule ligne à l'écran, et les
+  // graduations kilométriques restent comme témoin de vie. Même raisonnement que
+  // pour l'ancien plafond de densité : la restriction protégeait d'un danger
+  // disparu.
+  //
+  // Le pli reste en DÉPENDANCE de l'effet de mesure : il change la hauteur
+  // visible, donc la densité de référence, donc le seuil d'exactitude et les
+  // bornes du curseur. Tout se recalibre à chaque pli/dépli.
   const [infosLtvFolded, setInfosLtvFolded] = useState(false);
   useEffect(() => {
     const h = (e: Event) => {
@@ -3301,10 +3324,11 @@ useEffect(() => {
           };
         });
 
-      // OFF, ou mode DÉPLIÉ (INFOS/LTV affichés) = layout naturel (gaps à 0).
+      // Mise à l'échelle OFF = layout naturel (gaps laissés à 0).
       // ⚠️ On ne sort PLUS de la fonction ici : les bandes de surlignage des
       // notes se calculent dans les deux cas (cf. plus bas).
-      if (ftScale.enabled && infosLtvFolded) {
+      // ⚠️ 15/08 — Le pli ne conditionne PLUS rien ici (cf. `infosLtvFolded`).
+      if (ftScale.enabled) {
       const info = measure();
 
       // 3) BASE = densité (px/km) du segment le plus CONTRAINT (le plus de
@@ -3313,6 +3337,14 @@ useEffect(() => {
       //    ≥ base, TOUS les segments atteignent `étalement×distance` → vraiment
       //    proportionnel (le contenu intermédiaire occupe une partie de l'espace).
       let base = 0;
+      // ── POINT MORT ─────────────────────────────────────────────────────────
+      // Densité du segment le MOINS contraint (le moins de contenu pour le plus
+      // de kilomètres). `extra` valant `max(0, eff × dist − hauteurNaturelle)`,
+      // un segment cesse d'être écarté dès que `eff ≤ hauteurNaturelle / dist` :
+      // en dessous du MINIMUM de ces rapports, plus AUCUN segment ne bouge et la
+      // fiche est identique au mode non mis à l'échelle. C'est la borne basse
+      // utile du curseur — plus bas, il ne ferait plus rien.
+      let densiteMin = Infinity;
       for (let k = 0; k < info.length - 1; k++) {
         const a = info[k];
         const b = info[k + 1];
@@ -3321,29 +3353,36 @@ useEffect(() => {
         if (dist <= 0) continue;
         const naturalGap = b.top - a.top;
         base = Math.max(base, naturalGap / dist);
+        densiteMin = Math.min(densiteMin, naturalGap / dist);
       }
       if (base > 0) {
-        // Étalement effectif = base × multiplicateur (≥ base → proportionnel).
+        // ── DENSITÉ DE RÉFÉRENCE (= le 1× du curseur) ───────────────────────
         //
-        // ⚠️ 14/08 — PLAFOND : l'écran doit toujours pouvoir montrer au moins
-        // KM_MIN_A_ECRAN kilomètres. Le plus grand intervalle de la ligne fait
-        // 18,80 km (Limite ADIF-LFPSA → tête du tunnel du Perthus), pour un
-        // intervalle médian de 2,10 km, soit un rapport de 9 pour 1. Sans
-        // plafond, dès que le médian devient confortable, le Perthus dépasse
-        // largement la hauteur d'écran : on le traverse alors sans AUCUNE ligne
-        // affichée, donc sans Bloc, sans Vmax et sans rampe — les écrans vides
-        // constatés le 14/08.
-        // Le plafond porte sur la DENSITÉ GLOBALE, jamais sur un intervalle
-        // particulier : les rapports entre segments restent rigoureusement
-        // exacts, seul le zoom maximal est borné. Plafonner chaque intervalle
-        // séparément aurait détruit la proportionnalité, qui est tout l'intérêt
-        // de la mise à l'échelle (objection de l'utilisateur, à raison).
-        // Le plafond dépend de la hauteur visible : il se resserre donc de
-        // lui-même en paysage, sans réglage à tenir à jour.
-        // Le seuil n'est PAS une constante : c'est le plus grand intervalle
-        // réellement présent sur la fiche chargée, majoré d'une marge. Un seuil
-        // fixe à 20 km (le Perthus, 18,80 km) bridait inutilement les trains
-        // qui ne contiennent aucun intervalle de cette taille.
+        // Densité pour laquelle le PLUS GRAND intervalle de la fiche remplit
+        // exactement un écran. Ce n'est pas une constante : elle se calcule sur
+        // la fiche chargée et sur la hauteur visible, donc elle suit
+        // l'orientation de l'iPad et le pli du bloc info sans réglage à tenir à
+        // jour. Un seuil fixe à 20 km (le Perthus, 18,80 km) bridait inutilement
+        // les trains qui ne contiennent aucun intervalle de cette taille.
+        //
+        // ⚠️ 15/08 — C'ÉTAIT UN PLAFOND JUSQU'ICI, ça ne l'est plus.
+        // Il garantissait qu'aucun intervalle ne dépasse la hauteur d'écran,
+        // parce qu'on traversait alors l'intervalle sans AUCUNE ligne affichée —
+        // donc sans Bloc, sans Vmax, sans rampe (les écrans vides du 14/08). Il
+        // écrasait du même coup la course utile du curseur d'espacement à
+        // 0,2-0,3, ce qui avait conduit à retirer le curseur.
+        // La refonte du scroll intelligent a supprimé la cause : les valeurs
+        // sont portées par une couche en surimpression qui n'a besoin d'aucune
+        // ligne d'accueil (cf. FT_LABEL_COLS en tête de fichier). Un intervalle
+        // plus haut que l'écran se traverse désormais avec ses cinq valeurs sous
+        // les yeux et les graduations kilométriques comme témoin de vie. La
+        // valeur devient donc la RÉFÉRENCE du curseur, plus sa borne.
+        //
+        // ⚠️ Ce qui reste vrai et ne doit pas bouger : le réglage porte sur la
+        // DENSITÉ GLOBALE, jamais sur un intervalle particulier. Les rapports
+        // entre segments restent rigoureusement exacts, seul le zoom change.
+        // Plafonner chaque intervalle séparément détruirait la proportionnalité,
+        // qui est tout l'intérêt de la mise à l'échelle.
         let plusGrandIntervalle = 0;
         for (let k = 0; k < info.length - 1; k++) {
           const a = info[k];
@@ -3356,21 +3395,50 @@ useEffect(() => {
         }
         const MARGE = 1.05;
         const hauteurVisible = scrollContainerRef.current?.clientHeight ?? 0;
-        const plafondDensite =
+        const densiteReference =
           hauteurVisible > 0 && plusGrandIntervalle > 0
             ? hauteurVisible / (plusGrandIntervalle * MARGE)
             : Infinity;
 
-        // ⚠️ 14/08 — Plus de multiplicateur réglable : le curseur a été retiré.
-        // Une fois la densité plafonnée pour garantir qu'aucun intervalle ne
-        // dépasse l'écran, sa course utile se réduisait à 0,2-0,3 sur la ligne
-        // complète — un réglage sans choix réel. Cocher la case applique donc
-        // directement la densité maximale autorisée. Elle reste CALCULÉE, jamais
-        // écrite en dur : elle dépend de la hauteur visible, donc de
-        // l'orientation de l'iPad et du pli du bloc info.
-        let effEtalement = Number.isFinite(plafondDensite)
-          ? plafondDensite
-          : base;
+        // Curseur d'espacement (rétabli le 15/08). 1× = le plus grand intervalle
+        // remplit un écran, soit exactement le comportement du 14/08 au 15/08.
+        // En dessous : plus compact, plus de lignes à l'écran. Au-dessus : les
+        // longs intervalles dépassent l'écran, ce qui est maintenant sans
+        // conséquence sur la lisibilité des cinq colonnes.
+        const multiplicateur =
+          Number.isFinite(ftScale.multiplier) && ftScale.multiplier > 0
+            ? ftScale.multiplier
+            : 1;
+        let effEtalement = Number.isFinite(densiteReference)
+          ? densiteReference * multiplicateur
+          : base * multiplicateur;
+
+        // ── SEUIL DE PROPORTIONNALITÉ EXACTE ────────────────────────────────
+        // `base` est la densité du segment le PLUS CONTRAINT (le plus de contenu
+        // pour le moins de kilomètres). En dessous, ce segment reste bloqué à sa
+        // hauteur naturelle — on écarte, on ne comprime jamais — et la fiche
+        // ment sur les distances. À partir de `base`, TOUS les segments
+        // atteignent `étalement × distance` : les rapports deviennent
+        // rigoureusement exacts, et le RESTENT au-delà (on ne fait que zoomer).
+        // C'est donc un PLANCHER d'exactitude, jamais un plafond.
+        //
+        // Publié vers TitleBar pour que le curseur sache où il se trouve. Le
+        // seuil n'a rien d'une constante : il dépend de la fiche (contenu des
+        // segments) et de la hauteur visible (via `densiteReference`), donc de
+        // l'orientation de l'iPad. Il ne peut être qu'annoncé, pas écrit en dur.
+        const utilisable =
+          Number.isFinite(densiteReference) && densiteReference > 0;
+        // Arrondis au dixième, comme le pas du curseur : sinon le moindre pixel
+        // de reflow ré-émettrait l'évènement à chaque passe de mesure.
+        const multExact = utilisable
+          ? Math.round((base / densiteReference) * 10) / 10
+          : null;
+        // Point mort ARRONDI VERS LE BAS : la borne doit rester en deçà de la
+        // valeur théorique, sinon on couperait le dernier dixième encore utile.
+        const multPlancher =
+          utilisable && Number.isFinite(densiteMin)
+            ? Math.max(0.1, Math.floor((densiteMin / densiteReference) * 10) / 10)
+            : null;
 
         // ⚠️ 14/08 — TRAIN COURT : remplir l'espace blanc, mais pas au-delà.
         // Quand la fiche entière tient déjà dans l'écran, il reste du vide en
@@ -3396,6 +3464,7 @@ useEffect(() => {
           segments.reduce((s, sg) => s + Math.max(0, eff * sg.dist - sg.gap), 0);
 
         const hauteurNaturelle = table.offsetHeight; // gaps remis à 0 plus haut
+        let sature = false;
         if (hauteurVisible > 0 && hauteurNaturelle < hauteurVisible) {
           const aCombler = hauteurVisible - hauteurNaturelle;
           if (ajoutPour(effEtalement) > aCombler) {
@@ -3407,7 +3476,39 @@ useEffect(() => {
               else bas = milieu;
             }
             effEtalement = bas;
+            // La fiche est SATURÉE : elle remplit déjà l'écran et le
+            // multiplicateur demandé a été ramené au point de remplissage. Toute
+            // valeur au-dessus donnera rigoureusement le même rendu — le curseur
+            // n'a plus aucun effet, et TitleBar doit le dire au lieu d'offrir un
+            // réglage inerte (constaté sur le 38510, 6 lignes : identique de
+            // 0,5× à 8×).
+            sature = true;
           }
+        }
+
+        // ── VERDICT D'EXACTITUDE ────────────────────────────────────────────
+        // ⚠️ Émis ICI, APRÈS la dichotomie, et surtout PAS déduit dans TitleBar
+        // d'une comparaison `multiplicateur ≥ seuil`. Sur un train court, la
+        // dichotomie vient d'abaisser `effEtalement` en dessous de ce que le
+        // multiplicateur demandait : la comparaison des multiplicateurs y
+        // annonçait « proportionnel exact » alors que l'application avait
+        // elle-même supprimé cette proportionnalité (constaté le 15/08 sur le
+        // 38510 — seuil 0,9×, curseur calé dessus, vert affiché, densité réelle
+        // au mieux la moitié). Seul ce point du code connaît la valeur finale.
+        const exact = base > 0 && effEtalement >= base * 0.999;
+        const signature = `${multExact}|${multPlancher}|${exact}|${sature}`;
+        if (signature !== dernierMultExactRef.current) {
+          dernierMultExactRef.current = signature;
+          window.dispatchEvent(
+            new CustomEvent("lim:ft-scale-exact", {
+              detail: {
+                multiplicateur: multExact,
+                plancher: multPlancher,
+                exact,
+                sature,
+              },
+            })
+          );
         }
 
 
@@ -3503,7 +3604,10 @@ useEffect(() => {
           // Graduations kilométriques : UNIQUEMENT quand la mise à l'échelle est
           // réellement active. Hors échelle, l'espacement des lignes ne traduit
           // aucune distance — des traits « au kilomètre » y seraient un mensonge.
-          if (ftScale.enabled && infosLtvFolded) {
+          // ⚠️ 15/08 — Plus de condition sur le pli : la mise à l'échelle vaut
+          // aussi en mode déplié, et c'est même là que le témoin de vie compte le
+          // plus, la bande visible y étant courte.
+          if (ftScale.enabled) {
             const pks = post
               .map((p) => p.pk)
               .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
