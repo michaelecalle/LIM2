@@ -611,9 +611,15 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   // L'application ouvre maintenant toujours désactivée, case décochée : les deux
   // concordent. Seul le multiplicateur reste mémorisé (c'est une préférence).
   const [ftScaleEnabled, setFtScaleEnabled] = useState(false)
-  const [ftScaleMult, setFtScaleMult] = useState(() => {
-    try { const v = parseFloat(localStorage.getItem('lim:ft-scale-mult') ?? '0.2'); return Number.isFinite(v) && v > 0 ? v : 0.2 } catch { return 0.2 }
-  })
+  /**
+   * ⚠️ 14/08 — Le multiplicateur n'est plus réglable : le curseur a été retiré.
+   * FT applique désormais la densité maximale qu'elle calcule elle-même à
+   * partir du plus grand intervalle de la fiche et de la hauteur visible, et
+   * ignore cette valeur. Elle n'est conservée que pour la forme de l'évènement
+   * `lim:ft-scale`, afin de ne pas toucher au contrat entre les deux
+   * composants.
+   */
+  const ftScaleMult = 1
   useEffect(() => {
     try {
       // `lim:ft-scale` n'est plus écrit : plus personne ne le relit (cf. ci-dessus).
@@ -5015,15 +5021,18 @@ setAutoScrollStartedOnce(next)
                       className="h-4 w-4 cursor-pointer accent-blue-600"
                     />
                   </label>
+                  {/* ⚠️ 14/08 — Curseur d'espacement RETIRÉ. La densité est
+                      plafonnée pour qu'aucun intervalle ne dépasse la hauteur
+                      d'écran (sinon on traverse un intervalle sans aucune ligne
+                      affichée, donc sans Bloc, Vmax ni rampe). Ce plafond
+                      réduisait la course utile à 0,2-0,3 sur la ligne complète :
+                      un réglage sans choix réel. Cocher la case applique
+                      désormais la densité maximale, calculée par FT à partir du
+                      plus grand intervalle de la fiche et de la hauteur visible. */}
                   {ftScaleEnabled && (
-                    <div className="pl-2 pb-1 text-xs text-zinc-600 dark:text-zinc-300 space-y-2">
-                      <div>
-                        <div className="flex justify-between"><span>Espacement</span><span>{ftScaleMult.toFixed(1)}×</span></div>
-                        <input type="range" min={0.2} max={3} step={0.1} value={ftScaleMult}
-                          onChange={(e) => setFtScaleMult(parseFloat(e.target.value))}
-                          className="w-full cursor-pointer accent-blue-600" />
-                        <div className="text-[10px] opacity-70 leading-tight">1× = proportionnel exact. En dessous = plus compact à l'écran (moins exact). Jamais de compression sous le contenu réel.</div>
-                      </div>
+                    <div className="pl-2 pb-1 text-[10px] text-zinc-600 dark:text-zinc-300 leading-tight">
+                      Espacement proportionnel maximal, ajusté à la fiche et à la
+                      hauteur d'écran. Jamais de compression sous le contenu réel.
                     </div>
                   )}
                 </>

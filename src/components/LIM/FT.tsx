@@ -58,6 +58,51 @@ const FT_PINNED_SCROLL = true;
 const FT_PIN_FRACTION = 1 / 3; // épinglage à ~1/3 du haut de la zone visible
 const FT_SCROLL_EASE = 0.12;   // lissage par frame (glisse vers la cible)
 
+// === SCROLL INTELLIGENT — refonte du 15/08 ===================================
+// « Scroll intelligent » = 3e sens du mot scroll dans LIM (ni le manuel, ni
+// l'automatique) : garder sous les yeux la valeur d'une colonne (Bloc, Vmax,
+// rampe, Radio, ETCS) quand la ligne qui la porte est sortie de l'écran.
+//
+// AVANT : la valeur restait dans le tableau, et le code cherchait une LIGNE
+// D'ACCUEIL visible pour l'y réimprimer. Quatre bugs distincts sont nés de
+// cette recherche (rang de ligne principale comparé à un index d'entrée, plage
+// visible périmée, calcul dupliqué, tests de visibilité non stricts) — et deux
+// colonnes sur cinq restaient cassées après correction, chacune sur son propre
+// chemin de code.
+//
+// MAINTENANT : les cellules ne portent plus la valeur. Une COUCHE EN
+// SURIMPRESSION la place au PK de son segment et la cale contre le bord haut de
+// l'écran tant que le bas du segment ne la pousse pas dehors. Une seule règle,
+// cinq colonnes, deux modes (avec et sans mise à l'échelle) :
+//
+//     haut = borne(hautDuSegment, hautZoneVisible, basDuSegment − hauteurÉtiquette)
+//
+// Il n'y a plus de ligne d'accueil, donc plus rien à rater : une valeur ne peut
+// disparaître que si son segment lui-même est hors écran.
+//
+// Colonnes portées par la couche, avec l'indice de leur `td` dans les lignes du
+// tableau (format 2026, 10 colonnes). L'indice est lu ICI et nulle part
+// ailleurs : c'est la famille d'erreur qui a produit les bugs du 14/08.
+const FT_LABEL_COLS = [
+  { cle: "bloc", td: 0 },
+  { cle: "vmax", td: 1 },
+  { cle: "radio", td: 7 },
+  { cle: "rampe", td: 8 },
+  { cle: "etcs", td: 9 },
+] as const;
+type FtLabelCol = (typeof FT_LABEL_COLS)[number]["cle"];
+
+// Lignes intermédiaires (`tr.ft-row-spacer`) : elles n'existaient que pour
+// porter la Vmax sous une barre et la Radio d'un segment ≥ 2. La couche s'en
+// charge désormais, elles seraient vides.
+//   true  = supprimées. Sans effet visible EN MISE À L'ÉCHELLE : l'espace retiré
+//           est automatiquement recompensé, `extra = max(0, eff × dist − hauteur
+//           naturelle)` retombant sur la même hauteur de segment. Seule la fiche
+//           NON mise à l'échelle se compacte réellement, aux changements de
+//           segment (à valider à l'écran).
+//   false = conservées mais vides (hauteur d'avant la refonte).
+const FT_SUPPRIMER_LIGNES_INTERMEDIAIRES = true;
+
 type GpsPosition = {
   lat: number;
   lon: number;
@@ -101,20 +146,22 @@ type FTProps = {
 };
 
 export default function FT({ variant = "classic" }: FTProps) {
-  const [visibleRows, setVisibleRows] = React.useState<{ first: number; last: number }>({
-    first: 0,
-    last: 0,
-  });
-  // Cache de la plage visible : évite de re-rendre toute la FT à chaque event
-  // scroll (60 fps avec le scroll épinglé) quand la plage n'a pas changé.
-  const visibleRowsRef = React.useRef(visibleRows);
-  visibleRowsRef.current = visibleRows;
+  // ⚠️ 15/08 — La « plage de lignes visibles » (`visibleRows`) a DISPARU avec la
+  // refonte du scroll intelligent (cf. FT_LABEL_COLS en tête de fichier). Elle
+  // n'existait que pour désigner une ligne d'accueil, et publiait pour cela deux
+  // numérotations incompatibles — rangs de lignes principales d'un côté, index
+  // d'entrée `data-ft-row` de l'autre — dont le mélange a produit à lui seul
+  // trois des quatre bugs du 14/08. La couche en surimpression se place au PK,
+  // pas sur une ligne : plus de plage, plus de numérotations, plus de test de
+  // visibilité. Ne pas la réintroduire.
+  //
   // Position CONTENU continue du train (px absolus dans le tableau, = arrow Y +
   // scrollTop). Sert au scroll épinglé (#26). Renseignée par commitTrainPos.
   const trainContentYRef = React.useRef<number | null>(null);
   // Réf DOM de la flèche : en scroll épinglé, on pilote son `top` à 60 fps pour
   // qu'elle reste figée à 1/3 (et descende proprement en début/fin de parcours).
   const pinnedArrowRef = React.useRef<HTMLDivElement | null>(null);
+
   // ligne "active" quand on est en mode horaire (play)
   const [activeRowIndex, setActiveRowIndex] = useState<number>(0);
 
@@ -205,103 +252,260 @@ export default function FT({ variant = "classic" }: FTProps) {
 
 
   /**
-   * Recalcule la plage de lignes principales réellement à l'écran.
+   * ── SCROLL INTELLIGENT : la couche en surimpression ────────────────────────
    *
-   * ⚠️ 14/08 — EXTRAIT de `handleScroll`, où il était enfermé. Le « scroll
-   * intelligent » (réaffichage d'une valeur dont la ligne-label est sortie de
-   * l'écran) s'appuie entièrement sur cette plage. Or activer la mise à
-   * l'échelle, bouger le curseur d'espacement ou replier le bloc info
-   * déplacent massivement les lignes SANS produire le moindre évènement de
-   * défilement : la plage restait celle d'avant, et les valeurs étaient
-   * réaffichées sur des lignes devenues hors écran. D'où des colonnes Bloc,
-   * Vmax et rampe vides — constaté par l'utilisateur le 14/08, et cohérent
-   * avec le fait que tout fonctionne tant que la mise à l'échelle est coupée.
-   * Appelée désormais au défilement ET à chaque changement de mise en page
-   * (cf. l'observateur de redimensionnement plus bas).
+   * Une étiquette = la valeur d'une colonne pour UN segment, posée en absolu
+   * dans le repère de `.ft-body-scroll` (donc elle défile avec la fiche, comme
+   * les bandes de notes et les bandes LTV).
+   *
+   * Deux temps, volontairement séparés :
+   *  - `recalculerEtiquettes` mesure la GÉOMÉTRIE (haut/bas du segment, colonne)
+   *    et publie la liste. Ne dépend PAS du défilement, donc appelé seulement
+   *    quand la mise en page bouge.
+   *  - `majEtiquettes` ne fait que le CALAGE VERTICAL, en écriture DOM directe,
+   *    à 60 fps. Jamais d'état React ici : la FT entière serait re-rendue à
+   *    chaque image de défilement.
    */
-  const recalculerPlageVisible = React.useCallback((el: HTMLDivElement | null) => {
-    if (!el) return;
-    const scrollTop = el.scrollTop;
-    const clientHeight = el.clientHeight;
+  type FtLabel = {
+    col: FtLabelCol;
+    valeur: string;
+    /** Bornes du segment, en px dans le repère de `.ft-body-scroll`. */
+    haut: number;
+    bas: number;
+    left: number;
+    width: number;
+  };
+  const [ftLabels, setFtLabels] = useState<FtLabel[]>([]);
+  const ftLabelsRef = React.useRef<FtLabel[]>(ftLabels);
+  ftLabelsRef.current = ftLabels;
+  /** Nœuds DOM des étiquettes, dans l'ordre de `ftLabels`. */
+  const labelNodesRef = React.useRef<Array<HTMLDivElement | null>>([]);
+  /**
+   * Segments à étiqueter, alimentés au rendu (cf. « DESCRIPTEURS DE SEGMENTS »).
+   * En `ref` et non en état : c'est une donnée dérivée du rendu courant, la
+   * relire ici évite d'ajouter cinq dépendances à l'effet de mesure.
+   */
+  type FtLabelSeg = {
+    valeur: string;
+    /** Index d'entrée (`data-ft-row`) de la ligne qui ouvre le segment. */
+    ligneDebut: number;
+    /** Le segment commence SOUS la barre de séparation portée par cette ligne. */
+    sousBarre: boolean;
+  };
+  const scrollSegmentsRef = React.useRef<Record<FtLabelCol, FtLabelSeg[]>>({
+    bloc: [],
+    vmax: [],
+    radio: [],
+    rampe: [],
+    etcs: [],
+  });
+  /**
+   * Plages verticales du surlignage orange des zones CSV (colonne Vmax).
+   * ⚠️ Nécessaire uniquement en THÈME SOMBRE : la cellule orange y force son
+   * texte en noir (`.dark .ft-v-cell.ft-v-csv-full`), règle qu'une étiquette
+   * posée AU-DESSUS de la cellule n'hérite pas. Comme l'étiquette se déplace à
+   * l'intérieur de son segment, elle peut entrer et sortir de l'orange sans que
+   * rien ne change dans le DOM : c'est donc au calage 60 fps de trancher.
+   */
+  const orangeRangesRef = React.useRef<Array<[number, number]>>([]);
+  /** Dernier `scrollTop` calé — évite de réécrire 30 styles pour rien. */
+  const dernierCalageRef = React.useRef<number>(-1);
 
-    // 1) on récupère les lignes principales
-    const rowEls = el.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main");
-    if (!rowEls.length) return;
+  /**
+   * Calage vertical des étiquettes. LA règle du scroll intelligent, et la seule.
+   *
+   *     haut = borne(hautDuSegment, hautZoneVisible, basDuSegment − hauteur)
+   *
+   * L'étiquette défile avec la fiche tant que le haut de son segment est à
+   * l'écran, se colle au bord supérieur dès qu'il est passé dessus, puis se
+   * fait pousser dehors par le bas de son propre segment — ce qui cède la place
+   * à celle du segment suivant sans qu'aucune des deux n'ait à savoir que
+   * l'autre existe.
+   */
+  const majEtiquettes = React.useCallback((forcer = false) => {
+    const c = scrollContainerRef.current;
+    if (!c) return;
+    const scrollTop = c.scrollTop;
+    if (!forcer && scrollTop === dernierCalageRef.current) return;
+    dernierCalageRef.current = scrollTop;
 
-    // 2) première ligne dont le bas est sous le haut du viewport
-    let firstVisible = 0;
-    for (let i = 0; i < rowEls.length; i++) {
-      const r = rowEls[i];
-      if (r.offsetTop + r.offsetHeight >= scrollTop) {
-        firstVisible = i;
-        break;
+    const labels = ftLabelsRef.current;
+    if (labels.length === 0) return;
+    const noeuds = labelNodesRef.current;
+    const oranges = orangeRangesRef.current;
+
+    // ⚠️ LECTURES D'ABORD, ÉCRITURES ENSUITE. Lire `offsetHeight` juste après
+    // avoir écrit un `top` force le navigateur à recalculer la mise en page —
+    // une fois par étiquette, soit une trentaine de recalculs par image. Séparer
+    // les deux phases n'en laisse qu'un seul.
+    const hauteurs: number[] = new Array(labels.length);
+    for (let k = 0; k < labels.length; k++) {
+      hauteurs[k] = noeuds[k]?.offsetHeight ?? 0;
+    }
+
+    for (let k = 0; k < labels.length; k++) {
+      const el = noeuds[k];
+      if (!el) continue;
+      const L = labels[k];
+      const h = hauteurs[k];
+
+      // borne(...) : jamais au-dessus du haut du segment, jamais plus bas que ce
+      // que son bas autorise. Si le segment est plus court que l'étiquette, le
+      // haut l'emporte — mieux vaut déborder d'un segment que disparaître.
+      let top = Math.min(scrollTop, L.bas - h);
+      if (top < L.haut) top = L.haut;
+      el.style.top = `${Math.round(top)}px`;
+
+      if (L.col === "vmax") {
+        const milieu = top + h / 2;
+        let surOrange = false;
+        for (const [a, b] of oranges) {
+          if (milieu >= a && milieu <= b) {
+            surOrange = true;
+            break;
+          }
+        }
+        el.classList.toggle("ft-label-sur-orange", surOrange);
       }
-    }
-
-    // 3) dernière ligne dont le haut est encore dans le viewport
-    const viewportBottom = scrollTop + clientHeight;
-    let lastVisible = firstVisible;
-    for (let i = firstVisible; i < rowEls.length; i++) {
-      if (rowEls[i].offsetTop <= viewportBottom) lastVisible = i;
-      else break;
-    }
-
-    // Indices « réels » (data-ft-row) si disponibles.
-    const firstDataAttr = rowEls[firstVisible]?.getAttribute("data-ft-row") ?? "";
-    const lastDataAttr = rowEls[lastVisible]?.getAttribute("data-ft-row") ?? "";
-    const firstDataRow = firstDataAttr ? parseInt(firstDataAttr, 10) : null;
-    const lastDataRow = lastDataAttr ? parseInt(lastDataAttr, 10) : null;
-
-    const nextFirst =
-      typeof firstDataRow === "number" && Number.isFinite(firstDataRow)
-        ? firstDataRow
-        : firstVisible;
-    const nextLast =
-      typeof lastDataRow === "number" && Number.isFinite(lastDataRow)
-        ? lastDataRow
-        : lastVisible;
-
-    // #26 : ne re-rendre la FT que si la plage a réellement changé — le scroll
-    // épinglé déclenche un évènement scroll ~60 fps.
-    if (
-      nextFirst !== visibleRowsRef.current.first ||
-      nextLast !== visibleRowsRef.current.last
-    ) {
-      visibleRowsRef.current = { first: nextFirst, last: nextLast };
-      setVisibleRows({ first: nextFirst, last: nextLast });
     }
   }, []);
 
   /**
-   * ⚠️ 14/08 — Recalcul de la plage visible SANS évènement de défilement.
+   * Mesure la géométrie des étiquettes et publie la liste.
+   *
+   * ⚠️ À appeler APRÈS l'effet de mise à l'échelle (#25) : c'est lui qui pose la
+   * hauteur des lignes d'espacement, donc les `offsetTop` d'avant sont faux. Le
+   * cas était déjà la cause d'une partie des colonnes vides du 14/08.
+   */
+  const recalculerEtiquettes = React.useCallback(() => {
+    const table = document.querySelector<HTMLElement>(
+      ".ft-body-scroll table.ft-table"
+    );
+    if (!table) return;
+
+    // 1) Ancres verticales : haut et centre de chaque ligne principale.
+    // Le CENTRE est l'ancre kilométrique de la ligne (elle représente un POINT),
+    // et c'est aussi exactement là que sont dessinées les barres de séparation
+    // (`top: 50%`) — un segment ouvert « sous la barre » commence donc au centre
+    // de sa ligne d'ouverture, ni avant ni après.
+    const hautParLigne = new Map<number, number>();
+    const centreParLigne = new Map<number, number>();
+    const rowEls = table.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main");
+    for (const tr of Array.from(rowEls)) {
+      const idx = Number(tr.getAttribute("data-ft-row"));
+      if (!Number.isFinite(idx)) continue;
+      hautParLigne.set(idx, tr.offsetTop);
+      centreParLigne.set(idx, tr.offsetTop + tr.offsetHeight / 2);
+    }
+    if (hautParLigne.size === 0) return;
+
+    // 2) Emprise horizontale de chaque colonne, lue sur la 1re ligne principale.
+    const premiere = rowEls[0];
+    const cells = premiere?.querySelectorAll<HTMLTableCellElement>("td");
+    if (!cells || cells.length === 0) return;
+
+    // Bas de la fiche, dans le repère de `.ft-body-scroll` : la table n'y est
+    // pas forcément à l'ordonnée 0 (bordure, marge éventuelle).
+    const hauteurContenu = table.offsetTop + table.offsetHeight;
+    const suivant: FtLabel[] = [];
+
+    for (const { cle, td } of FT_LABEL_COLS) {
+      const cell = cells[td];
+      if (!cell) continue;
+      const left = cell.offsetLeft;
+      const width = cell.offsetWidth;
+
+      const segs = scrollSegmentsRef.current[cle] ?? [];
+      // Bornes : le haut du segment suivant EST le bas du segment courant. Aucun
+      // trou, aucun recouvrement — donc jamais deux étiquettes au même endroit.
+      const hauts: number[] = [];
+      for (const s of segs) {
+        const y = s.sousBarre
+          ? centreParLigne.get(s.ligneDebut)
+          : hautParLigne.get(s.ligneDebut);
+        hauts.push(typeof y === "number" ? y : NaN);
+      }
+      for (let k = 0; k < segs.length; k++) {
+        const haut = hauts[k];
+        if (!Number.isFinite(haut)) continue;
+        const valeur = segs[k].valeur;
+        if (!valeur) continue;
+        // Bas = premier haut suivant réellement mesurable (une ligne d'ouverture
+        // peut manquer si le parcours est tronqué), sinon le bas de la fiche.
+        let bas = hauteurContenu;
+        for (let n = k + 1; n < hauts.length; n++) {
+          if (Number.isFinite(hauts[n])) {
+            bas = hauts[n];
+            break;
+          }
+        }
+        if (bas <= haut) continue;
+        suivant.push({ col: cle, valeur, haut, bas, left, width });
+      }
+    }
+
+    // 3) Plages orange des zones CSV (cf. `orangeRangesRef`).
+    const oranges: Array<[number, number]> = [];
+    for (const el of Array.from(
+      table.querySelectorAll<HTMLElement>(
+        ".ft-v-cell.ft-v-csv-full, .ft-v-cell.ft-v-csv-top, .ft-v-cell.ft-v-csv-bottom"
+      )
+    )) {
+      const t = el.offsetTop;
+      const h = el.offsetHeight;
+      if (el.classList.contains("ft-v-csv-top")) oranges.push([t, t + h / 2]);
+      else if (el.classList.contains("ft-v-csv-bottom"))
+        oranges.push([t + h / 2, t + h]);
+      else oranges.push([t, t + h]);
+    }
+    oranges.sort((a, b) => a[0] - b[0]);
+    orangeRangesRef.current = oranges;
+
+    setFtLabels((prev) =>
+      JSON.stringify(prev) === JSON.stringify(suivant) ? prev : suivant
+    );
+    // La liste peut être identique alors que le contenu a bougé sous elle
+    // (changement d'orange, retour au même scrollTop) : on force le calage.
+    dernierCalageRef.current = -1;
+    majEtiquettes(true);
+  }, [majEtiquettes]);
+
+  // Le calage suit le DOM : dès que la liste change, les nœuds sont neufs et
+  // leur `top` vaut 0. `useLayoutEffect` les place AVANT la peinture, sinon on
+  // voit toutes les étiquettes clignoter en haut de la fiche.
+  React.useLayoutEffect(() => {
+    labelNodesRef.current.length = ftLabels.length;
+    majEtiquettes(true);
+  }, [ftLabels, majEtiquettes]);
+
+  /**
+   * ⚠️ 14/08 (conservé) — Recalcul SANS évènement de défilement.
    *
    * Un observateur de redimensionnement plutôt qu'une liste d'évènements : la
-   * mise à l'échelle, le curseur d'espacement, le pli/dépli du bloc info, la
-   * rotation de l'iPad et le chargement d'un train changent tous la géométrie
-   * du tableau, mais aucun n'émet de `scroll`. Les énumérer un par un revenait
-   * à en oublier un au prochain ajout ; observer la taille les couvre tous, y
-   * compris ceux qui n'existent pas encore.
+   * mise à l'échelle, le pli/dépli du bloc info, la rotation de l'iPad et le
+   * chargement d'un train changent tous la géométrie du tableau, mais aucun
+   * n'émet de `scroll`. Les énumérer un par un revenait à en oublier un au
+   * prochain ajout ; observer la taille les couvre tous, y compris ceux qui
+   * n'existent pas encore.
    */
-  const plageObserverRef = React.useRef<ResizeObserver | null>(null);
-  const observerLaPlageVisible = React.useCallback(
+  const etiquettesObserverRef = React.useRef<ResizeObserver | null>(null);
+  const observerLesEtiquettes = React.useCallback(
     (el: HTMLDivElement | null) => {
-      plageObserverRef.current?.disconnect();
-      plageObserverRef.current = null;
+      etiquettesObserverRef.current?.disconnect();
+      etiquettesObserverRef.current = null;
       if (!el || typeof ResizeObserver === "undefined") return;
       const ro = new ResizeObserver(() => {
         // Après le reflow, sinon on mesure la géométrie d'avant.
-        requestAnimationFrame(() =>
-          recalculerPlageVisible(scrollContainerRef.current)
-        );
+        requestAnimationFrame(() => recalculerEtiquettes());
       });
       ro.observe(el); // hauteur visible : pli/dépli, rotation
       const table = el.querySelector("table.ft-table");
       if (table) ro.observe(table); // hauteur du contenu : mise à l'échelle
-      plageObserverRef.current = ro;
+      etiquettesObserverRef.current = ro;
     },
-    [recalculerPlageVisible]
+    [recalculerEtiquettes]
   );
-  React.useEffect(() => () => plageObserverRef.current?.disconnect(), []);
+  React.useEffect(() => () => etiquettesObserverRef.current?.disconnect(), []);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
@@ -356,10 +560,10 @@ export default function FT({ variant = "classic" }: FTProps) {
       }
     }
 
-    // La plage visible est calculée par `recalculerPlageVisible` (voir plus
-    // haut), appelée aussi hors défilement — sinon toute modification de mise
-    // en page la laissait périmée.
-    recalculerPlageVisible(el);
+    // Calage des étiquettes du scroll intelligent. La boucle rAF le fait déjà à
+    // 60 fps ; cet appel-ci sert au défilement à l'arrêt (fiche consultée hors
+    // parcours), quand la boucle tourne mais que rien ne la déclenche.
+    majEtiquettes();
   };
 
 
@@ -1472,6 +1676,11 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
         }
       }
 
+      // Scroll intelligent : calage des étiquettes, HORS du `if` ci-dessus. Il
+      // doit valoir aussi quand la fiche est simplement consultée à la main,
+      // train à l'arrêt ou parcours non lancé. L'appel sort immédiatement si le
+      // `scrollTop` n'a pas bougé, donc une boucle permanente ne coûte rien.
+      majEtiquettes();
 
       raf = requestAnimationFrame(loop);
     };
@@ -3115,8 +3324,92 @@ useEffect(() => {
       }
       if (base > 0) {
         // Étalement effectif = base × multiplicateur (≥ base → proportionnel).
-        const effEtalement =
-          base * (ftScale.multiplier > 0 ? ftScale.multiplier : 1);
+        //
+        // ⚠️ 14/08 — PLAFOND : l'écran doit toujours pouvoir montrer au moins
+        // KM_MIN_A_ECRAN kilomètres. Le plus grand intervalle de la ligne fait
+        // 18,80 km (Limite ADIF-LFPSA → tête du tunnel du Perthus), pour un
+        // intervalle médian de 2,10 km, soit un rapport de 9 pour 1. Sans
+        // plafond, dès que le médian devient confortable, le Perthus dépasse
+        // largement la hauteur d'écran : on le traverse alors sans AUCUNE ligne
+        // affichée, donc sans Bloc, sans Vmax et sans rampe — les écrans vides
+        // constatés le 14/08.
+        // Le plafond porte sur la DENSITÉ GLOBALE, jamais sur un intervalle
+        // particulier : les rapports entre segments restent rigoureusement
+        // exacts, seul le zoom maximal est borné. Plafonner chaque intervalle
+        // séparément aurait détruit la proportionnalité, qui est tout l'intérêt
+        // de la mise à l'échelle (objection de l'utilisateur, à raison).
+        // Le plafond dépend de la hauteur visible : il se resserre donc de
+        // lui-même en paysage, sans réglage à tenir à jour.
+        // Le seuil n'est PAS une constante : c'est le plus grand intervalle
+        // réellement présent sur la fiche chargée, majoré d'une marge. Un seuil
+        // fixe à 20 km (le Perthus, 18,80 km) bridait inutilement les trains
+        // qui ne contiennent aucun intervalle de cette taille.
+        let plusGrandIntervalle = 0;
+        for (let k = 0; k < info.length - 1; k++) {
+          const a = info[k];
+          const b = info[k + 1];
+          if (a.pk == null || b.pk == null) continue;
+          plusGrandIntervalle = Math.max(
+            plusGrandIntervalle,
+            Math.abs(b.pk - a.pk)
+          );
+        }
+        const MARGE = 1.05;
+        const hauteurVisible = scrollContainerRef.current?.clientHeight ?? 0;
+        const plafondDensite =
+          hauteurVisible > 0 && plusGrandIntervalle > 0
+            ? hauteurVisible / (plusGrandIntervalle * MARGE)
+            : Infinity;
+
+        // ⚠️ 14/08 — Plus de multiplicateur réglable : le curseur a été retiré.
+        // Une fois la densité plafonnée pour garantir qu'aucun intervalle ne
+        // dépasse l'écran, sa course utile se réduisait à 0,2-0,3 sur la ligne
+        // complète — un réglage sans choix réel. Cocher la case applique donc
+        // directement la densité maximale autorisée. Elle reste CALCULÉE, jamais
+        // écrite en dur : elle dépend de la hauteur visible, donc de
+        // l'orientation de l'iPad et du pli du bloc info.
+        let effEtalement = Number.isFinite(plafondDensite)
+          ? plafondDensite
+          : base;
+
+        // ⚠️ 14/08 — TRAIN COURT : remplir l'espace blanc, mais pas au-delà.
+        // Quand la fiche entière tient déjà dans l'écran, il reste du vide en
+        // bas. La mise à l'échelle doit alors étirer JUSTE ce qu'il faut pour
+        // combler ce vide : le train entier reste visible d'un seul coup d'œil
+        // et le scroll devient inutile. Étirer davantage le ferait déborder,
+        // ce qui est exactement ce qu'on ne veut pas sur un parcours court.
+        //
+        // L'espace ajouté vaut somme(max(0, eff × distance − hauteur naturelle))
+        // sur chaque segment : la fonction est monotone croissante mais brisée
+        // par les max(), donc pas inversible directement. On la résout par
+        // dichotomie — 40 itérations sur des additions, coût négligeable.
+        const segments: Array<{ dist: number; gap: number }> = [];
+        for (let k = 0; k < info.length - 1; k++) {
+          const a = info[k];
+          const b = info[k + 1];
+          if (a.pk == null || b.pk == null) continue;
+          const d = Math.abs(b.pk - a.pk);
+          if (d <= 0) continue;
+          segments.push({ dist: d, gap: b.top - a.top });
+        }
+        const ajoutPour = (eff: number) =>
+          segments.reduce((s, sg) => s + Math.max(0, eff * sg.dist - sg.gap), 0);
+
+        const hauteurNaturelle = table.offsetHeight; // gaps remis à 0 plus haut
+        if (hauteurVisible > 0 && hauteurNaturelle < hauteurVisible) {
+          const aCombler = hauteurVisible - hauteurNaturelle;
+          if (ajoutPour(effEtalement) > aCombler) {
+            let bas = 0;
+            let haut = effEtalement;
+            for (let it = 0; it < 40; it++) {
+              const milieu = (bas + haut) / 2;
+              if (ajoutPour(milieu) > aCombler) haut = milieu;
+              else bas = milieu;
+            }
+            effEtalement = bas;
+          }
+        }
+
 
         // 4) Pour chaque segment [k, k+1] : extra = max(0, voulu − naturel).
         for (let k = 0; k < info.length - 1; k++) {
@@ -3345,11 +3638,11 @@ useEffect(() => {
         JSON.stringify(prev) === JSON.stringify(ticks) ? prev : ticks
       );
 
-      // ⚠️ 14/08 — Les espacements viennent de déplacer les lignes : la plage
-      // visible est périmée à cet instant précis, et c'est elle qui décide du
-      // réaffichage des valeurs (Bloc, Vmax, rampe). Recalcul explicite ici,
-      // en plus de l'observateur, pour ne pas dépendre du seul reflow.
-      recalculerPlageVisible(scrollContainerRef.current);
+      // ⚠️ Les espacements viennent de déplacer les lignes : toute la géométrie
+      // des étiquettes du scroll intelligent est périmée à cet instant précis.
+      // Recalcul explicite ici, en plus de l'observateur, pour ne pas dépendre
+      // du seul reflow.
+      recalculerEtiquettes();
     };
 
     const raf = requestAnimationFrame(apply);
@@ -3374,95 +3667,13 @@ useEffect(() => {
         apply as EventListener
       );
     };
-  }, [ftScale, rawEntries, infosLtvFolded, ftLtvRows]);
+  }, [ftScale, rawEntries, infosLtvFolded, ftLtvRows, recalculerEtiquettes]);
 
-  /**
-   * Journal du SCROLL INTELLIGENT — 14/08, pour les logs de session.
-   *
-   * ⚠️ Pourquoi `logTestEvent` et pas `console.log` : RIEN n'intercepte la
-   * console dans l'application. Une trace console reste sur l'appareil et
-   * n'arrive jamais dans le ZIP envoyé au STOP — donc inutilisable pour les
-   * essais sur iPad, où se font tous les tests réels.
-   *
-   * On journalise le CONSTAT (ce qui est réellement affiché dans le DOM), pas
-   * l'intention du code : c'est le seul moyen de trancher un symptôme
-   * intermittent. Les colonnes sont retrouvées par leur INTITULÉ lu dans
-   * l'en-tête, jamais par un indice en dur — c'est cette famille d'erreur qui
-   * a produit quatre bugs distincts cette semaine.
-   *
-   * Une entrée UNIQUEMENT quand la situation change, sinon le journal serait
-   * noyé et inexploitable.
-   */
-  const dernierResumeScrollRef = React.useRef<string>("");
-  useEffect(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const emettre = () => {
-      const entetes = Array.from(
-        document.querySelectorAll<HTMLElement>("table.ft-table thead th.ft-th")
-      ).map((th) =>
-        (th.getAttribute("aria-label") || th.textContent || "").trim()
-      );
-      // Colonnes que le scroll intelligent doit maintenir visibles.
-      const suivies = ["Bloc", "Vmax", "Rampe", "Radio"];
-
-      const rows = Array.from(
-        el.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main")
-      );
-      const haut = el.scrollTop;
-      const bas = haut + el.clientHeight;
-      const visibles = rows.filter(
-        (r) => r.offsetTop + r.offsetHeight >= haut && r.offsetTop <= bas
-      );
-
-      const colonnes: Record<
-        string,
-        { affiche: string | null; ligne: number | null }
-      > = {};
-      for (const nom of suivies) {
-        const idx = entetes.indexOf(nom);
-        if (idx < 0) continue;
-        let trouve: { affiche: string; ligne: number } | null = null;
-        for (const r of visibles) {
-          const txt =
-            r.querySelectorAll("td")[idx]?.textContent?.trim() ?? "";
-          if (txt) {
-            trouve = {
-              affiche: txt,
-              ligne: Number(r.getAttribute("data-ft-row")),
-            };
-            break;
-          }
-        }
-        colonnes[nom] = trouve ?? { affiche: null, ligne: null };
-      }
-
-      const gaps = el.querySelectorAll<HTMLElement>("tr.ft-scale-gap td");
-      let pxGap = 0;
-      for (const td of Array.from(gaps)) pxGap += td.offsetHeight;
-
-      const payload = {
-        plage: [visibleRows.first, visibleRows.last],
-        lignesPrincipalesVisibles: visibles.length,
-        hauteurVisible: el.clientHeight,
-        echelle: {
-          active: ftScale.enabled && infosLtvFolded,
-          multiplicateur: ftScale.multiplier,
-          lignesGap: gaps.length,
-          pxGap: Math.round(pxGap),
-        },
-        colonnes,
-      };
-
-      const resume = JSON.stringify(payload);
-      if (resume === dernierResumeScrollRef.current) return;
-      dernierResumeScrollRef.current = resume;
-      logTestEvent("ft:scroll-intelligent", payload);
-    };
-    // Après le rendu, sinon on lit le DOM d'avant.
-    const raf = requestAnimationFrame(emettre);
-    return () => cancelAnimationFrame(raf);
-  }, [visibleRows, ftScale, infosLtvFolded]);
+  // ⚠️ Le relevé de diagnostic `ft:scroll-intelligent` (14/08) a été RETIRÉ ici
+  // avec la refonte : il journalisait le contenu texte des cellules pour savoir
+  // quelle ligne avait accepté de porter la valeur. Les cellules sont vides
+  // désormais, et il n'y a plus de ligne d'accueil à surveiller — le relevé
+  // n'aurait plus rien constaté que du vide.
 
   const ltvNotesByRowIndex = useMemo(() => {
     const result = new Map<number, Array<{ text: string; pkA: number; pkB: number }>>();
@@ -3626,56 +3837,14 @@ const note = observationText
     const el = scrollContainerRef.current;
     if (!el) return;
 
-    const run = () => {
-      const scrollTop = el.scrollTop;
-      const clientHeight = el.clientHeight;
-
-      const rowEls = el.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main");
-      if (!rowEls.length) return;
-
-      let firstVisible = 0;
-      for (let i = 0; i < rowEls.length; i++) {
-        const r = rowEls[i];
-        const top = r.offsetTop;
-        const bottom = top + r.offsetHeight;
-        if (bottom >= scrollTop) {
-          firstVisible = i;
-          break;
-        }
-      }
-
-      const viewportBottom = scrollTop + clientHeight;
-      let lastVisible = firstVisible;
-      for (let i = firstVisible; i < rowEls.length; i++) {
-        const r = rowEls[i];
-        const top = r.offsetTop;
-        if (top <= viewportBottom) {
-          lastVisible = i;
-        } else {
-          break;
-        }
-      }
-
-      const firstDataAttr = rowEls[firstVisible]?.getAttribute("data-ft-row") ?? "";
-      const lastDataAttr = rowEls[lastVisible]?.getAttribute("data-ft-row") ?? "";
-      const firstDataRow = firstDataAttr ? parseInt(firstDataAttr, 10) : null;
-      const lastDataRow = lastDataAttr ? parseInt(lastDataAttr, 10) : null;
-
-      const nextFirst =
-        typeof firstDataRow === "number" && Number.isFinite(firstDataRow)
-          ? firstDataRow
-          : firstVisible;
-
-      const nextLast =
-        typeof lastDataRow === "number" && Number.isFinite(lastDataRow)
-          ? lastDataRow
-          : lastVisible;
-
-      setVisibleRows({ first: nextFirst, last: nextLast });
-    };
-
-    requestAnimationFrame(run);
-  }, [rawEntries]);
+    // Changement de fiche : les segments sont neufs, leur géométrie aussi.
+    // ⚠️ Un seul calcul fait autorité (`recalculerEtiquettes`). Ce bloc a déjà
+    // dupliqué mot pour mot un calcul concurrent le 14/08, et la copie écrivait
+    // un résultat incomplet : le scroll intelligent restait aveugle jusqu'au
+    // premier défilement. Ne jamais recalculer ici « en plus ».
+    const raf = requestAnimationFrame(() => recalculerEtiquettes());
+    return () => cancelAnimationFrame(raf);
+  }, [rawEntries, recalculerEtiquettes]);
   
   // Trouve l'index de la ligne FT correspondant au PK GPS,
   // en prenant la dernière ligne "atteinte" (en amont) dans le sens du parcours.
@@ -5964,6 +6133,14 @@ if (hasFranceFtLocal) {
   const bloqueoLabelRowIndex = new Map<number, number>();
   const bloqueoValueBySeg = new Map<number, string>();
   const bloqueoBarRows = new Set<number>();
+  /**
+   * Ligne portant la barre d'OUVERTURE de chaque segment (segments ≥ 2).
+   * Doublon volontaire de `bloqueoBarRows` : l'ensemble dit « une barre est
+   * dessinée ici », cette table dit « ce segment-là commence à cette barre » —
+   * c'est ce que demande la couche du scroll intelligent, qui raisonne par
+   * segment et non par ligne.
+   */
+  const bloqueoBarRowBySeg = new Map<number, number>();
 
   {
     let currentBloqueoSegId = 0;
@@ -5983,13 +6160,21 @@ if (hasFranceFtLocal) {
       if (val && val !== prevValue) {
         // À partir du 2e segment, la barre se place sur la ligne de données
         // juste avant le nouveau texte de Bloqueo.
-        if (currentBloqueoSegId > 0 && previousDataRowIndex !== null) {
-          bloqueoBarRows.add(previousDataRowIndex);
+        const ligneBarre =
+          currentBloqueoSegId > 0 && previousDataRowIndex !== null
+            ? previousDataRowIndex
+            : null;
+        if (ligneBarre !== null) {
+          bloqueoBarRows.add(ligneBarre);
         }
 
         currentBloqueoSegId =
           currentBloqueoSegId === 0 ? 1 : currentBloqueoSegId + 1;
         prevValue = val;
+
+        if (ligneBarre !== null) {
+          bloqueoBarRowBySeg.set(currentBloqueoSegId, ligneBarre);
+        }
 
         if (!bloqueoLabelRowIndex.has(currentBloqueoSegId)) {
           bloqueoLabelRowIndex.set(currentBloqueoSegId, i);
@@ -6225,6 +6410,97 @@ if (hasFranceFtLocal) {
     }
     return -1;
   })();
+
+  // ── DESCRIPTEURS DE SEGMENTS DU SCROLL INTELLIGENT ────────────────────────
+  // Traduction des cinq pré-calculs ci-dessus dans le seul vocabulaire que
+  // connaît la couche en surimpression : « telle valeur, ouverte à telle ligne,
+  // sous barre ou non ». Aucune notion de visibilité ici — la géométrie et le
+  // calage sont l'affaire de `recalculerEtiquettes` / `majEtiquettes`.
+  //
+  // `sousBarre` dit où commence VISUELLEMENT le segment. Les barres de
+  // séparation sont dessinées à `top: 50%` de leur ligne : un segment qui s'en
+  // ouvre une commence donc au CENTRE de cette ligne, et son étiquette se pose
+  // juste dessous — exactement ce que faisait l'ancienne ligne intermédiaire
+  // pour la Vmax. Le tout premier segment d'une colonne n'a pas de barre : il
+  // commence au bord haut de sa ligne.
+  {
+    const bloc: FtLabelSeg[] = [];
+    for (const [segId, valeur] of bloqueoValueBySeg.entries()) {
+      // ⚠️ La barre du Bloc n'est PAS sur la ligne du nouveau texte : elle est
+      // sur la ligne de données qui la PRÉCÈDE (cf. `bloqueoBarRows`). Le
+      // segment s'ouvre donc une ligne plus haut que son texte.
+      const ligneBarre = bloqueoBarRowBySeg.get(segId);
+      const ligneTexte = bloqueoLabelRowIndex.get(segId);
+      const ligneDebut = ligneBarre ?? ligneTexte;
+      if (ligneDebut === undefined) continue;
+      bloc.push({ valeur, ligneDebut, sousBarre: ligneBarre !== undefined });
+    }
+
+    const vmax: FtLabelSeg[] = [];
+    for (const [segId, info] of segmentSpeed.entries()) {
+      const ligneDebut = segmentLabelRowIndex.get(segId);
+      if (ligneDebut === undefined) continue;
+      if (typeof info?.v !== "number") continue;
+      const e = rawEntries[ligneDebut] as any;
+      // Même test que `showVBar` au rendu : une barre de V marque un point de
+      // rupture, jamais les extrémités du parcours.
+      const sousBarre =
+        !!e?.pk &&
+        breakpointsSet.has(e.pk) &&
+        e.pk !== firstPk &&
+        e.pk !== lastPk;
+      vmax.push({ valeur: String(info.v), ligneDebut, sousBarre });
+    }
+
+    const radio: FtLabelSeg[] = [];
+    for (const [segId, valeur] of radioValueBySeg.entries()) {
+      const ligneDebut = radioLabelRowIndex.get(segId);
+      if (ligneDebut === undefined) continue;
+      radio.push({ valeur, ligneDebut, sousBarre: segId > 1 });
+    }
+
+    const etcs: FtLabelSeg[] = [];
+    for (const [segId, valeur] of etcsValueBySeg.entries()) {
+      const ligneDebut = etcsLabelRowIndex.get(segId);
+      if (ligneDebut === undefined) continue;
+      etcs.push({ valeur, ligneDebut, sousBarre: segId > 1 });
+    }
+
+    // La rampe n'a pas de pré-calcul par segment : ses segments étaient comptés
+    // au fil du rendu (`rcCurrentSegmentId`). On les reconstitue ici, à
+    // l'identique — barre sur la ligne `rc_bar`, qui OUVRE le segment, et valeur
+    // = première rampe non vide du segment, ligne de barre exclue.
+    const rampe: FtLabelSeg[] = [];
+    {
+      let courant: FtLabelSeg | null = null;
+      for (let i = 0; i < rawEntries.length; i++) {
+        const e = rawEntries[i] as any;
+        if (e?.isNoteOnly) continue;
+        const barre = !!e?.rc_bar && i !== firstNonNoteIndex;
+        if (courant === null) {
+          courant = { valeur: "", ligneDebut: i, sousBarre: false };
+          rampe.push(courant);
+        } else if (barre) {
+          courant = { valeur: "", ligneDebut: i, sousBarre: true };
+          rampe.push(courant);
+        }
+        if (!courant.valeur && !barre && typeof e?.rc === "number") {
+          courant.valeur = String(e.rc);
+        }
+      }
+    }
+
+    // Trié par ligne d'ouverture : `recalculerEtiquettes` prend le bas d'un
+    // segment sur le haut du suivant, l'ordre est donc porteur de sens.
+    const parLigne = (a: FtLabelSeg, b: FtLabelSeg) => a.ligneDebut - b.ligneDebut;
+    scrollSegmentsRef.current = {
+      bloc: bloc.sort(parLigne),
+      vmax: vmax.sort(parLigne),
+      radio: radio.sort(parLigne),
+      rampe: rampe.sort(parLigne),
+      etcs: etcs.sort(parLigne),
+    };
+  }
 
   function parseHoraToMinutes(h?: string | null): number | null {
     if (!h) return null;
@@ -6844,20 +7120,18 @@ if (hasFranceFtLocal) {
   }, [horaTheoMinutesByIndex, horaTheoSecondsByIndex, testModeEnabled, trainNumber, rawEntries]);
 
 
-  // Gestion RC
+  // ⚠️ 15/08 — Les cinq jeux « segment déjà imprimé » ont DISPARU avec la
+  // refonte du scroll intelligent. Ils servaient à n'écrire qu'une fois par
+  // segment la valeur relocalisée, et ne pouvaient donc pas être justes : leur
+  // remplissage dépendait de l'ORDRE de parcours des lignes, alors que la ligne
+  // à retenir dépendait, elle, de la zone visible. Le rendu ne décide plus rien
+  // en la matière — les valeurs sont portées par la couche en surimpression.
+  //
+  // Gestion RC (les barres restent portées par les lignes, pas les valeurs)
   let rcCurrentSegmentId = 0;
-  const rcPrintedSegments = new Set<number>();
 
-  // Gestion Bloqueo/Sen-SIG (scroll intelligent)
-  const bloqueoPrintedSegments = new Set<number>();
-
-  // Gestion VMax (scroll intelligent)
-  const vPrintedSegments = new Set<number>();
-
-  // Gestion Radio (logique type VMAX)
+  // Gestion Radio (idem : seules les barres subsistent dans le tableau)
   let radioCurrentSegmentId = 0;
-  const radioPrintedSegments = new Set<number>();
-  const etcsPrintedSegments = new Set<number>();
 
   // Debug : index de ligne visuelle (toutes les <tr> rendues)
   let renderedRowIndex = 0;
@@ -7170,7 +7444,6 @@ const hora = horaFromNormalized || horaFrance;
       }
     }
 
-    const radio = (entry as any).radio ?? "";
     const bloqueo = (entry as any).bloqueo ?? "";
     const bloqueoBar = (entry as any).bloqueo_bar ?? null;
 
@@ -7186,10 +7459,6 @@ const hora = horaFromNormalized || horaFrance;
       previousHoraForConc = hora;
     }
 
-    // visibilité de la ligne principale dans le viewport
-    const isCurrentlyVisible =
-      i >= visibleRows.first && i <= visibleRows.last;
-
     // RC
     const isRcBreakpointHere =
       !!(entry as any).rc_bar && i !== firstNonNoteIndex;
@@ -7201,38 +7470,9 @@ const hora = horaFromNormalized || horaFrance;
       rcCurrentSegmentId++;
     }
 
-    const rawRamp =
-      typeof (entry as any).rc === "number"
-        ? (entry as any).rc.toString()
-        : "";
-
-    let ramp = "";
-
-    // lignes principales visibles
-    const visibleStart = visibleRows.first;
-    const visibleEnd = visibleRows.last;
-    // ⚠️ 14/08 — On vise la 2e ligne principale visible QUAND ELLE EXISTE.
-    // Sans mise à l'échelle il y en a toujours une dizaine à l'écran ; avec,
-    // un seul intervalle peut occuper tout l'écran. `visibleStart + 1`
-    // désignait alors une ligne hors plage et la condition ci-dessous ne
-    // pouvait jamais être remplie : la valeur n'était réaffichée nulle part,
-    // d'où les colonnes vides constatées le 14/08.
-    const targetVisible = Math.min(visibleStart + 1, visibleEnd);
-
-    const isTargetVisibleRow =
-      mainRowCounter >= targetVisible && mainRowCounter <= visibleEnd;
-
-    if (
-      !isRcBreakpointHere &&
-      rawRamp !== "" &&
-      rcCurrentSegmentId > 0 &&
-      !rcPrintedSegments.has(rcCurrentSegmentId) &&
-      isTargetVisibleRow
-    ) {
-      ramp = rawRamp;
-      rcPrintedSegments.add(rcCurrentSegmentId);
-    }
-
+    // La VALEUR de rampe n'est plus écrite dans la cellule : elle est portée par
+    // la couche en surimpression (cf. FT_LABEL_COLS). La cellule ne garde que la
+    // barre de changement de segment.
     const showRcBar = isRcBreakpointHere && i !== rawEntries.length - 1;
 
 // Colonne ETCS : la valeur brute n'est plus lue ici. Elle est désormais gérée
@@ -7284,60 +7524,11 @@ const hora = horaFromNormalized || horaFrance;
       );
     }
 
-    // Contenu qui sera vraiment rendu plus bas
-    let mainRowSpeedContent = "";
-    let speedSpacerContent = "";
-
-    // 1) CAS NORMAL : on est sur la ligne-label du segment
-    if (isLabelRow && currentSpeedText) {
-      if (showVBar) {
-        // ligne label + barre → on met la Vmax dans la petite ligne
-        speedSpacerContent = currentSpeedText;
-      } else {
-        // ligne label sans barre → on peut la mettre dans la cellule
-        mainRowSpeedContent = currentSpeedText;
-      }
-    }
-    // 2) CAS "SCROLL INTELLIGENT" : la vraie ligne du segment est sortie de l’écran
-    else if (
-      segId > 0 &&
-      currentSpeedText &&
-      !vPrintedSegments.has(segId)
-    ) {
-      // zone visible actuelle (sur les lignes PRINCIPALES)
-      const visibleStart2 = visibleRows.first;
-      const visibleEnd2 = visibleRows.last;
-
-      // est-ce que la ligne-label de ce segment est visible ?
-      const labelIsVisible =
-        labelRowIndex !== null &&
-        labelRowIndex >= visibleStart2 &&
-        labelRowIndex <= visibleEnd2;
-
-      // on ne réaffiche que si la ligne-label n'est plus visible
-      if (!labelIsVisible) {
-        // est-ce que cette ligne principale est dans le viewport ?
-        const segStillVisible = i >= visibleStart2 && i <= visibleEnd2;
-
-        // On place la valeur sur la PREMIÈRE ligne principale visible du segment
-        // (la plus haute / la plus pertinente). On NE saute PLUS la 1re ligne
-        // visible (ancien `+1`) : ce skip faisait disparaître la valeur quand la
-        // seule ligne visible d'un segment était justement cette 1re ligne
-        // (ex. 749.6 entouré de grands espacements). isGoodSpot == segStillVisible.
-        if (segStillVisible && !showVBar) {
-          // ⚠️ CORRECTIF : on écrit la V max relocalisée sur la LIGNE PRINCIPALE
-          // (comme les rampes/bloque qui fonctionnent), PAS sur un spacer
-          // intermédiaire. Sinon la valeur dépendait de la présence/position
-          // d'une ligne intermédiaire visible (et, depuis l'espacement, elle se
-          // retrouvait poussée sous l'écran) → elle disparaissait.
-          mainRowSpeedContent = currentSpeedText;
-          vPrintedSegments.add(segId);
-        }
-      }
-    }
-
-    const showSpeedSpacer =
-      speedSpacerContent && speedSpacerContent.trim() !== "";
+    // La VALEUR de Vmax est portée par la couche en surimpression. La cellule ne
+    // garde que la barre de rupture et le surlignage orange des zones CSV.
+    // ⚠️ Ne pas la réintroduire ici « pour le cas normal » : c'est précisément
+    // cette coexistence d'un cas normal et d'un cas relocalisé qui produisait un
+    // double affichage à la moindre erreur de plage.
 
     // --- Radio par segment (logique type VMAX) ---
     const isRadioBreakpointHere =
@@ -7349,101 +7540,17 @@ const hora = horaFromNormalized || horaFrance;
       radioCurrentSegmentId++;
     }
 
-    const rawRadio = typeof radio === "string" ? radio.trim() : "";
-
-    let mainRowRadioContent = "";
-    let radioSpacerContent = "";
-
+    // Valeur Radio portée par la couche. La ligne ne garde que sa barre.
     const segIdRadio = radioSegmentIndex[i] ?? 0;
     const labelRowIndexRadio =
       segIdRadio > 0 ? radioLabelRowIndex.get(segIdRadio) ?? null : null;
-    const radioValue =
-      segIdRadio > 0 ? radioValueBySeg.get(segIdRadio) ?? "" : "";
-
     const isLabelRowRadio = labelRowIndexRadio === i;
 
-    const visibleStart4 = visibleRows.first;
-    const visibleEnd4 = visibleRows.last;
-    const targetVisible4 = visibleStart4 + 1;
-
-    const isInViewport =
-      i >= visibleStart4 && i <= visibleEnd4;
-
-    const isGoodSpotRadio =
-      mainRowCounter >= targetVisible4 && mainRowCounter <= visibleEnd4;
-
-
-    // --- Ligne principale ---
-    if (segIdRadio === 1 && isLabelRowRadio && radioValue) {
-      mainRowRadioContent = radioValue;
-    }
-
-    // --- Ligne intermédiaire ---
-    if (
-      segIdRadio > 1 &&
-      radioValue &&
-      labelRowIndexRadio !== null &&
-      i === labelRowIndexRadio
-    ) {
-      radioSpacerContent = radioValue;
-    }
-
-    // --- SCROLL INTELLIGENT RADIO (était ABSENT) ---
-    // Quand la ligne-label du segment radio est hors écran, on relocalise la
-    // valeur sur une LIGNE PRINCIPALE visible (comme rampes/bloque/V max), pas
-    // sur un spacer. Sans ça la valeur radio ne bougeait pas du tout au scroll.
-    if (
-      segIdRadio > 0 &&
-      radioValue &&
-      !isRadioBreakpointHere &&
-      !radioPrintedSegments.has(segIdRadio)
-    ) {
-      const labelVisibleRadio =
-        labelRowIndexRadio !== null &&
-        labelRowIndexRadio >= visibleStart4 &&
-        labelRowIndexRadio <= visibleEnd4;
-      if (!labelVisibleRadio) {
-        // Première ligne principale visible du segment (plus de skip `+1`).
-        const segStillVisibleRadio = i >= visibleStart4 && i <= visibleEnd4;
-        if (segStillVisibleRadio) {
-          mainRowRadioContent = radioValue;
-          radioPrintedSegments.add(segIdRadio);
-        }
-      }
-    }
-
-          const showRadioBar = false;
-    const showRadioSpacer =
-      radioSpacerContent && radioSpacerContent.trim() !== "";
-
-    // --- ETCS (format 2026) : valeur une fois par zone + scroll intelligent ---
-    // Calque exact du mécanisme Radio ci-dessus, dans sa version CORRIGÉE
-    // (première ligne principale visible du segment, sans le skip `+1` qui
-    // faisait disparaître la valeur quand une seule ligne était à l'écran).
+    // --- ETCS (format 2026) : même traitement que Radio ---
     const segIdEtcs = etcsSegmentIndex[i] ?? 0;
     const labelRowIndexEtcs =
       segIdEtcs > 0 ? etcsLabelRowIndex.get(segIdEtcs) ?? null : null;
-    const etcsValue = segIdEtcs > 0 ? etcsValueBySeg.get(segIdEtcs) ?? "" : "";
     const isLabelRowEtcs = labelRowIndexEtcs === i;
-
-    let mainRowEtcsContent = "";
-
-    // La valeur s'affiche sur la ligne-label du segment…
-    if (segIdEtcs > 0 && isLabelRowEtcs && etcsValue) {
-      mainRowEtcsContent = etcsValue;
-      etcsPrintedSegments.add(segIdEtcs);
-    } else if (segIdEtcs > 0 && etcsValue && !etcsPrintedSegments.has(segIdEtcs)) {
-      // …sinon, si cette ligne-label est hors écran, on relocalise la valeur sur
-      // la première ligne principale visible du segment.
-      const labelVisibleEtcs =
-        labelRowIndexEtcs !== null &&
-        labelRowIndexEtcs >= visibleRows.first &&
-        labelRowIndexEtcs <= visibleRows.last;
-      if (!labelVisibleEtcs && i >= visibleRows.first && i <= visibleRows.last) {
-        mainRowEtcsContent = etcsValue;
-        etcsPrintedSegments.add(segIdEtcs);
-      }
-    }
 
     // Barre de séparation au changement de zone (jamais sur le 1er segment).
     const showEtcsBar = segIdEtcs > 1 && isLabelRowEtcs;
@@ -7491,7 +7598,6 @@ const hora = horaFromNormalized || horaFrance;
           highlightKind,
           vmaxHighlightClass,
           showVBar,
-          mainRowSpeedContent,
         })
       );
     }
@@ -7511,7 +7617,6 @@ const hora = horaFromNormalized || horaFrance;
           mainRowHighlightKind,
           vmaxHighlightClass,
           showVBar,
-          mainRowSpeedContent,
           hasNoteAfter,
           nextPk: rawEntries[i + 1]?.pk ?? "",
           nextIsNoteOnly: !!rawEntries[i + 1]?.isNoteOnly,
@@ -7663,7 +7768,8 @@ const hora = horaFromNormalized || horaFrance;
       <tr
         className={
           "ft-row-main" +
-          (isCurrentlyVisible ? " ft-row-visible" : "") +
+          // (`ft-row-visible` retiré le 15/08 : marque posée à chaque
+          // changement de plage visible, sans la moindre règle CSS en face.)
           (isSelected ? " ft-row-selected" : "") +
           // Marque posée depuis la DONNÉE : le cadre rouge de sélection doit
           // englober la colonne Dép uniquement quand elle porte une heure
@@ -7700,49 +7806,15 @@ right: -1,
     </td>
   );
 }
-          // 1) Affichage type VMAX : valeur au début de segment
-          const segId = bloqueoSegmentIndex[i] ?? 0;
-          const labelRowIndex =
-            segId > 0 ? bloqueoLabelRowIndex.get(segId) ?? null : null;
-          const segValue = segId > 0 ? bloqueoValueBySeg.get(segId) ?? "" : "";
-
-          if (labelRowIndex !== null && i === labelRowIndex) {
-            return <td className="ft-td">{segValue}</td>;
-          }
-
-          // 2) Scroll intelligent : si la ligne-label est hors viewport,
-          // on réaffiche la valeur une seule fois dans la zone visible.
-          if (segId > 0 && segValue && !bloqueoPrintedSegments.has(segId)) {
-            const visibleStart = visibleRows.first;
-            const visibleEnd = visibleRows.last;
-
-            const labelIsVisible =
-              labelRowIndex !== null &&
-              labelRowIndex >= visibleStart &&
-              labelRowIndex <= visibleEnd;
-
-            if (!labelIsVisible) {
-              const segStillVisible = i >= visibleStart && i <= visibleEnd;
-              // Même logique que VMAX/RC, y compris le repli sur la 1re ligne
-              // quand une seule est visible (cf. commentaire plus haut).
-              const targetVisible = Math.min(visibleStart + 1, visibleEnd);
-              const isGoodSpot =
-                segStillVisible &&
-                mainRowCounter >= targetVisible &&
-                mainRowCounter <= visibleEnd;
-
-              if (isGoodSpot) {
-                bloqueoPrintedSegments.add(segId);
-                return <td className="ft-td">{segValue}</td>;
-              }
-            }
-          }
-
+          // 1) Hors barre, la cellule Bloc est VIDE : sa valeur est posée par la
+          // couche en surimpression du scroll intelligent.
           return <td className="ft-td"></td>;
         })()}
 
         <td className={"ft-td ft-v-cell" + vmaxHighlightClass}>
-          <div className="ft-v-inner">{mainRowSpeedContent}</div>
+          {/* Vmax vide : valeur portée par la couche. Le `ft-v-inner` reste, il
+              tient la hauteur de la cellule et sert d'ancre au surlignage. */}
+          <div className="ft-v-inner">&nbsp;</div>
           {showVBar && <div className="ft-v-bar" />}
         </td>
 
@@ -7825,71 +7897,32 @@ right: -1,
         </td>
 
         <td className="ft-td" style={{ position: "relative" }}>
-          {(() => {
-            const segId = radioSegmentIndex[i] ?? 0;
-            const labelRowIndex =
-              segId > 0 ? radioLabelRowIndex.get(segId) ?? null : null;
-            const segValue =
-              segId > 0 ? radioValueBySeg.get(segId) ?? "" : "";
-
-            const isLabelRow = labelRowIndex === i;
-            const radioBar = segId > 1 && isLabelRow;
-
-            // Segment 1 : affichage direct sur la ligne principale
-            if (segId === 1 && isLabelRow) {
-              return (
-                <>
-                  {renderCircledValue(segValue)}
-                  {radioBar && (
-                    <div
-                      style={{
-                        height: 2,
-width: "calc(100% + 2px)",
-left: -1,
-right: -1,
-                        borderRadius: 0,
-                        background: "currentColor",
-                        opacity: 1,
-                        position: "absolute",
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                      }}
-                    />
-                  )}
-                </>
-              );
-            }
-
-            // Segments suivants : barre seule sur la ligne principale
-            if (radioBar) {
-              return (
-                <div
-                  style={{
-                    height: 2,
-width: "calc(100% + 2px)",
-left: -1,
-right: -1,
-                    borderRadius: 0,
-                    background: "currentColor",
-                    opacity: 1,
-                    position: "absolute",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                  }}
-                />
-              );
-            }
-
-            // Valeur radio relocalisée par le scroll intelligent (ligne principale).
-            return renderCircledValue(mainRowRadioContent);
-          })()}
+          {/* Radio : plus que la barre de changement de segment. La valeur est
+              posée par la couche en surimpression. */}
+          {segIdRadio > 1 && isLabelRowRadio && (
+            <div
+              style={{
+                height: 2,
+                width: "calc(100% + 2px)",
+                left: -1,
+                right: -1,
+                borderRadius: 0,
+                background: "currentColor",
+                opacity: 1,
+                position: "absolute",
+                top: "50%",
+                transform: "translateY(-50%)",
+              }}
+            />
+          )}
         </td>
 
         <td className="ft-td ft-rc-cell" id={`rc-cell-${i}`}>
           {showRcBar ? (
             <div className="ft-rc-bar" />
           ) : (
-            <div className="ft-rc-value">{ramp}</div>
+            /* Rampe : valeur portée par la couche, le div tient la hauteur. */
+            <div className="ft-rc-value">&nbsp;</div>
           )}
         </td>
 
@@ -7897,7 +7930,7 @@ right: -1,
             une seule fois par zone, avec barre de séparation au changement.
             Même rendu que la colonne Radio. */}
         <td className="ft-td ft-td-nivel" style={{ position: "relative" }}>
-          {renderCircledValue(mainRowEtcsContent)}
+          {/* ETCS : barre seule, valeur portée par la couche. */}
           {showEtcsBar && (
             <div
               style={{
@@ -7978,6 +8011,13 @@ right: -1,
             travers l'espace. La hauteur est posée sur la 1re par l'effet de
             mesure ; les autres s'alignent. La 2e cellule (Vmax) reçoit l'orange
             si zone ouverte. */}
+        {/* ⚠️ 14/08 (RETIRÉ le 15/08) — L'espacement portait lui-même le Bloc, la
+            Vmax et la rampe quand AUCUNE ligne principale n'était à l'écran, via
+            un contenu collant (`ft-gap-sticky`). C'était le rattrapage du cas où
+            un intervalle dépasse la hauteur du viewport : il n'existait plus
+            aucune ligne d'accueil. La couche en surimpression n'a pas besoin de
+            ligne du tout — un espacement de trois écrans de haut porte son
+            étiquette comme n'importe quel autre segment. */}
         {Array.from({ length: 10 }).map((_, ci) => (
           <td
             key={ci}
@@ -8057,46 +8097,20 @@ const vmaxClassForLtv =
     }
 
     // 3) LIGNE INTERMÉDIAIRE POUR LA VITESSE / RADIO (sous la ligne principale)
+    //
+    // Elle n'a jamais eu d'autre raison d'être que de porter une valeur que la
+    // ligne principale ne pouvait pas afficher : la Vmax d'un segment ouvert par
+    // une barre (le texte se serait retrouvé barré) et la Radio d'un segment ≥ 2
+    // (idem). La couche en surimpression pose ces valeurs elle-même, sous la
+    // barre. La ligne ne sert donc plus qu'à aérer — cf.
+    // FT_SUPPRIMER_LIGNES_INTERMEDIAIRES en tête de fichier.
+    const ligneIntermediaireUtile =
+      (isLabelRow && !!currentSpeedText && showVBar) ||
+      (segIdRadio > 1 && isLabelRowRadio);
 
-    if (showSpeedSpacer || showRadioSpacer) {
+    if (!FT_SUPPRIMER_LIGNES_INTERMEDIAIRES && ligneIntermediaireUtile) {
       // Si la zone CSV est ouverte, cette ligne est "entre deux barres" => full
       const vmaxClassForSpeed = csvZoneOpen ? " ft-v-csv-full" : "";
-
-      if (["715.5", "714.7", "713.2", "710.7"].includes(entry.pk ?? "")) {
-        console.log(
-          "[CSV GIRONA SPACER FT]",
-          JSON.stringify({
-            pk: entry.pk ?? "",
-            highlightKind,
-            isCsvStart,
-            isCsvEnd,
-            csvZoneOpen,
-            vmaxClassForSpeed,
-            showSpeedSpacer,
-            showRadioSpacer,
-          })
-        );
-      }
-
-      if (["629.4", "627.7", "626.7", "624.3"].includes(entry.pk ?? "")) {
-        console.log(
-          "[CSV LA SAGRERA SPACER FT]",
-          JSON.stringify({
-            i,
-            pk: entry.pk ?? "",
-            dependencia: entry.dependencia ?? "",
-            highlightKind,
-            isCsvStart,
-            isCsvEnd,
-            csvZoneOpen,
-            vmaxClassForSpeed,
-            showSpeedSpacer,
-            speedSpacerContent,
-            showRadioSpacer,
-            radioSpacerContent,
-          })
-        );
-      }
 
       rows.push(
         <tr className="ft-row-spacer" key={`speed-radio-${i}`}>
@@ -8106,7 +8120,7 @@ const vmaxClassForLtv =
           })()}
 
           <td className={"ft-td ft-v-cell" + vmaxClassForSpeed}>
-            <div className="ft-v-inner text-center">{speedSpacerContent}</div>
+            <div className="ft-v-inner text-center">&nbsp;</div>
           </td>
 
           <td className="ft-td" />
@@ -8117,7 +8131,7 @@ const vmaxClassForLtv =
           <td className="ft-td" />
           <td className="ft-td" />
 
-          <td className="ft-td">{renderCircledValue(radioSpacerContent)}</td>
+          <td className="ft-td" />
 
           <td className="ft-td ft-rc-cell" />
           <td className="ft-td ft-td-nivel" />
@@ -8473,9 +8487,12 @@ const vmaxClassForLtv =
            ce soit visible, faute de pouvoir distinguer « bloquée » de « zone
            sans inscription ». Ces traits bougent au défilement même là où il n'y
            a rien d'écrit.
-           Cantonnées à la colonne KM et volontairement COURTES (40 % de sa
+           Cantonnées à la colonne KM et volontairement COURTES (20 % de sa
            largeur) : une séparation de ligne traverse toute la cellule, une
            graduation non — aucune confusion possible. */
+        /* (La règle .ft-gap-sticky a été retirée le 15/08 avec le contenu
+           collant des lignes d'espacement — cf. le rendu de tr.ft-scale-gap.) */
+
         .ft-km-tick {
           position: absolute;
           height: 1px;
@@ -8495,6 +8512,37 @@ const vmaxClassForLtv =
           padding: 0 4px;
           box-sizing: border-box;
         }
+
+        /* ── SCROLL INTELLIGENT : les étiquettes ─────────────────────────────
+           Métriques STRICTEMENT celles de .ft-td (police, graisse, hauteur de
+           ligne, marge intérieure) : l'étiquette doit être indiscernable de la
+           valeur qu'elle remplace dans la cellule. Fond transparent — la
+           cellule, sa bordure et son surlignage orange restent visibles
+           dessous. La position verticale est pilotée en JS, ne rien poser ici.
+           ⚠️ Aucun accent grave dans ce bloc : il est à l'intérieur d'un gabarit
+           de chaîne, un seul le refermerait. */
+        .ft-scroll-label {
+          position: absolute;
+          z-index: 4;
+          pointer-events: none;
+          box-sizing: border-box;
+          font-size: 16px;
+          line-height: 1.2;
+          font-weight: 600;
+          text-align: center;
+          padding: 4px 6px;
+          color: #000;
+          white-space: nowrap;
+          overflow: hidden;
+        }
+        .dark .ft-scroll-label { color: #fff; }
+
+        /* Zone CSV orange : la cellule Vmax y force son texte en noir, y compris
+           en thème sombre. Une étiquette posée AU-DESSUS de la cellule n'hérite
+           de rien — et comme elle se déplace dans son segment, elle entre et
+           sort de l'orange sans qu'aucun rendu ne le sache. C'est donc le calage
+           60 fps qui pose cette classe (cf. orangeRangesRef dans le code). */
+        .dark .ft-scroll-label.ft-label-sur-orange { color: #000; }
 
         /* Radio / ETCS : valeur entouree d'un petit cercle (Ⓖ, ①), comme sur le
            document source et l'export PDF de l'editeur. */
@@ -8909,8 +8957,8 @@ const vmaxClassForLtv =
           onContainerRef={(el) => {
             scrollContainerRef.current = el;
             // Le conteneur n'est connu qu'ici : c'est le seul moment sûr pour
-            // brancher l'observateur qui tient la plage visible à jour.
-            observerLaPlageVisible(el);
+            // brancher l'observateur qui tient les étiquettes à jour.
+            observerLesEtiquettes(el);
           }}
           overlay={
             (() => {
@@ -9075,6 +9123,26 @@ const vmaxClassForLtv =
                 </div>
               );
             })}
+
+            {/* ── SCROLL INTELLIGENT : la couche ──────────────────────────────
+                Une étiquette par segment et par colonne. Le `top` n'est PAS posé
+                ici : il dépend du défilement, donc il est écrit en DOM direct
+                par `majEtiquettes` à 60 fps (cf. en tête de fichier). Le poser
+                en React reviendrait à re-rendre toute la FT à chaque image. */}
+            {ftLabels.map((L, k) => (
+              <div
+                key={`ft-label-${L.col}-${k}`}
+                ref={(el) => {
+                  labelNodesRef.current[k] = el;
+                }}
+                className={`ft-scroll-label ft-scroll-label-${L.col}`}
+                style={{ left: L.left, width: L.width }}
+              >
+                {L.col === "radio" || L.col === "etcs"
+                  ? renderCircledValue(L.valeur)
+                  : L.valeur}
+              </div>
+            ))}
           </div>
         </FTScrolling>
 
