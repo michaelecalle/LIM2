@@ -60,12 +60,6 @@
           "pkInterne": "618.1"
         },
         {
-          "type": "note",
-          "texte": "60km/h circulation en MODE SR et en BSL — KM 619.500 al 619.933",
-          "position": "en-dessous",
-          "surligne": true
-        },
-        {
           "bloc": "BCA",
           "vmax": "60",
           "csv": false,
@@ -182,7 +176,7 @@
           "radio": "G",
           "rampe": "28",
           "etcs": "1",
-          "etablissement": "LA SAGRERA",
+          "etablissement": "LA SAGRERA-AV",
           "pkAdif": "627.7",
           "pkLfp": "",
           "pkRac": "",
@@ -336,7 +330,7 @@
           "radio": "G",
           "rampe": "18",
           "etcs": "1",
-          "etablissement": "LLINARS",
+          "etablissement": "LLINARS-AV",
           "pkAdif": "662.5",
           "pkLfp": "",
           "pkRac": "",
@@ -364,7 +358,7 @@
           "radio": "G",
           "rampe": "18",
           "etcs": "1",
-          "etablissement": "RIELLS",
+          "etablissement": "RIELLS-AV",
           "pkAdif": "679.3",
           "pkLfp": "",
           "pkRac": "",
@@ -1319,7 +1313,7 @@
       "variants": [
         {
           "ligneVersionId": "v1",
-          "validityStartDate": "2026-08-04",
+          "validityStartDate": "2026-08-10",
           "validityEndDate": "",
           "meta": {
             "numeroEspagne": "9705",
@@ -1456,7 +1450,7 @@
       "variants": [
         {
           "ligneVersionId": "v1",
-          "validityStartDate": "2026-08-04",
+          "validityStartDate": "2026-08-10",
           "validityEndDate": "",
           "meta": {
             "numeroEspagne": "9707",
@@ -1593,7 +1587,7 @@
       "variants": [
         {
           "ligneVersionId": "v1",
-          "validityStartDate": "2026-08-04",
+          "validityStartDate": "2026-08-10",
           "validityEndDate": "",
           "meta": {
             "numeroEspagne": "9709",
@@ -1730,7 +1724,7 @@
       "variants": [
         {
           "ligneVersionId": "v1",
-          "validityStartDate": "2026-08-04",
+          "validityStartDate": "2026-08-10",
           "validityEndDate": "",
           "meta": {
             "numeroEspagne": "9711",
@@ -1872,7 +1866,7 @@
       "variants": [
         {
           "ligneVersionId": "v1",
-          "validityStartDate": "2026-08-04",
+          "validityStartDate": "2026-08-10",
           "validityEndDate": "",
           "meta": {
             "numeroEspagne": "9713",
@@ -2014,7 +2008,7 @@
       "variants": [
         {
           "ligneVersionId": "v1",
-          "validityStartDate": "2026-08-04",
+          "validityStartDate": "2026-08-10",
           "validityEndDate": "",
           "meta": {
             "numeroEspagne": "9715",
@@ -2156,7 +2150,7 @@
       "variants": [
         {
           "ligneVersionId": "v1",
-          "validityStartDate": "2026-08-04",
+          "validityStartDate": "2026-08-10",
           "validityEndDate": "",
           "meta": {
             "numeroEspagne": "38510",
@@ -2189,11 +2183,48 @@
         }
       ]
     },
-    "39819": {
+    "38579": {
       "variants": [
         {
           "ligneVersionId": "v1",
           "validityStartDate": "2026-08-04",
+          "validityEndDate": "",
+          "meta": {
+            "numeroEspagne": "38579",
+            "numeroFrance": "38578",
+            "origine": "CAN TUNIS-AV",
+            "destination": "BARCELONA SANTS",
+            "categorieSNCF": "E32C",
+            "categorieLFP": "Type 300",
+            "categorieADIF": "Tipo 200",
+            "materiel": "TGV 2N2 3UH",
+            "direction": "sudNord",
+            "horaires": {
+              "615.9|||": {
+                "arrivee": "",
+                "passage": "",
+                "depart": "15:22"
+              },
+              "616.0|||": {
+                "arrivee": "",
+                "passage": "15:22",
+                "depart": ""
+              },
+              "621.0|||": {
+                "arrivee": "15:27",
+                "passage": "",
+                "depart": ""
+              }
+            }
+          }
+        }
+      ]
+    },
+    "39819": {
+      "variants": [
+        {
+          "ligneVersionId": "v1",
+          "validityStartDate": "2026-08-10",
           "validityEndDate": "",
           "meta": {
             "numeroEspagne": "39819",
