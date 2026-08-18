@@ -46,6 +46,12 @@
           "pkInterne": "616.0"
         },
         {
+          "type": "note",
+          "texte": "60km/h circulation en MODE SR et en BSL — KM 619.500 al 619.933",
+          "position": "en-dessous",
+          "surligne": true
+        },
+        {
           "bloc": "BCA",
           "vmax": "85",
           "csv": false,
