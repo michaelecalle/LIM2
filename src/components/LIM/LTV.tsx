@@ -2327,6 +2327,61 @@ const LTV: React.FC = () => {
         /* Observaciones (dernière grande zone texte) */
         col.ltv-col-csv       { width: 15.85%; } /* Observaciones */
 
+        /* ── PORTRAIT ───────────────────────────────────────────────────
+           Les largeurs ci-dessus sont un "affinage post-capture" fait en
+           PAYSAGE. A 785 px, Km. Ini ne fait plus que 30 px et "752.309"
+           deborde sur sa voisine. On reprend la largeur la ou elle ne sert
+           pas : les quatre cases date/heure sont vides sur les 32 lignes du
+           normalise partage et sur tous les documents observes, et les cases
+           a cocher ne portent qu'un signe.
+           Si une date apparaissait un jour, la table etant en table-layout
+           fixed, elle se replierait dans sa cellule en agrandissant la
+           ligne : visible, jamais destructeur.
+           Les SOUS-en-tetes sont deja pivotes, donc insensibles au
+           retrecissement. Seuls les trois en-tetes de GROUPE sont
+           horizontaux : ils passent eux aussi a la verticale ci-dessous,
+           libelle du document officiel conserve mot pour mot.
+           Somme exacte : 100 %. AUCUN effet en paysage. */
+        @media screen and (orientation: portrait) {
+          col.ltv-col-trayecto   { width: 25.1%; }  /* +3.7 : moins de repli */
+          col.ltv-col-via        { width: 2.2%; }
+          col.ltv-col-km         { width: 6%; }     /* 47 px, besoin 45 */
+          col.ltv-col-km2        { width: 6%; }     /* 47 px, besoin 45 */
+          col.ltv-col-vel        { width: 3.8%; }   /* 30 px, besoin 27 */
+          col.ltv-col-motivo     { width: 18.9%; }
+          col.ltv-col-small-a    { width: 2.2%; }   /* Establecido - Fecha, vide */
+          col.ltv-col-small-b    { width: 2.2%; }   /* Establecido - Hora,  vide */
+          col.ltv-col-small-c    { width: 2.2%; }   /* Fin prevista - Fecha, vide */
+          col.ltv-col-small-d    { width: 2.2%; }   /* Fin prevista - Hora,  vide */
+          col.ltv-col-small-e    { width: 2.4%; }   /* case a cocher */
+          col.ltv-col-small-f    { width: 2.4%; }   /* case a cocher */
+          col.ltv-col-solo       { width: 3.7%; }   /* libelle pivote sur 2 lignes */
+          col.ltv-col-csv-narrow { width: 2.2%; }
+          col.ltv-col-csv        { width: 18.5%; }  /* +2.7 */
+
+          /* En-tetes de groupe pivotes. Meme principe que .vert-shell : la
+             boite reserve la place, le libelle est en absolu et tourne, donc
+             il n'occupe en LARGEUR que sa hauteur de ligne. Le cout est en
+             hauteur d'en-tete (~+60 px), la ressource dont on dispose ici. */
+          .ltv-group-shell {
+            position: relative;
+            display: block;
+            width: 100%;
+            height: 84px;
+          }
+          .ltv-group-label {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-90deg);
+            transform-origin: center center;
+            white-space: nowrap;
+            line-height: 1.05;
+            font-weight: 600;
+            text-align: center;
+          }
+        }
+
 
         .ltv-body-placeholder .ltv-td {
           height: 18px;
@@ -2592,15 +2647,21 @@ const LTV: React.FC = () => {
             </th>
 
             <th className="ltv-th" colSpan={2}>
-              Establecido
+              <div className="ltv-group-shell">
+                <span className="ltv-group-label">Establecido</span>
+              </div>
             </th>
 
             <th className="ltv-th" colSpan={2}>
-              Fin prevista
+              <div className="ltv-group-shell">
+                <span className="ltv-group-label">Fin prevista</span>
+              </div>
             </th>
 
             <th className="ltv-th" colSpan={2}>
-              No señalizada
+              <div className="ltv-group-shell">
+                <span className="ltv-group-label">No señalizada</span>
+              </div>
             </th>
 
             <th className="ltv-th vert" rowSpan={2}>

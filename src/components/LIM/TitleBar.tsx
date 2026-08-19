@@ -641,6 +641,28 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     try { localStorage.setItem('lim:touch-indicator', touchIndicatorEnabled ? '1' : '0') } catch {}
   }, [touchIndicatorEnabled])
 
+  // Autoriser le mode portrait (essai — menu caché). Le blocage lui-même est du
+  // CSS pur dans index.html : une @media (orientation: portrait) qui masque
+  // #root et affiche « Tournez l'iPad… ». On ne le supprime pas, on le
+  // conditionne à l'attribut data-portrait-ok sur <html>, posé ici.
+  // ⚠️ La clé est AUSSI relue par un script en tête d'index.html, avant le
+  // montage de React : sinon un démarrage déjà en portrait ferait clignoter
+  // l'écran de blocage. Toute modification du nom de la clé doit être reportée
+  // là-bas.
+  // Usage visé : poser l'iPad debout à côté de l'indicateur de vitesse du
+  // pupitre. La mise en page reste dessinée pour du paysage — la TitleBar en
+  // particulier sera à l'étroit tant qu'elle n'aura pas sa variante portrait.
+  const [allowPortrait, setAllowPortrait] = useState(() => {
+    try { return localStorage.getItem('lim:allow-portrait') === '1' } catch { return false }
+  })
+
+  useEffect(() => {
+    try { localStorage.setItem('lim:allow-portrait', allowPortrait ? '1' : '0') } catch {}
+    const root = document.documentElement
+    if (allowPortrait) root.setAttribute('data-portrait-ok', '')
+    else root.removeAttribute('data-portrait-ok')
+  }, [allowPortrait])
+
   // ===== Mise à l'échelle de la fiche train (#25) — option + multiplicateur. =====
   // La DENSITÉ DE RÉFÉRENCE (px/km) est calculée automatiquement par FT — celle
   // pour laquelle le plus grand intervalle de la fiche remplit un écran ; ici on
@@ -5475,6 +5497,23 @@ setAutoScrollStartedOnce(next)
                     type="checkbox"
                     checked={touchIndicatorEnabled}
                     onChange={() => setTouchIndicatorEnabled(v => !v)}
+                    className="h-4 w-4 cursor-pointer accent-blue-600"
+                  />
+                </label>
+
+                <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
+
+                {/* Autoriser le mode portrait */}
+                <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
+                  <span>Autoriser le mode portrait</span>
+                  <input
+                    type="checkbox"
+                    checked={allowPortrait}
+                    onChange={() => {
+                      const next = !allowPortrait
+                      setAllowPortrait(next)
+                      logTestEvent('settings:allowPortrait:set', { enabled: next, source: 'hidden_menu' })
+                    }}
                     className="h-4 w-4 cursor-pointer accent-blue-600"
                   />
                 </label>

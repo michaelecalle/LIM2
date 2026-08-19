@@ -300,7 +300,44 @@ export default function FTHorizontal() {
   // et avant la peinture, donc `getBoundingClientRect` renvoie déjà la taille
   // visible. Sans lui, l'échelle restait figée à sa valeur par défaut jusqu'à un
   // redimensionnement de fenêtre (constaté le 14/08 sur 39819).
-  React.useLayoutEffect(() => { measureRef.current() })
+  //
+  // 🐛 CORRIGÉ le 19/08 — CE FILET S'AUTO-ALIMENTAIT. Écrit sans tableau de
+  // dépendances, il mesurait et appelait `setBox` à CHAQUE rendu. Or `setBox`
+  // provoque un rendu, qui rejoue l'effet, qui remesure : tant que la mesure se
+  // stabilise du premier coup la chaîne s'arrête, mais dès qu'elle hésite d'un
+  // pixel elle boucle. React abandonne alors au bout d'une cinquantaine de mises
+  // à jour imbriquées et DÉMONTE l'arbre — écran tout blanc au passage en mode
+  // horizontal. Trace : « Maximum update depth exceeded … at
+  // FTHorizontal.measureRef.current … at commitHookLayoutEffects ».
+  //   Symptôme INTERMITTENT par nature (selon que la mesure converge ou non), et
+  //   PAS propre au portrait : mesuré le 19/08, la bascule tombait déjà à ~4
+  //   images par seconde en paysage 1366×900 — le portrait n'a fait que pousser
+  //   le phénomène au-delà du seuil de plantage.
+  //
+  // Le filet n'a de raison d'être qu'à l'instant où la vue DEVIENT visible.
+  // Ensuite le ResizeObserver ci-dessus suffit, et lui est asynchrone donc
+  // incapable de chaîner dans un même commit. On lui donne donc un BUDGET de
+  // corrections synchrones, rechargé à chaque passage masqué → visible : la
+  // terminaison est garantie par construction, quelle que soit la raison pour
+  // laquelle la mesure hésite (ce « pourquoi » reste à regarder séparément).
+  const budgetMesureRef = useRef(0)
+  const etaitVisibleRef = useRef(false)
+  React.useLayoutEffect(() => {
+    const parent = rootRef.current?.parentElement
+    if (!parent) return
+    const r = parent.getBoundingClientRect()
+    const visible = r.width >= 50 && r.height >= 50
+    if (visible && !etaitVisibleRef.current) budgetMesureRef.current = 3
+    etaitVisibleRef.current = visible
+    if (!visible || budgetMesureRef.current <= 0) return
+    const w = Math.max(0, Math.round(r.width) - 6)
+    const h = Math.max(0, Math.round(r.height) - 6)
+    // Tolérance d'un pixel : un arrondi ne doit ni consommer le budget ni
+    // déclencher un rendu de plus.
+    if (box && Math.abs(box.w - w) <= 1 && Math.abs(box.h - h) <= 1) return
+    budgetMesureRef.current -= 1
+    setBox({ w, h })
+  })
 
   useEffect(() => {
     // ⚠️ CORRIGÉ le 14/08 — on mesure le CONTENEUR PARENT, plus la fenêtre.

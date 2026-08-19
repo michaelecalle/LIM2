@@ -229,11 +229,20 @@ export default function ClassicInfoPanel({
   }, [D.origenDestino, D.material, D.longitud, D.masa, fechaText])
 
   React.useLayoutEffect(() => {
-    const pad = 24
-    const t = trenRef.current?.scrollWidth || 0
-    const ty = typeRef.current?.scrollWidth || 0
-    if (t) setWTren(t + pad)
-    if (ty) setWType(ty + pad)
+    const measure = () => {
+      const pad = 24
+      const t = trenRef.current?.scrollWidth || 0
+      const ty = typeRef.current?.scrollWidth || 0
+      if (t) setWTren(t + pad)
+      if (ty) setWType(ty + pad)
+    }
+    measure()
+    // La taille de police de ces deux cases change en portrait (media query
+    // ci-dessous) : sans re-mesure a la rotation, wTren/wType resteraient
+    // ceux du paysage et voleraient une trentaine de pixels a ORIGEN/DESTINO.
+    // L'effet voisin qui calcule wLastCol ecoute deja resize pour la meme raison.
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
   }, [trainMeasureText, D.type])
 
   const [isNight, setIsNight] = React.useState<boolean>(false)
@@ -314,6 +323,28 @@ export default function ClassicInfoPanel({
         .lg-inoui { fill:#930c38; }
         .classic-root.classic-night .lg-tgv   { fill:#c9cdc2; }
         .classic-root.classic-night .lg-inoui { fill:#e0396b; }
+
+        /* ── PORTRAIT ───────────────────────────────────────────────────
+           ORIGEN/DESTINO est la seule case en flex de la ligne 1 : elle
+           encaisse donc TOUTE la largeur perdue en portrait, et tronque.
+           Les 8 relations du normalise font EXACTEMENT 30 caracteres
+           capitales (y compris CAN TUNIS-AV - BARCELONA SANTS) : la cible
+           est unique, il n'y a pas de pire cas inconnu a prevoir.
+           Deux leviers combines, car aucun ne suffit seul :
+             1. la police descend d'un cran (18 -> 15, 22 -> 19) ;
+             2. la derniere colonne est plafonnee. Elle porte FECHA en
+                ligne 1 et LONGITUD/MASA en ligne 2, verrouillees ensemble
+                par wLastCol : le meme plafond sur les deux les garde
+                alignees. En % et non en px, pour suivre la largeur reelle
+                de l'ecran (820 px sur un 10,9 pouces, 1024 sur un 12,9).
+           Le plafond laisse a FECHA de quoi ecrire la date longue la plus
+           defavorable, du type vendredi 19 novembre 2026.
+           AUCUN effet en paysage. */
+        @media screen and (orientation: portrait) {
+          .classic-root [class~="text-[18px]"] { font-size: 15px; }
+          .classic-root [class~="text-[22px]"] { font-size: 19px; }
+          .classic-root .classic-lastcol { max-width: 32%; }
+        }
       `}</style>
 
       <div
@@ -371,7 +402,7 @@ export default function ClassicInfoPanel({
               ...(wLastCol ? { width: wLastCol, minWidth: 0 } : { flex: 1, minWidth: 0 }),
               ...(fechaShouldBlink ? { background: yellow } : null),
             }}
-            className={`px-2 py-1 grid place-items-center text-center ${fechaShouldBlink ? 'tile-yellow classic-blink-strong' : ''}`}
+            className={`classic-lastcol px-2 py-1 grid place-items-center text-center ${fechaShouldBlink ? 'tile-yellow classic-blink-strong' : ''}`}
           >
             <div className={`text-[18px] font-extrabold leading-6 truncate max-w-full ${fechaShouldBlink ? 'classic-blink-text' : ''}`}>{fechaText}</div>
           </div>
@@ -432,7 +463,7 @@ export default function ClassicInfoPanel({
             </div>
           </div>
 
-          <div ref={longitudTileRef} style={wLastCol ? { width: wLastCol, minWidth: 0 } : { flex: 1, minWidth: 0 }} className="px-2 py-1 grid place-items-center text-center">
+          <div ref={longitudTileRef} style={wLastCol ? { width: wLastCol, minWidth: 0 } : { flex: 1, minWidth: 0 }} className="classic-lastcol px-2 py-1 grid place-items-center text-center">
             <div className="text-[18px] font-extrabold leading-6">{(D.longitud ?? '')} m — {(D.masa ?? '')} t</div>
           </div>
         </div>

@@ -299,6 +299,24 @@ export default function FT({ variant = "classic" }: FTProps) {
     width: number;
   };
   const [ftLabels, setFtLabels] = useState<FtLabel[]>([]);
+
+  /**
+   * Emprise horizontale REELLE des colonnes Vmax et KM, dans le repere du
+   * conteneur defilant (celui ou l'indicateur de position est place en absolu).
+   *
+   * ⚠️ 19/08 — POURQUOI CET ETAT EXISTE. L'indicateur de position etait cale
+   * en POURCENTAGES ECRITS EN DUR (`left: 18%`, soit 9 % de Bloc + 9 % de Vmax
+   * en paysage). Cette dependance implicite a lache DEUX FOIS :
+   *   - le 13/08, quand les largeurs declaraient onze colonnes pour dix ;
+   *   - le 19/08, quand le mode portrait a re-budgete les largeurs.
+   * A chaque fois on avait corrige les largeurs sans supprimer la dependance.
+   * L'indicateur lit desormais la geometrie au lieu de la deviner : plus aucune
+   * valeur a tenir a jour, dans aucune orientation.
+   */
+  const [ftIndicCols, setFtIndicCols] = useState<{
+    vmax: { left: number; width: number };
+    km: { left: number; width: number };
+  } | null>(null);
   const ftLabelsRef = React.useRef<FtLabel[]>(ftLabels);
   ftLabelsRef.current = ftLabels;
   /** Nœuds DOM des étiquettes, dans l'ordre de `ftLabels`. */
@@ -483,6 +501,25 @@ export default function FT({ variant = "classic" }: FTProps) {
     }
     oranges.sort((a, b) => a[0] - b[0]);
     orangeRangesRef.current = oranges;
+
+    // Emprise des colonnes Vmax (2e) et KM (3e) pour l'indicateur de position.
+    // On passe par getBoundingClientRect et non par offsetLeft : `cells` a pour
+    // offsetParent `.ft-body-scroll`, alors que l'indicateur est place dans le
+    // conteneur defilant, qui est un AUTRE repere. La difference des rectangles
+    // est juste quel que soit l'emboitement.
+    const conteneur = scrollContainerRef.current;
+    if (conteneur && cells[1] && cells[2]) {
+      const base = conteneur.getBoundingClientRect().left;
+      const rVmax = cells[1].getBoundingClientRect();
+      const rKm = cells[2].getBoundingClientRect();
+      const cols = {
+        vmax: { left: Math.round(rVmax.left - base), width: Math.round(rVmax.width) },
+        km: { left: Math.round(rKm.left - base), width: Math.round(rKm.width) },
+      };
+      setFtIndicCols((prev) =>
+        JSON.stringify(prev) === JSON.stringify(cols) ? prev : cols
+      );
+    }
 
     setFtLabels((prev) =>
       JSON.stringify(prev) === JSON.stringify(suivant) ? prev : suivant
@@ -8355,6 +8392,40 @@ const vmaxClassForLtv =
         .ft-table th:nth-child(10),
         .ft-table td:nth-child(10) { width: 6%; }
 
+        /* ── PORTRAIT ───────────────────────────────────────────────────
+           Re-budgetage des largeurs pour un ecran de ~785 px au lieu de
+           ~1160. Les besoins sont mesures sur la DONNEE REELLE (98 lignes
+           du normalise 2026) : bloc 5 car. max ("ETCS1"), vmax 3, KM 5,
+           rampe 2, radio 1, ETCS 1, etablissement 29.
+           Le seul debordement reel est celui des heures : "12:06" a 16 px
+           en graisse 600, plus padding 4/6, demande ~58 px et n'en avait
+           que 47. On le finance sur Bloc/Vmax/KM et sur les trois colonnes
+           de droite, qui portent 1 a 2 caracteres dans 47 px.
+           Etablissements n'est pas rognee, elle est meme elargie.
+           Somme exacte : 100 %. AUCUN effet en paysage. */
+        @media screen and (orientation: portrait) {
+          .ft-table th:nth-child(1),
+          .ft-table td:nth-child(1)  { width: 7.5%; }   /* Bloc    59 px, besoin 56 */
+          .ft-table th:nth-child(2),
+          .ft-table td:nth-child(2)  { width: 6%; }     /* Vmax    47 px, besoin 38 */
+          .ft-table th:nth-child(3),
+          .ft-table td:nth-child(3)  { width: 7.5%; }   /* KM      59 px, besoin 56 */
+          .ft-table th:nth-child(4),
+          .ft-table td:nth-child(4)  { width: 38.5%; }  /* Etabl. 302 px, besoin 244 */
+          .ft-table th:nth-child(5),
+          .ft-table td:nth-child(5)  { width: 8.5%; }   /* Arr     67 px, besoin 58 */
+          .ft-table th:nth-child(6),
+          .ft-table td:nth-child(6)  { width: 8.5%; }   /* Pass    67 px, besoin 58 */
+          .ft-table th:nth-child(7),
+          .ft-table td:nth-child(7)  { width: 8.5%; }   /* Dep     67 px, besoin 58 */
+          .ft-table th:nth-child(8),
+          .ft-table td:nth-child(8)  { width: 5%; }     /* Radio   39 px, pastille */
+          .ft-table th:nth-child(9),
+          .ft-table td:nth-child(9)  { width: 5%; }     /* rampe   39 px, 2 chiffres */
+          .ft-table th:nth-child(10),
+          .ft-table td:nth-child(10) { width: 5%; }     /* ETCS    39 px, pastille */
+        }
+
         .dark .ft-table {
           border: 2px solid #fff;
           background: #000;
@@ -9115,8 +9186,30 @@ const vmaxClassForLtv =
                           })(),
 
                     transform: "translateY(-6px)",
-                    left: !testModeEnabled ? "18%" : "13%",
-                    width: !testModeEnabled ? "10px" : "14%",
+
+                    // Cale sur la geometrie MESUREE des colonnes (cf.
+                    // `ftIndicCols`). Hors mode test : le triangle se pose sur
+                    // le bord gauche de KM. En mode test : la barre couvre de
+                    // la moitie de Vmax jusqu'au bord droit de KM.
+                    // Les pourcentages ne servent plus que de repli avant la
+                    // premiere mesure — ce sont les valeurs du PAYSAGE, donc
+                    // justes le temps d'une image dans le cas courant.
+                    ...(ftIndicCols
+                      ? !testModeEnabled
+                        ? { left: `${ftIndicCols.km.left}px`, width: "10px" }
+                        : (() => {
+                            const gauche =
+                              ftIndicCols.vmax.left + ftIndicCols.vmax.width / 2;
+                            const droite = ftIndicCols.km.left + ftIndicCols.km.width;
+                            return {
+                              left: `${Math.round(gauche)}px`,
+                              width: `${Math.max(0, Math.round(droite - gauche))}px`,
+                            };
+                          })()
+                      : {
+                          left: !testModeEnabled ? "18%" : "13%",
+                          width: !testModeEnabled ? "10px" : "14%",
+                        }),
                     display: "flex",
                     alignItems: "center",
                     justifyContent: !testModeEnabled ? "flex-start" : "initial",
