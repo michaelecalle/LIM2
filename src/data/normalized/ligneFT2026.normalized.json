@@ -1726,15 +1726,15 @@
         }
       ]
     },
-    "9711": {
+    "9710": {
       "variants": [
         {
           "ligneVersionId": "v1",
           "validityStartDate": "2026-08-10",
           "validityEndDate": "",
           "meta": {
-            "numeroEspagne": "9711",
-            "numeroFrance": "9710",
+            "numeroEspagne": "9710",
+            "numeroFrance": "9711",
             "origine": "PERPIGNAN BV",
             "destination": "BARCELONA SANTS",
             "categorieSNCF": "E32C",
@@ -1868,15 +1868,15 @@
         }
       ]
     },
-    "9713": {
+    "9712": {
       "variants": [
         {
           "ligneVersionId": "v1",
           "validityStartDate": "2026-08-10",
           "validityEndDate": "",
           "meta": {
-            "numeroEspagne": "9713",
-            "numeroFrance": "9712",
+            "numeroEspagne": "9712",
+            "numeroFrance": "9713",
             "origine": "PERPIGNAN BV",
             "destination": "BARCELONA SANTS",
             "categorieSNCF": "E32C",
@@ -2010,15 +2010,15 @@
         }
       ]
     },
-    "9715": {
+    "9714": {
       "variants": [
         {
           "ligneVersionId": "v1",
           "validityStartDate": "2026-08-10",
           "validityEndDate": "",
           "meta": {
-            "numeroEspagne": "9715",
-            "numeroFrance": "9714",
+            "numeroEspagne": "9714",
+            "numeroFrance": "9715",
             "origine": "PERPIGNAN BV",
             "destination": "BARCELONA SANTS",
             "categorieSNCF": "E32C",
