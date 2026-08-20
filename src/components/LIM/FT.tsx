@@ -272,8 +272,6 @@ export default function FT({ variant = "classic" }: FTProps) {
   }, []);
 
 
-
-
   /**
    * ── SCROLL INTELLIGENT : la couche en surimpression ────────────────────────
    *
@@ -567,6 +565,7 @@ export default function FT({ variant = "classic" }: FTProps) {
   );
   React.useEffect(() => () => etiquettesObserverRef.current?.disconnect(), []);
 
+
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     scrollContainerRef.current = el;
@@ -625,8 +624,6 @@ export default function FT({ variant = "classic" }: FTProps) {
     // parcours), quand la boucle tourne mais que rien ne la déclenche.
     majEtiquettes();
   };
-
-
 
   //
   // ===== 1. NUMÉRO DE TRAIN ET PORTION DE PARCOURS ===================
@@ -1135,8 +1132,6 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
    * repartent à zéro, ce qui rendrait la graduation incohérente aux transitions.
    */
   const [kmTicks, setKmTicks] = useState<Array<{ top: number; left: number; width: number }>>([]);
-
-
 
   // --- Continuité ORANGE -> RED (ancrage visuel) + anti-retour arrière en RED ---
   const lastTrainPosYpxRef = React.useRef<number | null>(null);
@@ -1753,8 +1748,6 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   }, []);
 
 
-
-
   
 
   // Dernière position GPS reçue (mémorisée pour les futurs calculs)
@@ -2124,8 +2117,6 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
     };
   }, []);
 
-
-
   // Réglages (ajustables)
   const GPS_FRESH_SEC = 8; // si l'échantillon est plus vieux -> pas "green"
   const GPS_MAX_ACCURACY_M = 300; // précision > 300 m => ORANGE
@@ -2223,6 +2214,12 @@ const orangeToRedStartedAtRef = React.useRef<number | null>(null);
       const detail = e?.detail ?? {};
       const enabled = !!detail.enabled;
       const standby = !!detail.standby;
+      // ⚠️ 19/08 — NATURE DE L'ENTREE EN STAND-BY. C'est elle, et non la nature de
+      // l'arret, qui decide du libelle de sortie : entree AUTOMATIQUE = le train
+      // s'est arrete ou va partir, on confirme un depart ; entree MANUELLE = le
+      // conducteur a choisi une ligne, on recale une position. Defaut 'auto' :
+      // seul le clic sur une ligne est manuel, et il le declare explicitement.
+      const origine: "auto" | "manuel" = detail.origine === "manuel" ? "manuel" : "auto";
 
       // 🎯 Cas spécial : 1er clic sur Play -> Standby initial + sélection 1ʳᵉ ligne
       if (enabled && standby && !initialStandbyDoneRef.current) {
@@ -2248,7 +2245,7 @@ setAutoScrollEnabled(true);
           // On signale à la TitleBar qu'on est en mode horaire Standby (🕑 orange)
           window.dispatchEvent(
             new CustomEvent("lim:hourly-mode", {
-detail: { enabled: true, standby: true },
+detail: { enabled: true, standby: true, origine: "auto" },
             })
           );
 
@@ -2336,7 +2333,7 @@ detail: { enabled: true, standby: true },
       // On informe la TitleBar de l'état horaire / standby
       window.dispatchEvent(
         new CustomEvent("lim:hourly-mode", {
-          detail: { enabled, standby },
+          detail: { enabled, standby, origine },
         })
       );
     }
@@ -2868,7 +2865,7 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
 // la même logique interne qu’un standby manuel.
 window.dispatchEvent(
   new CustomEvent("ft:auto-scroll-change", {
-    detail: { enabled: true, standby: true, pk: Number(stationPkRaw) || undefined },
+    detail: { enabled: true, standby: true, origine: "auto", pk: Number(stationPkRaw) || undefined },
   })
 );
 // Afficher le badge ARRÊT (même comportement visuel que le GPS ARRET)
@@ -5230,7 +5227,7 @@ const isRelock = acceptedMode === "relock";
             const stationPkForEvent = autoStandbyEntry?.pk != null ? Number(autoStandbyEntry.pk) : undefined;
             window.dispatchEvent(
               new CustomEvent("ft:auto-scroll-change", {
-                detail: { enabled: true, standby: true, pk: stationPkForEvent },
+                detail: { enabled: true, standby: true, origine: "auto", pk: stationPkForEvent },
               })
             );
             window.dispatchEvent(
@@ -7429,7 +7426,8 @@ if (isStandby) {
 
     window.dispatchEvent(
   new CustomEvent("lim:hourly-mode", {
-    detail: { enabled: true, standby: true },
+    // SEULE entree manuelle des quatre : le conducteur a choisi la ligne.
+    detail: { enabled: true, standby: true, origine: "manuel" },
   })
 );
 
@@ -7633,8 +7631,6 @@ const hora = horaFromNormalized || horaFrance;
         : "";
 
     const isLabelRow = labelRowIndex === i;
-
-
 
     // est-ce qu'il y a une barre de V sur CETTE ligne principale ?
     const isBreakpointRow =
@@ -7897,8 +7893,6 @@ const hora = horaFromNormalized || horaFrance;
 
       renderedRowIndex++;
     }
-
-
 
     // 3) LIGNE PRINCIPALE (toujours) — hauteur NATURELLE.
     //    La mise à l'échelle #25 ne touche plus la ligne principale : l'espace
@@ -8404,26 +8398,26 @@ const vmaxClassForLtv =
            Etablissements n'est pas rognee, elle est meme elargie.
            Somme exacte : 100 %. AUCUN effet en paysage. */
         @media screen and (orientation: portrait) {
-          .ft-table th:nth-child(1),
-          .ft-table td:nth-child(1)  { width: 7.5%; }   /* Bloc    59 px, besoin 56 */
-          .ft-table th:nth-child(2),
-          .ft-table td:nth-child(2)  { width: 6%; }     /* Vmax    47 px, besoin 38 */
-          .ft-table th:nth-child(3),
-          .ft-table td:nth-child(3)  { width: 7.5%; }   /* KM      59 px, besoin 56 */
-          .ft-table th:nth-child(4),
-          .ft-table td:nth-child(4)  { width: 38.5%; }  /* Etabl. 302 px, besoin 244 */
-          .ft-table th:nth-child(5),
-          .ft-table td:nth-child(5)  { width: 8.5%; }   /* Arr     67 px, besoin 58 */
-          .ft-table th:nth-child(6),
-          .ft-table td:nth-child(6)  { width: 8.5%; }   /* Pass    67 px, besoin 58 */
-          .ft-table th:nth-child(7),
-          .ft-table td:nth-child(7)  { width: 8.5%; }   /* Dep     67 px, besoin 58 */
-          .ft-table th:nth-child(8),
-          .ft-table td:nth-child(8)  { width: 5%; }     /* Radio   39 px, pastille */
-          .ft-table th:nth-child(9),
-          .ft-table td:nth-child(9)  { width: 5%; }     /* rampe   39 px, 2 chiffres */
-          .ft-table th:nth-child(10),
-          .ft-table td:nth-child(10) { width: 5%; }     /* ETCS    39 px, pastille */
+          :root:not([data-portrait-fige]) .ft-table th:nth-child(1),
+          :root:not([data-portrait-fige]) .ft-table td:nth-child(1)  { width: 7.5%; }   /* Bloc    59 px, besoin 56 */
+          :root:not([data-portrait-fige]) .ft-table th:nth-child(2),
+          :root:not([data-portrait-fige]) .ft-table td:nth-child(2)  { width: 6%; }     /* Vmax    47 px, besoin 38 */
+          :root:not([data-portrait-fige]) .ft-table th:nth-child(3),
+          :root:not([data-portrait-fige]) .ft-table td:nth-child(3)  { width: 7.5%; }   /* KM      59 px, besoin 56 */
+          :root:not([data-portrait-fige]) .ft-table th:nth-child(4),
+          :root:not([data-portrait-fige]) .ft-table td:nth-child(4)  { width: 38.5%; }  /* Etabl. 302 px, besoin 244 */
+          :root:not([data-portrait-fige]) .ft-table th:nth-child(5),
+          :root:not([data-portrait-fige]) .ft-table td:nth-child(5)  { width: 8.5%; }   /* Arr     67 px, besoin 58 */
+          :root:not([data-portrait-fige]) .ft-table th:nth-child(6),
+          :root:not([data-portrait-fige]) .ft-table td:nth-child(6)  { width: 8.5%; }   /* Pass    67 px, besoin 58 */
+          :root:not([data-portrait-fige]) .ft-table th:nth-child(7),
+          :root:not([data-portrait-fige]) .ft-table td:nth-child(7)  { width: 8.5%; }   /* Dep     67 px, besoin 58 */
+          :root:not([data-portrait-fige]) .ft-table th:nth-child(8),
+          :root:not([data-portrait-fige]) .ft-table td:nth-child(8)  { width: 5%; }     /* Radio   39 px, pastille */
+          :root:not([data-portrait-fige]) .ft-table th:nth-child(9),
+          :root:not([data-portrait-fige]) .ft-table td:nth-child(9)  { width: 5%; }     /* rampe   39 px, 2 chiffres */
+          :root:not([data-portrait-fige]) .ft-table th:nth-child(10),
+          :root:not([data-portrait-fige]) .ft-table td:nth-child(10) { width: 5%; }     /* ETCS    39 px, pastille */
         }
 
         .dark .ft-table {

@@ -341,9 +341,9 @@ export default function ClassicInfoPanel({
            defavorable, du type vendredi 19 novembre 2026.
            AUCUN effet en paysage. */
         @media screen and (orientation: portrait) {
-          .classic-root [class~="text-[18px]"] { font-size: 15px; }
-          .classic-root [class~="text-[22px]"] { font-size: 19px; }
-          .classic-root .classic-lastcol { max-width: 32%; }
+          :root:not([data-portrait-fige]) .classic-root [class~="text-[18px]"] { font-size: 15px; }
+          :root:not([data-portrait-fige]) .classic-root [class~="text-[22px]"] { font-size: 19px; }
+          :root:not([data-portrait-fige]) .classic-root .classic-lastcol { max-width: 32%; }
         }
       `}</style>
 

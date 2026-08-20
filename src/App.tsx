@@ -99,7 +99,7 @@ export default function App() {
   const [nextStop, setNextStop] = React.useState<NextStop>(null)
 
   // #28 — mode de défilement de la fiche train : "vertical" (FT.tsx, défaut) ou
-  // "horizontal" (FTHorizontal.tsx, expérimental). Basculé via Paramètres.
+  // "horizontal" (FTHorizontal.tsx). Basculé via Paramètres.
   const [ftScrollMode, setFtScrollMode] = React.useState<"vertical" | "horizontal">(() => {
     try { return localStorage.getItem("lim:ft-scroll-mode") === "horizontal" ? "horizontal" : "vertical" } catch { return "vertical" }
   })

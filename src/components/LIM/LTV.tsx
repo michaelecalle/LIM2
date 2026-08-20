@@ -2343,33 +2343,33 @@ const LTV: React.FC = () => {
            libelle du document officiel conserve mot pour mot.
            Somme exacte : 100 %. AUCUN effet en paysage. */
         @media screen and (orientation: portrait) {
-          col.ltv-col-trayecto   { width: 25.1%; }  /* +3.7 : moins de repli */
-          col.ltv-col-via        { width: 2.2%; }
-          col.ltv-col-km         { width: 6%; }     /* 47 px, besoin 45 */
-          col.ltv-col-km2        { width: 6%; }     /* 47 px, besoin 45 */
-          col.ltv-col-vel        { width: 3.8%; }   /* 30 px, besoin 27 */
-          col.ltv-col-motivo     { width: 18.9%; }
-          col.ltv-col-small-a    { width: 2.2%; }   /* Establecido - Fecha, vide */
-          col.ltv-col-small-b    { width: 2.2%; }   /* Establecido - Hora,  vide */
-          col.ltv-col-small-c    { width: 2.2%; }   /* Fin prevista - Fecha, vide */
-          col.ltv-col-small-d    { width: 2.2%; }   /* Fin prevista - Hora,  vide */
-          col.ltv-col-small-e    { width: 2.4%; }   /* case a cocher */
-          col.ltv-col-small-f    { width: 2.4%; }   /* case a cocher */
-          col.ltv-col-solo       { width: 3.7%; }   /* libelle pivote sur 2 lignes */
-          col.ltv-col-csv-narrow { width: 2.2%; }
-          col.ltv-col-csv        { width: 18.5%; }  /* +2.7 */
+          :root:not([data-portrait-fige]) col.ltv-col-trayecto   { width: 25.1%; }  /* +3.7 : moins de repli */
+          :root:not([data-portrait-fige]) col.ltv-col-via        { width: 2.2%; }
+          :root:not([data-portrait-fige]) col.ltv-col-km         { width: 6%; }     /* 47 px, besoin 45 */
+          :root:not([data-portrait-fige]) col.ltv-col-km2        { width: 6%; }     /* 47 px, besoin 45 */
+          :root:not([data-portrait-fige]) col.ltv-col-vel        { width: 3.8%; }   /* 30 px, besoin 27 */
+          :root:not([data-portrait-fige]) col.ltv-col-motivo     { width: 18.9%; }
+          :root:not([data-portrait-fige]) col.ltv-col-small-a    { width: 2.2%; }   /* Establecido - Fecha, vide */
+          :root:not([data-portrait-fige]) col.ltv-col-small-b    { width: 2.2%; }   /* Establecido - Hora,  vide */
+          :root:not([data-portrait-fige]) col.ltv-col-small-c    { width: 2.2%; }   /* Fin prevista - Fecha, vide */
+          :root:not([data-portrait-fige]) col.ltv-col-small-d    { width: 2.2%; }   /* Fin prevista - Hora,  vide */
+          :root:not([data-portrait-fige]) col.ltv-col-small-e    { width: 2.4%; }   /* case a cocher */
+          :root:not([data-portrait-fige]) col.ltv-col-small-f    { width: 2.4%; }   /* case a cocher */
+          :root:not([data-portrait-fige]) col.ltv-col-solo       { width: 3.7%; }   /* libelle pivote sur 2 lignes */
+          :root:not([data-portrait-fige]) col.ltv-col-csv-narrow { width: 2.2%; }
+          :root:not([data-portrait-fige]) col.ltv-col-csv        { width: 18.5%; }  /* +2.7 */
 
           /* En-tetes de groupe pivotes. Meme principe que .vert-shell : la
              boite reserve la place, le libelle est en absolu et tourne, donc
              il n'occupe en LARGEUR que sa hauteur de ligne. Le cout est en
              hauteur d'en-tete (~+60 px), la ressource dont on dispose ici. */
-          .ltv-group-shell {
+          :root:not([data-portrait-fige]) .ltv-group-shell {
             position: relative;
             display: block;
             width: 100%;
             height: 84px;
           }
-          .ltv-group-label {
+          :root:not([data-portrait-fige]) .ltv-group-label {
             position: absolute;
             top: 50%;
             left: 50%;

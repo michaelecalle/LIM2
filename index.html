@@ -34,41 +34,24 @@
   header {
     transition: background-color 0.2s ease, color 0.2s ease;
   }
-
-  /* Blocage du mode portrait. DESACTIVABLE par l'option « Autoriser le mode
-     portrait » du menu caché, qui pose l'attribut data-portrait-ok sur <html>.
-     Le sélecteur porte donc sur html:not([data-portrait-ok]) : sans l'attribut,
-     comportement d'origine inchangé. */
-  @media screen and (orientation: portrait) {
-    /* On masque l'application normale */
-    html:not([data-portrait-ok]) #root > * {
-      display: none;
-    }
-
-    /* On affiche un écran de blocage avec un message */
-    html:not([data-portrait-ok]) #root {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      font-size: 1.2rem;
-      padding: 1rem;
-    }
-
-    html:not([data-portrait-ok]) #root::before {
-      content: "Tournez l’iPad en mode paysage pour utiliser LIM2.";
-      max-width: 80%;
-    }
-  }
 </style>
 <script>
-  /* Lecture du reglage AVANT le montage de React. Sans ca, ouvrir l'application
-     alors que l'iPad est deja en portrait afficherait l'ecran de blocage le
-     temps que TitleBar pose l'attribut : un clignotement a chaque demarrage.
-     L'ecriture de la cle, elle, reste du ressort de TitleBar. */
+  /* Presentation PORTRAIT : active PAR DEFAUT depuis le 19/08. Il n'y a plus
+     d'ecran de blocage du tout — l'ancien message « Tournez l'iPad » a ete
+     retire, ainsi que la @media qui le portait.
+     On ne memorise donc que l'EXCEPTION : la cle n'existe que si l'utilisateur
+     a demande a FIGER la presentation paysage (case decochee dans Parametres).
+     Lu ici, avant le montage de React, pour que les adaptations portrait
+     n'apparaissent pas une fraction de seconde avant d'etre retirees.
+     Sens sur : si ce script echoue, l'attribut est absent et les adaptations
+     s'appliquent — c'est le comportement par defaut, pas un mur.
+     NB : le manifeste declare "orientation": "landscape" et index.html porte un
+     <meta apple-mobile-web-app-orientation>. iOS IGNORE les deux (constate : la
+     tablette bascule malgre eux). Aucun verrouillage d'orientation n'est
+     accessible depuis le web sur iPad ; le CSS est le seul levier. */
   try {
-    if (localStorage.getItem('lim:allow-portrait') === '1') {
-      document.documentElement.setAttribute('data-portrait-ok', '');
+    if (localStorage.getItem('lim:portrait-fige') === '1') {
+      document.documentElement.setAttribute('data-portrait-fige', '');
     }
   } catch (e) {}
 </script>

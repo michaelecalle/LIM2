@@ -160,6 +160,15 @@ const autoScrollRef = useRef(false)
 const autoScrollStartedOnceRef = useRef(false)
 const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const [stationArretActive, setStationArretActive] = useState(false)
+  // Nature de l'arret annoncee par FT ("station" / "pleine-ligne"). Elle ne sert
+  // PLUS a choisir le libelle (cf. libelleSortieStandby) : seule la nature de
+  // l'ENTREE en stand-by compte. On la conserve pour le JOURNAL, ou elle
+  // documente la situation exacte d'une sortie a posteriori.
+  const [stationArretKind, setStationArretKind] = useState<string | null>(null)
+  // Nature de l'ENTREE en stand-by, annoncee par FT : 'auto' (le train s'est
+  // arrete, ou va partir) ou 'manuel' (le conducteur a choisi une ligne). C'est
+  // ce critere — et non la nature de l'arret — qui decide du libelle de sortie.
+  const [standbyOrigine, setStandbyOrigine] = useState<'auto' | 'manuel'>('auto')
   const [hourlyMode, setHourlyMode] = useState(false)
   const [referenceMode, setReferenceMode] = useState<'HORAIRE' | 'GPS'>('HORAIRE')
   const [standbyMode, setStandbyMode] = useState(false)
@@ -641,27 +650,35 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     try { localStorage.setItem('lim:touch-indicator', touchIndicatorEnabled ? '1' : '0') } catch {}
   }, [touchIndicatorEnabled])
 
-  // Autoriser le mode portrait (essai — menu caché). Le blocage lui-même est du
-  // CSS pur dans index.html : une @media (orientation: portrait) qui masque
-  // #root et affiche « Tournez l'iPad… ». On ne le supprime pas, on le
-  // conditionne à l'attribut data-portrait-ok sur <html>, posé ici.
-  // ⚠️ La clé est AUSSI relue par un script en tête d'index.html, avant le
-  // montage de React : sinon un démarrage déjà en portrait ferait clignoter
-  // l'écran de blocage. Toute modification du nom de la clé doit être reportée
-  // là-bas.
-  // Usage visé : poser l'iPad debout à côté de l'indicateur de vitesse du
-  // pupitre. La mise en page reste dessinée pour du paysage — la TitleBar en
-  // particulier sera à l'étroit tant qu'elle n'aura pas sa variante portrait.
-  const [allowPortrait, setAllowPortrait] = useState(() => {
-    try { return localStorage.getItem('lim:allow-portrait') === '1' } catch { return false }
+  // Présentation PORTRAIT — réglage normal depuis le 19/08.
+  // Elle était derrière le menu avancé le temps de la mise au point ; validée en
+  // usage, elle passe dans les Paramètres et devient le comportement PAR DÉFAUT.
+  //
+  // Deux conséquences de ce changement de défaut :
+  //  1. On ne mémorise plus que l'EXCEPTION (`lim:portrait-fige`). Rien de stocké
+  //     = portrait adapté. Le sens sûr : un stockage vide ou illisible donne le
+  //     comportement voulu par la majorité, pas l'inverse.
+  //  2. Il n'y a plus d'écran de blocage. Décocher la case ne fait plus
+  //     apparaître « Tournez l'iPad » : elle FIGE simplement la présentation
+  //     paysage, l'application se contentant de s'afficher plus étroite.
+  //     ⚠️ On ne peut PAS empêcher la tablette de tourner : le manifeste déclare
+  //     déjà `"orientation": "landscape"` et iOS l'ignore (constaté). Le CSS est
+  //     le seul levier disponible.
+  const [autoriserPortrait, setAutoriserPortrait] = useState(() => {
+    try { return localStorage.getItem('lim:portrait-fige') !== '1' } catch { return true }
   })
 
   useEffect(() => {
-    try { localStorage.setItem('lim:allow-portrait', allowPortrait ? '1' : '0') } catch {}
+    try {
+      if (autoriserPortrait) localStorage.removeItem('lim:portrait-fige')
+      else localStorage.setItem('lim:portrait-fige', '1')
+      // Clé de la phase d'essai (18/08), remplacée par la précédente.
+      localStorage.removeItem('lim:allow-portrait')
+    } catch {}
     const root = document.documentElement
-    if (allowPortrait) root.setAttribute('data-portrait-ok', '')
-    else root.removeAttribute('data-portrait-ok')
-  }, [allowPortrait])
+    if (autoriserPortrait) root.removeAttribute('data-portrait-fige')
+    else root.setAttribute('data-portrait-fige', '')
+  }, [autoriserPortrait])
 
   // ===== Mise à l'échelle de la fiche train (#25) — option + multiplicateur. =====
   // La DENSITÉ DE RÉFÉRENCE (px/km) est calculée automatiquement par FT — celle
@@ -786,7 +803,9 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     }))
   }, [ftScaleEnabled, ftScaleMult])
 
-  // #28 — mode de défilement FT : "vertical" (défaut) ou "horizontal" (expérimental).
+  // #28 — mode de défilement FT : "vertical" (défaut) ou "horizontal".
+  // ⚠️ 19/08 — le mode horizontal n'est PLUS expérimental (décision utilisateur,
+  // après validation en usage). Ne pas réintroduire la mention « exp. ».
   const [ftScrollMode, setFtScrollMode] = useState<'vertical' | 'horizontal'>(() => {
     try { return localStorage.getItem('lim:ft-scroll-mode') === 'horizontal' ? 'horizontal' : 'vertical' } catch { return 'vertical' }
   })
@@ -3653,6 +3672,7 @@ ${coords}
 
 setHourlyMode(enabled || standby)
 setStandbyMode(standby)
+if (standby) setStandbyOrigine((ce?.detail?.origine === 'manuel') ? 'manuel' : 'auto')
 
 setAutoScroll(enabled)
 
@@ -3752,12 +3772,36 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testModeEnabled])
 
+  // ── Sortie de stand-by par le bouton Play (19/08) ─────────────────────────
+  // Le bouton n'est cliquable QUE dans cette situation, et son clic ne fait que
+  // sortir du stand-by. En mode GPS on n'ouvre rien : le depart s'y detecte tout
+  // seul au bout de 75 m, il n'y aurait rien a confirmer.
+  const sortieStandbyPossible = standbyMode && referenceMode === 'HORAIRE'
+  // Le libelle dit la VERITE sur la consequence : en gare la sortie fixe l'heure
+  // de depart et recale le delta ; hors gare (arret au signal) le moteur
+  // journalise `gps:arret:departure-no-recal` et ne recale rien.
+  // DEUX libelles, pas trois. Le critere est la nature de l'ENTREE en stand-by :
+  //  - MANUELLE (le conducteur a choisi une ligne) : il n'y a pas de depart a
+  //    confirmer, on recale une position ;
+  //  - AUTOMATIQUE (stand-by initial, ou arret detecte en gare) : la sortie fixe
+  //    l'heure de depart reelle, qui devient la base du delta.
+  //
+  // ⚠️ 19/08 — Une 3e branche « Reprendre » avait ete ecrite pour l'arret detecte
+  // HORS gare (`kind === 'pleine-ligne'`). Elle est INATTEIGNABLE et a ete retiree :
+  // ce cas n'existe qu'en mode GPS, et surtout le bloc qui le detecte
+  // (`FT.tsx` ~5385) arme le badge ARRET **sans emettre aucun evenement de
+  // stand-by** — `standbyMode` reste donc faux et le bouton ne s'affiche pas.
+  // Ne pas la reintroduire sans avoir verifie que ce bloc entre en stand-by.
+  const libelleSortieStandby =
+    standbyOrigine === 'manuel' ? 'Recaler' : 'Confirmer le départ'
+
   // ✅ Indicateur ARRÊT en gare (mode GPS ou standby horaire)
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent
       const active = !!ce?.detail?.active
       setStationArretActive(active)
+      setStationArretKind(active ? (ce?.detail?.kind ?? null) : null)
     }
     window.addEventListener('lim:station-arret', handler as EventListener)
     return () => window.removeEventListener('lim:station-arret', handler as EventListener)
@@ -4491,9 +4535,28 @@ style={{
               GPS/horaire (et sens attendu) sont sans objet, on masque tout le groupe. */}
           {pdfMode === 'green' && activeStartupMode !== 'ltv' && (
             <>
+              {/* Sortie de stand-by par le bouton Play (19/08). Il clignotait deja
+                  en orange pour signaler l'attente, mais refusait le doigt : en
+                  fiche HORIZONTALE, rien ne disait alors ce qu'il fallait faire. */}
               <button
                 type="button"
                 onClick={() => {
+                  // ⚠️ SORTIE DE STAND-BY — se place AVANT toute autre logique et
+                  // sort par `return` : le clic ne peut donc jamais atteindre la
+                  // bascule marche/arret. Action identique a celle du badge ARRET
+                  // en mode horaire, qui est eprouvee en service : la reprise
+                  // calcule le delta et efface le badge.
+                  if (sortieStandbyPossible) {
+                    logTestEvent('ui:standby:exit-via-play', {
+                      kind: stationArretKind,
+                      libelle: libelleSortieStandby,
+                    })
+                    window.dispatchEvent(new CustomEvent('ft:auto-scroll-change', {
+                      detail: { enabled: true, standby: false, source: 'play-standby-exit' },
+                    }))
+                    return
+                  }
+
                   if (autoScrollStartedOnce) return
 
                   if (simulationEnabled && !demoActive) {
@@ -4534,8 +4597,16 @@ setAutoScrollStartedOnce(next)
                   }
                 }}
                 style={{
-                  pointerEvents: autoScrollStartedOnce ? 'none' : 'auto',
-                  cursor: autoScrollStartedOnce ? 'default' : 'pointer',
+                  // ⚠️ 19/08 — Le bouton etait rendu DEFINITIVEMENT inerte des le
+                  // premier Play, et c'etait voulu : une fois le defilement lance,
+                  // lui seul ne doit plus pouvoir l'arreter — seul STOP le peut.
+                  // On ouvre donc UNE seule breche, celle du stand-by : pendant le
+                  // stand-by en mode horaire, il redevient cliquable, et son clic
+                  // ne fait QUE sortir du stand-by (cf. onClick, qui sort avant
+                  // d'atteindre la bascule marche/arret). La protection d'origine
+                  // est donc intacte en marche.
+                  pointerEvents: !autoScrollStartedOnce || sortieStandbyPossible ? 'auto' : 'none',
+                  cursor: !autoScrollStartedOnce || sortieStandbyPossible ? 'pointer' : 'default',
                 }}
                 className={`h-7 px-3 rounded-full flex items-center justify-center text-[11px] transition
                   ${
@@ -4554,7 +4625,9 @@ setAutoScrollStartedOnce(next)
   : 'Activer le défilement automatique'
                 }
               >
-{autoScrollButtonActive ? (
+{sortieStandbyPossible ? (
+                  <span className="font-bold whitespace-nowrap">{libelleSortieStandby}</span>
+                ) : autoScrollButtonActive ? (
                   <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
                     <rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" />
                     <rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" />
@@ -5153,7 +5226,7 @@ setAutoScrollStartedOnce(next)
                   className="text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-transparent px-1 py-0.5 cursor-pointer"
                 >
                   <option value="vertical">Vertical</option>
-                  <option value="horizontal">Horizontal (exp.)</option>
+                  <option value="horizontal">Horizontal</option>
                 </select>
               </label>
               {ftScrollMode === 'horizontal' && (
@@ -5164,6 +5237,23 @@ setAutoScrollStartedOnce(next)
                     className="w-full cursor-pointer accent-blue-600" />
                 </div>
               )}
+              {/* Présentation portrait (19/08) — cochée par défaut. Décocher ne
+                  bloque plus rien : ça fige la présentation paysage, pour qui
+                  veut tourner sa tablette sans que la mise en page change. */}
+              <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
+                <span>Autoriser le mode portrait</span>
+                <input
+                  type="checkbox"
+                  checked={autoriserPortrait}
+                  onChange={() => {
+                    const next = !autoriserPortrait
+                    setAutoriserPortrait(next)
+                    logTestEvent('settings:allowPortrait:set', { enabled: next, source: 'settings' })
+                  }}
+                  className="h-4 w-4 cursor-pointer accent-blue-600"
+                />
+              </label>
+
               {/* Mise à l'échelle de la fiche train (#25) — VERTICAL uniquement */}
               {ftScrollMode === 'vertical' && (
                 <>
@@ -5497,23 +5587,6 @@ setAutoScrollStartedOnce(next)
                     type="checkbox"
                     checked={touchIndicatorEnabled}
                     onChange={() => setTouchIndicatorEnabled(v => !v)}
-                    className="h-4 w-4 cursor-pointer accent-blue-600"
-                  />
-                </label>
-
-                <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
-
-                {/* Autoriser le mode portrait */}
-                <label className="flex items-center justify-between gap-3 py-1 cursor-pointer select-none">
-                  <span>Autoriser le mode portrait</span>
-                  <input
-                    type="checkbox"
-                    checked={allowPortrait}
-                    onChange={() => {
-                      const next = !allowPortrait
-                      setAllowPortrait(next)
-                      logTestEvent('settings:allowPortrait:set', { enabled: next, source: 'hidden_menu' })
-                    }}
                     className="h-4 w-4 cursor-pointer accent-blue-600"
                   />
                 </label>
