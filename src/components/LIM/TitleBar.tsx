@@ -76,7 +76,18 @@ import {
 } from '../../data/ligneFT.normalized.adapter'
 import { useLigneFt2026TrainOptions } from '../../data/ligneFT2026.adapter'
 // Sens de circulation DÉCLARÉ (jamais déduit de la parité du numéro).
-import { getTrainDirection, isTrainSudNord } from '../../data/ligneFT2026.ft.adapter'
+import {
+  getTrainDirection,
+  isTrainSudNord,
+  // ⚠️ 20/08 — Importée SOUS ALIAS, à côté de son homonyme de l'ancien adaptateur
+  // qui reste importé plus haut. Les deux coexistent volontairement : celle-ci
+  // interroge le normalisé 2026 et sert au SEUL usage vivant (ligne ~2500,
+  // bascule du numéro à la frontière) ; l'ancienne continue d'alimenter deux
+  // chemins vestigiaux (`manualImportTrainOptions` et la voie `__limLastParsed`),
+  // qu'on ne réveille pas ici. Migration complète des 7 fonctions = dette notée,
+  // à traiter à froid.
+  getTrainNumeroFrance as getTrainNumeroFrance2026,
+} from '../../data/ligneFT2026.ft.adapter'
 
 // ⚠️ FT France = fonctionnalité ABANDONNÉE (on a fusionné FR+ES). Neutralisée le 2026-06-08 :
 // l'auto-switch "zone Figueres" réveillait l'overlay FT France quand le train restait vert/stable
@@ -2477,7 +2488,12 @@ ${coords}
     numberingAnchorTriggeredRef.current = false
 
     const numeroEs = trainDisplay
-    const numeroFr = numeroEs ? getTrainNumeroFrance(numeroEs) : undefined
+    // ⚠️ 20/08 — CORRIGÉ : lisait l'ANCIEN normalisé, qui indexe les trains
+    // montants par leur numéro FRANÇAIS (9710/9712/9714) là où le 2026 les
+    // indexe par l'ESPAGNOL (9711/9713/9715). Aucune clé ne correspondait pour
+    // un train nordSud → `undefined` → `hasNumeroFrance: false` → bascule de
+    // numéro à la frontière impossible. Constaté en ligne le 20/08 sur le 9715.
+    const numeroFr = numeroEs ? getTrainNumeroFrance2026(numeroEs) : undefined
 
     const numeroEsAsNumber =
       typeof numeroEs === 'string' && numeroEs.trim() !== ''

@@ -145,6 +145,75 @@ type FTProps = {
   variant?: "classic" | "modern";
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PK -> U : coordonnée unifiée MONOTONE le long du parcours.
+//
+// Les PK de réseau ne sont pas monotones — RFN 467→471 et LFP 0,8→44,4
+// CROISSENT quand on avance, ADIF 752→621 DÉCROÎT. Toute comparaison de PK
+// bruts se fait donc piéger aux frontières de réseau. U les recolle bout à
+// bout : en territoire ADIF, U vaut exactement le PK.
+//
+// ⚠️ 21/08 — CES FONCTIONS ÉTAIENT ENFERMÉES dans la branche GPS du tick.
+// Elles en sortent SANS AUCUNE MODIFICATION (fonctions pures, sans état) pour
+// être réutilisables — voir `findNearestCommercialStopRowIndex`, qui comparait
+// des PK bruts et ne trouvait donc JAMAIS Perpignan : le GPS y annonce un PK
+// RFN (467,5) quand la fiche porte le PK interne (805,5), soit 338 km d'écart.
+// Aucun arrêt ne pouvait s'y armer, donc aucun départ ne pouvait s'y détecter
+// (constaté en ligne le 20/08 sur le 9715 : premier `gps:arret:armed` à
+// Figueres seulement).
+// ═══════════════════════════════════════════════════════════════════════════
+const ADIF_LFP_ADIF = 752.4;
+const ADIF_LFP_LFP = 44.4;
+const LFP_RFN_LFP = 0.0;
+const LFP_RFN_RFN = 473.3;
+
+function guessNetFromPk(pk: number): "ADIF" | "LFP" | "RFN" {
+  if (pk >= 600) return "ADIF";
+  if (pk >= 200) return "RFN";
+  return "LFP";
+}
+
+function pkToU(pk: number, net: "ADIF" | "LFP" | "RFN"): number {
+  if (net === "ADIF") return pk;
+  const uAtAdifLfp = ADIF_LFP_ADIF;
+  if (net === "LFP") {
+    // LFP décroît quand on avance : U augmente avec (44.4 - pk)
+    return uAtAdifLfp + (ADIF_LFP_LFP - pk);
+  }
+  // RFN : on repart de U au point LFP=0 (= 752.4 + 44.4)
+  const uAtLfpRfn = uAtAdifLfp + (ADIF_LFP_LFP - LFP_RFN_LFP);
+  return uAtLfpRfn + (LFP_RFN_RFN - pk);
+}
+
+function parsePkNum(v: any): number | null {
+  if (v == null) return null;
+  const t = String(v).trim().replace(",", ".");
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** U d'une ligne de la fiche, en choisissant le PK du BON réseau. */
+function getRowU(entry: any): number | null {
+  if (!entry || entry.isNoteOnly) return null;
+  const net = (entry.network as "ADIF" | "LFP" | "RFN" | null | undefined) ?? null;
+
+  let pkCandidate: number | null = null;
+  if (net === "LFP") pkCandidate = parsePkNum(entry.pk_lfp ?? entry.pk);
+  else if (net === "RFN") pkCandidate = parsePkNum(entry.pk_rfn ?? entry.pk);
+  else if (net === "ADIF") pkCandidate = parsePkNum(entry.pk_adif ?? entry.pk);
+  else
+    pkCandidate =
+      parsePkNum(entry.pk_adif) ??
+      parsePkNum(entry.pk_lfp) ??
+      parsePkNum(entry.pk_rfn) ??
+      parsePkNum(entry.pk);
+
+  if (pkCandidate == null) return null;
+  const netRow =
+    net === "ADIF" || net === "LFP" || net === "RFN" ? net : guessNetFromPk(pkCandidate);
+  return pkToU(pkCandidate, netRow);
+}
+
 export default function FT({ variant = "classic" }: FTProps) {
   // ⚠️ 15/08 — La « plage de lignes visibles » (`visibleRows`) a DISPARU avec la
   // refonte du scroll intelligent (cf. FT_LABEL_COLS en tête de fichier). Elle
@@ -979,6 +1048,7 @@ export default function FT({ variant = "classic" }: FTProps) {
     );
 
 if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
+  inStandbyRef.current = false;
   window.dispatchEvent(
     new CustomEvent("lim:hourly-mode", {
       detail: { enabled: autoScrollEnabledRef.current, standby: false },
@@ -1058,6 +1128,41 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   const recalibrateFromRowRef = React.useRef<number | null>(null);
   // ✅ Verrou dédié : ligne qui a réellement déclenché l'entrée en standby
   const standbyLockedRowRef = React.useRef<number | null>(null);
+
+  /**
+   * STAND-BY : la position verticale est-elle gelée ?
+   *
+   * ⚠️ 21/08 — POURQUOI CE DRAPEAU EXISTE. Pendant un stand-by, la fiche
+   * CONTINUAIT DE DÉFILER lentement, comme si de rien n'était (constaté en ligne
+   * le 20/08 sur le 9715, en affichage vertical, mode horaire). Le stand-by avait
+   * pourtant bien lieu, et le recalage à la sortie fonctionnait : seule la
+   * position n'était pas gelée.
+   *   C'est le MÊME défaut que celui corrigé le 27/07 dans `useTrainDist.ts`
+   *   (`inStandbyRef`, moteur HORIZONTAL). Le moteur VERTICAL n'avait jamais reçu
+   *   l'équivalent : son tick ne contenait aucune mention de stand-by.
+   *
+   * INVARIANT : ce drapeau vaut exactement ce qu'affiche le 🕑 de la barre de
+   * titre, parce qu'il est posé et levé aux mêmes endroits que l'événement
+   * `lim:hourly-mode` qui pilote cet indicateur — 4 entrées, 4 sorties, dont 6
+   * passent par `handlerAutoScroll`. 🕑 orange = position gelée. C'est vérifiable
+   * à l'œil, et c'est ce qui garantit qu'on ne peut pas rester gelé sans le voir.
+   */
+  const inStandbyRef = React.useRef(false);
+
+  /**
+   * FILET du stand-by initial sous GPS (21/08).
+   *
+   * La règle métier veut qu'on n'entre PAS en stand-by quand le GPS est bon : la
+   * détection d'arrêt doit prendre le relais, et le départ réel la lever. Mais
+   * cet armement d'arrêt n'a pas pu être prouvé à Perpignan, même en rejouant la
+   * session réelle du 20/08. Retirer le stand-by sans preuve, c'est risquer de
+   * n'avoir NI stand-by NI arrêt : plus aucune base de delta au départ réel.
+   * D'où ce filet : si personne n'a pris le relais au bout du délai, on repose
+   * le stand-by. Les deux issues sont donc sûres, et le journal dit laquelle
+   * s'est produite (`ui:standby:filet-declenche` / `filet-inutile`).
+   */
+  const filetStandbyTimerRef = React.useRef<number | null>(null);
+  const FILET_STANDBY_MS = 20000;
   // GPS ARRÊT mode : données de l'arrêt en cours (null = pas en mode ARRÊT)
   const stationArretRef = React.useRef<StationArretState | null>(null);
   // "Prochain arrêt" : row de la dernière gare commerciale dont on est PARTI.
@@ -1266,7 +1371,20 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
       }
 
       // =========================
-// 1) GPS : interpolation PK (DOM) — basé sur un PK fictif continu (ADIF→LFP→RFN)
+// ⚠️ 21/08 — GEL DE LA POSITION EN STAND-BY.
+      // Placé ICI et pas en tête de tick : tout ce qui précède doit continuer de
+      // tourner — suivi de l'état GPS, et surtout ANCRAGE à la bascule de mode.
+      // Sortir plus haut ferait perdre l'ancre, donc rejouerait la téléportation
+      // de position corrigée le 21/07. Sortir ici n'arrête que ce qui committe
+      // une nouvelle position : les deux branches ci-dessous.
+      // La reprise n'est PAS concernée — elle se joue dans `handlerAutoScroll`,
+      // qui repositionne sur la ligne verrouillée. Le recalage de sortie, qui
+      // fonctionnait déjà, continue donc, avec moins de chemin à rattraper
+      // puisque la position n'aura plus dérivé pendant le stand-by.
+      if (inStandbyRef.current) return;
+
+      // =========================
+      // 1) GPS : interpolation PK (DOM) — basé sur un PK fictif continu (ADIF→LFP→RFN)
       // =========================
       if (referenceModeRef.current === "GPS") {
         const pkRaw = lastGpsPositionRef.current?.pk;
@@ -1274,74 +1392,7 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
           typeof pkRaw === "number" && Number.isFinite(pkRaw) ? pkRaw : null;
 
         if (pkTrain != null) {
-          // ========= PK -> U (coordonnée unifiée monotone le long du trajet) =========
-          const ADIF_LFP_ADIF = 752.4;
-          const ADIF_LFP_LFP = 44.4;
-
-          const LFP_RFN_LFP = 0.0;
-          const LFP_RFN_RFN = 473.3;
-
-          const guessNetFromPk = (pk: number): "ADIF" | "LFP" | "RFN" => {
-            if (pk >= 600) return "ADIF";
-            if (pk >= 200) return "RFN";
-            return "LFP";
-          };
-
-          const pkToU = (pk: number, net: "ADIF" | "LFP" | "RFN"): number => {
-            if (net === "ADIF") return pk;
-
-            const uAtAdifLfp = ADIF_LFP_ADIF;
-            if (net === "LFP") {
-              // LFP décroît quand on avance : U augmente avec (44.4 - pk)
-              return uAtAdifLfp + (ADIF_LFP_LFP - pk);
-            }
-
-            // RFN : on repart de U au point LFP=0 (= 752.4 + 44.4)
-            const uAtLfpRfn = uAtAdifLfp + (ADIF_LFP_LFP - LFP_RFN_LFP);
-            return uAtLfpRfn + (LFP_RFN_RFN - pk);
-          };
-
-          const parsePk = (v: any): number | null => {
-            if (v == null) return null;
-            const s = String(v).trim().replace(",", ".");
-            const n = Number(s);
-            return Number.isFinite(n) ? n : null;
-          };
-
-          const getRowU = (entry: any): number | null => {
-            if (!entry || entry.isNoteOnly) return null;
-
-            const net =
-              ((entry as any).network as ("ADIF" | "LFP" | "RFN" | null | undefined)) ?? null;
-
-            // ✅ Choix du bon PK selon le réseau (évite de prendre le "pk fictif" quand on est en LFP/RFN)
-            let pkCandidate: number | null = null;
-
-            if (net === "LFP") {
-              pkCandidate = parsePk((entry as any).pk_lfp ?? (entry as any).pk);
-            } else if (net === "RFN") {
-              pkCandidate = parsePk((entry as any).pk_rfn ?? (entry as any).pk);
-            } else if (net === "ADIF") {
-              pkCandidate = parsePk((entry as any).pk_adif ?? (entry as any).pk);
-            } else {
-              // fallback : on tente les champs réseau, puis pk
-              pkCandidate =
-                parsePk((entry as any).pk_adif) ??
-                parsePk((entry as any).pk_lfp) ??
-                parsePk((entry as any).pk_rfn) ??
-                parsePk((entry as any).pk);
-            }
-
-            if (pkCandidate == null) return null;
-
-            const netRow =
-              net === "ADIF" || net === "LFP" || net === "RFN"
-                ? net
-                : guessNetFromPk(pkCandidate);
-
-            return pkToU(pkCandidate, netRow);
-          };
-
+          // PK -> U : voir les fonctions de module en tête de fichier (21/08).
           // GPS -> U
           const netGps = guessNetFromPk(pkTrain);
           const targetU = pkToU(pkTrain, netGps);
@@ -2221,11 +2272,106 @@ const orangeToRedStartedAtRef = React.useRef<number | null>(null);
       // seul le clic sur une ligne est manuel, et il le declare explicitement.
       const origine: "auto" | "manuel" = detail.origine === "manuel" ? "manuel" : "auto";
 
+      // Gel de la position, posé AVANT toute branche (même principe que
+      // `useTrainDist.ts`) : un cas non couvert plus bas fige quand même le tick.
+      if (enabled && standby) inStandbyRef.current = true;
+      if (enabled && !standby) inStandbyRef.current = false;
+      if (!enabled) inStandbyRef.current = false;
+
       // 🎯 Cas spécial : 1er clic sur Play -> Standby initial + sélection 1ʳᵉ ligne
       if (enabled && standby && !initialStandbyDoneRef.current) {
         const idx = firstNonNoteIndexRef.current;
         if (typeof idx === "number" && idx >= 0) {
           initialStandbyDoneRef.current = true;
+
+          // ⚠️ 21/08 — RÈGLE MÉTIER : ON N'ENTRE EN STAND-BY QU'EN MODE HORAIRE.
+          // Le stand-by veut dire « l'application ne sait pas où tu es, confirme-le ».
+          // Sous GPS elle le sait : c'est la détection d'arrêt qui doit prendre le
+          // relais, et le départ réel qui la lève. Ce bloc ne testait pas le mode :
+          // au départ de Perpignan, sous GPS, il posait quand même un stand-by dont
+          // rien ne pouvait sortir — la levée sur passage en GPS est conditionnée à
+          // un verrou nul, or ce bloc venait de le poser. Constaté en ligne le 20/08
+          // sur le 9715 : 2 min 48 de stand-by, terminé à la main.
+          // On consomme quand même le « premier Play » (`initialStandbyDoneRef`),
+          // sinon un stand-by automatique ultérieur retomberait dans cette branche
+          // et poserait un stand-by initial en pleine voie.
+          // ⚠️ La condition porte sur l'ETAT DU GPS, PAS sur le mode de référence.
+          // Le mode ne devient "GPS" qu'une fois l'autoscroll engagé
+          // (`gpsModeAllowed = autoScrollEnabledRef.current`, cf. le handler
+          // `lim:gps-state`) — or c'est ce Play-ci qui l'engage. Au moment où on
+          // teste, le mode vaut donc TOUJOURS "HORAIRE", et une condition sur lui
+          // serait inerte. L'indicateur GPS, lui, peut être vert avant le Play :
+          // c'est le « GPS passif » décrit dans ce même handler.
+          // Garde-fou tunnel repris à l'identique : vert en zone tunnel = on
+          // force l'horaire, donc le stand-by garde tout son sens.
+          const gpsVertAvantPlay =
+            gpsStateRef.current === "GREEN" &&
+            tunnelZoneAt(lastGpsSKmRef.current) == null;
+
+          if (gpsVertAvantPlay) {
+            setAutoScrollEnabled(true);
+            inStandbyRef.current = false;
+            logTestEvent("ui:standby:skipped-gps", {
+              rowIndex: idx,
+              reason: "gps_green_before_play",
+              gpsState: gpsStateRef.current,
+            });
+            window.dispatchEvent(
+              new CustomEvent("lim:hourly-mode", {
+                detail: { enabled: true, standby: false },
+              })
+            );
+
+            // ── FILET ────────────────────────────────────────────────────────
+            // Toutes les conditions sont RÉ-ÉVALUÉES à l'échéance : le filet ne
+            // se déclenche que si rien n'a pris le relais. Pas besoin de
+            // l'annuler depuis les autres chemins — il s'annule tout seul.
+            const sKmAuPlay = lastGpsSKmRef.current;
+            if (filetStandbyTimerRef.current != null) {
+              window.clearTimeout(filetStandbyTimerRef.current);
+            }
+            filetStandbyTimerRef.current = window.setTimeout(() => {
+              filetStandbyTimerRef.current = null;
+
+              const arretArme = stationArretRef.current !== null;
+              const dejaStandby = standbyLockedRowRef.current !== null;
+              const sKmNow = lastGpsSKmRef.current;
+              const aBouge =
+                typeof sKmNow === "number" &&
+                typeof sKmAuPlay === "number" &&
+                Math.abs(sKmNow - sKmAuPlay) > 0.075;
+
+              if (arretArme || dejaStandby || aBouge) {
+                logTestEvent("ui:standby:filet-inutile", {
+                  arretArme,
+                  dejaStandby,
+                  aBouge,
+                  sKmAuPlay,
+                  sKmNow,
+                });
+                return;
+              }
+
+              logTestEvent("ui:standby:filet-declenche", {
+                rowIndex: idx,
+                delaiMs: FILET_STANDBY_MS,
+                sKmAuPlay,
+                sKmNow,
+                gpsState: gpsStateRef.current,
+              });
+              setSelectedRowIndex(idx);
+              standbyLockedRowRef.current = idx;
+              skipInitialStandbyRecalibrationRef.current = true;
+              inStandbyRef.current = true;
+              window.dispatchEvent(
+                new CustomEvent("lim:hourly-mode", {
+                  detail: { enabled: true, standby: true, origine: "auto" },
+                })
+              );
+            }, FILET_STANDBY_MS);
+
+            return;
+          }
 
           console.log(
             "[FT] Premier Play reçu, passage en Standby initial sur la ligne",
@@ -2242,6 +2388,7 @@ const orangeToRedStartedAtRef = React.useRef<number | null>(null);
           // Standby initial : l'autoscroll reste engagé, mais en pause sur la première ligne
 setAutoScrollEnabled(true);
 
+          inStandbyRef.current = true;   // stand-by initial : position gelée
           // On signale à la TitleBar qu'on est en mode horaire Standby (🕑 orange)
           window.dispatchEvent(
             new CustomEvent("lim:hourly-mode", {
@@ -2344,6 +2491,10 @@ detail: { enabled: true, standby: true, origine: "auto" },
     );
 
     return () => {
+      if (filetStandbyTimerRef.current != null) {
+        window.clearTimeout(filetStandbyTimerRef.current);
+        filetStandbyTimerRef.current = null;
+      }
       window.removeEventListener(
         "ft:auto-scroll-change",
         handlerAutoScroll as EventListener
@@ -4216,17 +4367,24 @@ function findRowIndexFromPk(targetPk: number | null): number | null {
       let bestRow: number | null = null;
       let bestDelta = Number.POSITIVE_INFINITY;
 
+      // ⚠️ 21/08 — COMPARAISON EN U, PAS EN PK BRUT.
+      // Avant, on comparait le PK annoncé par le GPS au champ `entry.pk` de la
+      // fiche. Ça ne marche qu'en territoire ADIF, où les deux coïncident. À
+      // Perpignan le GPS annonce un PK RFN (467,5) tandis que la fiche porte le
+      // PK interne (805,5) : 338 km d'écart, aucune gare trouvée, donc aucun
+      // arrêt armé et aucun départ détecté. En U les deux valent 802,6.
+      // Contrôle de non-régression : en ADIF U == PK, les écarts y sont
+      // inchangés au mètre près (Figueres restait à 82 m avant comme après).
+      const targetU = pkToU(targetPk, guessNetFromPk(targetPk));
+
       for (const s of stops) {
         const rowIndex = s?.rowIndex;
         if (typeof rowIndex !== "number") continue;
 
-        const entry = rawEntries[rowIndex];
-        const pkStr = entry?.pk;
-        const pkNum =
-          typeof pkStr === "string" || typeof pkStr === "number" ? Number(pkStr) : NaN;
-        if (!Number.isFinite(pkNum)) continue;
+        const rowU = getRowU(rawEntries[rowIndex]);
+        if (rowU == null) continue;
 
-        const d = Math.abs(pkNum - targetPk);
+        const d = Math.abs(rowU - targetU);
         if (d < bestDelta) {
           bestDelta = d;
           bestRow = rowIndex;
@@ -5495,6 +5653,7 @@ const isRelock = acceptedMode === "relock";
                 // transition après le départ : l'indicateur restait orange tout
                 // le trajet. (Les parcours à mode instable, eux, finissaient par
                 // le lever « par hasard » à une oscillation — 27× sur le 9713.)
+                inStandbyRef.current = false;   // départ confirmé : la position repart
                 window.dispatchEvent(
                   new CustomEvent("lim:hourly-mode", {
                     detail: {
@@ -7424,6 +7583,7 @@ if (isStandby) {
       source: "ft:body-click-nearest",
     });
 
+    inStandbyRef.current = true;   // stand-by manuel : position gelée sur place
     window.dispatchEvent(
   new CustomEvent("lim:hourly-mode", {
     // SEULE entree manuelle des quatre : le conducteur a choisi la ligne.

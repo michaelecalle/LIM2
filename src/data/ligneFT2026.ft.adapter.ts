@@ -350,8 +350,34 @@ function trainMeta(trainNumber: number | string | null | undefined) {
   const key = String(trainNumber ?? "").trim();
   if (!key) return undefined;
   return PUBLISHED_DOC.trains?.[key]?.variants?.[0]?.meta as
-    | { origine?: string; destination?: string; direction?: string }
+    | {
+        origine?: string;
+        destination?: string;
+        direction?: string;
+        numeroFrance?: string;
+      }
     | undefined;
+}
+
+/**
+ * Numéro FRANÇAIS du train, lu dans le normalisé 2026.
+ *
+ * ⚠️ 20/08 — POURQUOI CETTE FONCTION EXISTE ICI ALORS QU'ELLE EXISTE DÉJÀ dans
+ * `ligneFT.normalized.adapter.ts`. Celle de l'ancien adaptateur interroge
+ * l'ANCIEN normalisé, dont les trains montants sont indexés par leur numéro
+ * FRANÇAIS (9710, 9712, 9714), alors que le normalisé 2026 les indexe par leur
+ * numéro ESPAGNOL (9711, 9713, 9715). Elle ne trouvait donc aucune clé pour un
+ * train nordSud et renvoyait `undefined` — d'où `hasNumeroFrance: false` dans
+ * TitleBar, et la bascule de numéro à la frontière impossible, ni en
+ * automatique ni en manuel (constaté en ligne le 20/08 sur le 9715, sur les
+ * DEUX iPad).
+ * Les trains sudNord (9705, 9707, 9709) n'étaient pas touchés : leur clé existe
+ * à l'identique dans les deux fichiers.
+ */
+export function getTrainNumeroFrance(
+  trainNumber: number | string | null | undefined
+): string | undefined {
+  return str(trainMeta(trainNumber)?.numeroFrance);
 }
 
 export function getTrainOrigine(
