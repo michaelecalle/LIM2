@@ -2142,33 +2142,8 @@ ${coords}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trainDisplay])
 
-  const [trainType, setTrainType] = useState<string | undefined>(() => {
-    const w = window as any
-    const last: any = w.__limLastParsed || {}
-    const rawTrain = last?.trenPadded ?? last?.tren
-    const trainNumber = toTitleNumber(rawTrain)
-
-    const normalizedTypeEs = trainNumber
-      ? getTrainCategorieEspagne(trainNumber)
-      : undefined
-    const normalizedTypeFr = trainNumber
-      ? getTrainCategorieFrance(trainNumber)
-      : undefined
-
-    const normalizedDisplayedType = normalizedTypeEs ?? normalizedTypeFr
-
-    if (normalizedDisplayedType) return normalizedDisplayedType
-
-    const rawType = last?.type
-    return rawType ? String(rawType) : undefined
-  })
-
-  const [trainComposition, setTrainComposition] = useState<string | undefined>(() => {
-    const w = window as any
-    const last: any = w.__limLastParsed || {}
-    const rawComp = last?.composicion ?? last?.unit
-    return rawComp ? String(rawComp) : undefined
-  })
+  // 24/08 — trainType/trainComposition retires : n'alimentaient plus que
+  // le titre, desormais reduit a "LIM" (cf. plus bas).
   const [displayedCompositionState, setDisplayedCompositionState] =
     useState<DisplayedCompositionState>(() => {
       const w = window as any
@@ -2195,7 +2170,6 @@ ${coords}
   ) => {
     setDisplayedCompositionState(nextState)
     displayedCompositionStateRef.current = nextState
-    setTrainComposition(nextState.displayedComposition)
     ;(window as any).__limLastDisplayedCompositionState = nextState
 
     window.dispatchEvent(
@@ -2540,28 +2514,6 @@ ${coords}
       reason: hasNumeroFrance ? 'initial_rule_fr_if_es_even_else_es' : 'initial_rule_es_only',
     })
   }, [trainDisplay])
-  useEffect(() => {
-    const currentTrainNumber = trainDisplay
-    if (!currentTrainNumber) return
-
-    const normalizedTypeEs = getTrainCategorieEspagne(currentTrainNumber)
-    const normalizedTypeFr = getTrainCategorieFrance(currentTrainNumber)
-
-    const normalizedDisplayedType =
-      displayedTrainNumberState.displayedSide === 'FR'
-        ? normalizedTypeFr ?? normalizedTypeEs
-        : normalizedTypeEs ?? normalizedTypeFr
-
-    if (normalizedDisplayedType) {
-      setTrainType(normalizedDisplayedType)
-      return
-    }
-
-    const w = window as any
-    const last: any = w.__limLastParsed || {}
-    const rawType = last?.type
-    setTrainType(rawType ? String(rawType) : undefined)
-  }, [trainDisplay, displayedTrainNumberState.displayedSide])
     useEffect(() => {
     const currentTrainNumber = trainDisplay
     if (!currentTrainNumber) return
@@ -3114,6 +3066,27 @@ ${coords}
 
   const brightnessPct = useMemo(() => Math.round(brightness * 100), [brightness])
 
+  // 24/08 — bouton unique (gabarit jour/nuit) au lieu d'une piste toujours visible ;
+  // un clic revele la piste (verticale), qui se referme apres 3 s D'INACTIVITE — le
+  // minuteur est rearme a chaque interaction, pas seulement a l'ouverture (meme
+  // principe que l'effet ressort du scroll manuel). `brightness` n'a pas besoin
+  // d'etre lue ici : la piste module `brightness`/`setBrightness` directement.
+  const BRIGHTNESS_AUTOHIDE_MS = 3000
+  const [brightnessPanelOpen, setBrightnessPanelOpen] = useState(false)
+  const brightnessHideTimerRef = useRef<number | null>(null)
+  const armBrightnessAutoHide = () => {
+    if (brightnessHideTimerRef.current != null) window.clearTimeout(brightnessHideTimerRef.current)
+    brightnessHideTimerRef.current = window.setTimeout(() => {
+      brightnessHideTimerRef.current = null
+      setBrightnessPanelOpen(false)
+    }, BRIGHTNESS_AUTOHIDE_MS)
+  }
+  useEffect(() => {
+    return () => {
+      if (brightnessHideTimerRef.current != null) window.clearTimeout(brightnessHideTimerRef.current)
+    }
+  }, [])
+
   // ----- IMPORT PDF -----
   const currentPdfFileRef = useRef<File | null>(null)
   // PDF LTV importé (mode 2026) — conservé pour être inclus dans le ZIP au STOP,
@@ -3436,27 +3409,6 @@ ${coords}
         if (Number.isFinite(n)) {
           window.dispatchEvent(new CustomEvent('lim:train-change', { detail: { trainNumber: n } }))
         }
-      }
-
-      const parsedTrainNumber = toTitleNumber(detail.trenPadded ?? detail.tren)
-
-      const normalizedTypeEs = parsedTrainNumber
-        ? getTrainCategorieEspagne(parsedTrainNumber)
-        : undefined
-      const normalizedTypeFr = parsedTrainNumber
-        ? getTrainCategorieFrance(parsedTrainNumber)
-        : undefined
-
-      const normalizedDisplayedType =
-        displayedTrainNumberStateRef.current.displayedSide === 'FR'
-          ? normalizedTypeFr ?? normalizedTypeEs
-          : normalizedTypeEs ?? normalizedTypeFr
-
-      if (normalizedDisplayedType) {
-        setTrainType(normalizedDisplayedType)
-      } else {
-        const rawType = (detail as any).type
-        setTrainType(rawType ? String(rawType) : undefined)
       }
 
       const parsedFallbackComposition = (() => {
@@ -4152,8 +4104,6 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
     setAutoEngaged(false)
 
     setTrainDisplay(undefined)
-    setTrainType(undefined)
-    setTrainComposition(undefined)
 
     currentPdfFileRef.current = null
     currentLtvPdfFileRef.current = null
@@ -4164,15 +4114,6 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
     window.dispatchEvent(new CustomEvent('ft:clear-pdf'))
     window.dispatchEvent(new CustomEvent('lim:pdf-raw', { detail: { file: null } }))
   }
-
-  const titleBarCommittedTrainNumber =
-    displayedTrainNumberState.displayedSide === 'FR'
-      ? displayedTrainNumberState.trainNumberFr ??
-        displayedTrainNumberState.trainNumberEs ??
-        trainDisplay
-      : displayedTrainNumberState.trainNumberEs ??
-        displayedTrainNumberState.trainNumberFr ??
-        trainDisplay
 
   const titleBarPendingTrainNumber =
     displayedTrainNumberState.pendingSide === 'FR'
@@ -4205,24 +4146,17 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
     }
   }, [titleBarTrainShouldBlink])
 
-  const titleSuffix = titleBarCommittedTrainNumber ?? ''
-
   const titlePendingSuffix =
     titleBarTrainShouldBlink && titleBarPendingTrainNumber
       ? `→ ${titleBarPendingTrainNumber}`
       : ''
 
-  const baseTitle = `LIM${titleSuffix ? ` ${titleSuffix}` : ''}${titlePendingSuffix ? ` ${titlePendingSuffix}` : ''}`
-
+  // 24/08 — numero, type et composition retires : redondants avec le bloc info,
+  // desormais toujours visible (plie ou non). Seul le compte de LTV reste : rien
+  // d'autre ne l'affiche pendant que le tableau LTV est masque (plie).
   const extendedParts: string[] = []
-  if (trainType && String(trainType).trim().length > 0) extendedParts.push(String(trainType).trim())
-  if (trainComposition && String(trainComposition).trim().length > 0)
-    extendedParts.push(String(trainComposition).trim())
   if (ltvIsNormalized && ltvCountForTitle !== null && ltvCountForTitle > 0)
     extendedParts.push(`${ltvCountForTitle} LTV`)
-
-  const fullTitle =
-    folded && extendedParts.length > 0 ? `${baseTitle} - ${extendedParts.join(' - ')}` : baseTitle
 
 const runTitleBarSingleClickAction = () => {
   const currentNumbering = displayedTrainNumberStateRef.current
@@ -4346,6 +4280,27 @@ const autoScrollButtonActive = autoScroll || autoScrollStartedOnce
   const IconMoon = () => (
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" className="opacity-80">
       <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />
+    </svg>
+  )
+  const IconBrightness = () => (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" className="opacity-80">
+      <circle cx="12" cy="12" r="3" fill="currentColor" />
+      <g strokeWidth="1.5" stroke="currentColor" fill="none">
+        <path d="M12 3v3M12 18v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M3 12h3M18 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" />
+      </g>
+    </svg>
+  )
+  // Panneau stop octogonal, rouge (couleur fixe : c'est un signal, pas un accent
+  // de theme) — remplace le rectangle "STOP" texte, illisible en dessous de sa
+  // taille actuelle une fois reduit au gabarit des autres boutons.
+  const IconStopSign = () => (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <polygon
+        points="8,2 16,2 22,8 22,16 16,22 8,22 2,16 2,8"
+        fill="#dc2626"
+        stroke="#ffffff"
+        strokeWidth="1.2"
+      />
     </svg>
   )
 const IconFile = () => null
@@ -4810,13 +4765,12 @@ setAutoScrollStartedOnce(next)
             title={folded ? 'Afficher les blocs INFOS et LTV' : 'Afficher uniquement la zone FT'}
           >
             <span className="inline-flex max-w-full items-baseline overflow-hidden">
+              {/* 24/08 — "LIM" reste seul, minimal : le numero/type/composition qu'il
+                  portait etaient redondants avec le bloc info desormais toujours visible.
+                  Ce bouton garde ses trois roles (repli/depli, confirmation du numero a la
+                  frontiere en clic simple, bascule manuelle en appui long) : on ne peut
+                  donc pas le vider completement, il doit rester visible et tapable. */}
               <span className="shrink-0">LIM</span>
-
-              {titleSuffix && (
-                <span className="shrink-0 ml-1">
-                  {titleSuffix}
-                </span>
-              )}
 
               {titlePendingSuffix && (
                 <span
@@ -4889,24 +4843,45 @@ setAutoScrollStartedOnce(next)
             </button>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] opacity-60">Lum:</span>
-            <input
-              type="range"
-              min={50}
-              max={100}
-              step={5}
-              value={brightnessPct}
-              onChange={(e) => {
-                const raw = Number(e.target.value)
-                const clipped = Math.max(50, Math.min(100, raw))
-                setBrightness(clipped / 100)
+          <div className="relative">
+            <button
+              type="button"
+              className="h-8 w-10 flex items-center justify-center rounded-md bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100"
+              onClick={() => {
+                setBrightnessPanelOpen((prev) => !prev)
+                armBrightnessAutoHide()
               }}
-              className="h-1.5 w-28 cursor-pointer appearance-none rounded-full bg-zinc-200 outline-none accent-blue-600 dark:bg-zinc-700"
-            />
-            <span className="w-9 tabular-nums text-[11px] text-right opacity-60">
-              {brightnessPct}%
-            </span>
+              aria-label={`Luminosité — ${brightnessPct}%`}
+              title={`Luminosité — ${brightnessPct}%`}
+            >
+              <IconBrightness />
+            </button>
+
+            {brightnessPanelOpen && (
+              <div
+                className="absolute right-0 top-[calc(100%+6px)] z-20 flex flex-col items-center gap-1.5 rounded-md bg-zinc-200 px-2 py-3 shadow-md dark:bg-zinc-700"
+                onPointerDown={armBrightnessAutoHide}
+              >
+                <span className="w-9 tabular-nums text-[11px] text-center opacity-60">
+                  {brightnessPct}%
+                </span>
+                <input
+                  type="range"
+                  min={50}
+                  max={100}
+                  step={5}
+                  value={brightnessPct}
+                  onChange={(e) => {
+                    const raw = Number(e.target.value)
+                    const clipped = Math.max(50, Math.min(100, raw))
+                    setBrightness(clipped / 100)
+                    armBrightnessAutoHide()
+                  }}
+                  className="h-28 w-1.5 cursor-pointer appearance-none rounded-full bg-zinc-300 outline-none accent-blue-600 dark:bg-zinc-600"
+                  style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Démarrage */}
@@ -4996,14 +4971,16 @@ setAutoScrollStartedOnce(next)
                   setPdfMode('green')
                 }
               }}
+              // 24/08 — "NORMAL"/"SECOURS" reduits a "N"/"S" (code deja connu en
+              // cabine) : gabarit aligne sur les boutons jour/nuit et luminosite.
               className={
                 pdfMode === 'green'
-                  ? 'h-8 px-3 text-xs rounded-md bg-emerald-500 text-white flex items-center gap-1'
-                  : 'h-8 px-3 text-xs rounded-md bg-red-500 text-white flex items-center gap-1'
+                  ? 'h-8 w-10 flex items-center justify-center rounded-md bg-emerald-500 text-white'
+                  : 'h-8 w-10 flex items-center justify-center rounded-md bg-red-500 text-white'
               }
             >
-              {pdfMode === 'green' && <span className="font-bold">NORMAL</span>}
-              {pdfMode === 'red' && <span className="font-bold">SECOURS</span>}
+              {pdfMode === 'green' && <span className="font-bold">N</span>}
+              {pdfMode === 'red' && <span className="font-bold">S</span>}
             </button>
           )}
 
@@ -5142,10 +5119,11 @@ setAutoScrollStartedOnce(next)
                   window.dispatchEvent(new CustomEvent('lim:pdf-raw', { detail: { file: null } }))
                   setTestModeEnabled(false)
                 }}
-                className="h-8 px-3 text-xs rounded-md bg-red-600 text-white font-semibold flex items-center gap-1"
+                className="h-8 w-10 flex items-center justify-center rounded-md bg-zinc-200 dark:bg-zinc-700"
                 title="Terminer le trajet et exporter les logs"
+                aria-label="Terminer le trajet et exporter les logs"
               >
-                <span className="font-bold">STOP</span>
+                <IconStopSign />
               </button>
             )
           )}
