@@ -128,6 +128,9 @@ type StationArretState = {
   firstMovementClockMs?: number | null;
   prevSKm: number;
   consecutiveSteps: number;
+  // 30/09 — horodatage du dernier pas de mouvement, pour re-dater un premier
+  // mouvement fantome (cf. GPS_ARRET_FIRST_MOVE_STALE_MS).
+  lastStepTs?: number | null;
 };
 
 type FtLtvRowForFtDisplay = {
@@ -802,6 +805,11 @@ export default function FT({ variant = "classic" }: FTProps) {
   const arrivalEventsRef = React.useRef<
     { arrivalMin: number; rowIndex: number }[]
   >([]);
+  // 30/09 — lignes qui n'ont QU'une heure de depart (l'origine du train). Elles ne
+  // sont pas dans `arrivalEvents` (pas d'arrivee), donc `findNearestCommercialStopRowIndex`
+  // ne les voyait pas : au depart de Perpignan le 30/09, l'arret a ete classe
+  // « pleine ligne » et le delta n'a jamais ete recale sur le depart reel.
+  const departureOnlyRowsRef = React.useRef<{ rowIndex: number }[]>([]);
 
   // -- écoute du numéro de train
   useEffect(() => {
@@ -2178,6 +2186,11 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   // s'établisse AVANT le moindre passage orange du PK figé (évite un flash orange à l'arrêt).
   const GPS_STOP_CONFIRM_MS = 8_000;
   const GPS_ARRET_REARM_MIN_KM = 0.3; // ne pas réarmer un arrêt à moins de 300 m du précédent (#20)
+  // 30/09 — un « premier mouvement » qui n'est pas suivi d'un autre pas dans ce delai
+  // etait une oscillation GPS (25 m entre deux points du ruban, train a l'arret) :
+  // le pas suivant redevient LE premier mouvement. Sans ca, le depart de Perpignan
+  // du 30/09 a ete date 3 min 09 trop tot (confirmationLagMs: 189000).
+  const GPS_ARRET_FIRST_MOVE_STALE_MS = 30000;
   // Standby "gare" auto (chemin freeze-red) : distance à parcourir avant de pouvoir le re-poser
   // sur une gare dont on vient de confirmer le départ (log 9705 : re-posé à 938 m de Figueres).
   const STANDBY_REARM_MIN_KM = 3.0;
@@ -4359,10 +4372,18 @@ function findRowIndexFromPk(targetPk: number | null): number | null {
     // --- helper : trouver la gare commerciale la plus proche (via arrivalEventsRef) ---
     const findNearestCommercialStopRowIndex = (
       targetPk: number,
-      maxDeltaKm: number
+      maxDeltaKm: number,
+      opts?: { includeDepartureOnly?: boolean }
     ): { rowIndex: number; deltaKm: number } | null => {
-      const stops = arrivalEventsRef.current || [];
-      if (!Array.isArray(stops) || stops.length === 0) return null;
+      // 30/09 — l'ORIGINE (heure de depart seule) n'est candidate que sur demande :
+      // pour l'armement d'un arret GPS (le depart y sera recale sur l'heure de depart),
+      // pas pour le stand-by automatique freeze-red, qui poserait sinon un stand-by
+      // a l'origine sur un simple clignotement du GPS avant le Play.
+      const stops: { rowIndex: number }[] = [
+        ...(arrivalEventsRef.current || []),
+        ...(opts?.includeDepartureOnly ? departureOnlyRowsRef.current || [] : []),
+      ];
+      if (stops.length === 0) return null;
 
       let bestRow: number | null = null;
       let bestDelta = Number.POSITIVE_INFINITY;
@@ -5513,7 +5534,9 @@ const isRelock = acceptedMode === "relock";
           // Approche requise SAUF si on est proche d'une gare commerciale
           // (à une gare, l'arrêt est attendu même avec une approche rapide ;
           //  hors gare, le seuil d'approche protège contre les faux arrêts en entrée de tunnel)
-          const nearest = findNearestCommercialStopRowIndex(pk, STATION_PROX_KM);
+          const nearest = findNearestCommercialStopRowIndex(pk, STATION_PROX_KM, {
+            includeDepartureOnly: true,
+          });
           if (!approachOk && !nearest) {
             logTestEvent("gps:arret:rejected-approach", {
               approachSpeedKmh,
@@ -5603,13 +5626,43 @@ const isRelock = acceptedMode === "relock";
               }
               arret.prevSKm = currentSKm;
               arret.consecutiveSteps = 1;
+              arret.lastStepTs = nowTs;
               logTestEvent("gps:arret:first-movement", {
                 currentSKm,
                 frozenSKm: arret.frozenSKm,
                 delta,
               });
             } else if (Math.abs(currentSKm - arret.prevSKm) > 0.005) {
-              arret.consecutiveSteps++;
+              const sinceLastStep = nowTs - (arret.lastStepTs ?? arret.firstMovementTime);
+              if (sinceLastStep > GPS_ARRET_FIRST_MOVE_STALE_MS) {
+                // Le « premier mouvement » precedent n'a pas ete suivi : c'etait une
+                // oscillation. CE pas-ci est le vrai premier mouvement, on re-date.
+                logTestEvent("gps:arret:first-movement-reset", {
+                  staleFirstMovementTime: arret.firstMovementTime,
+                  sinceLastStepMs: sinceLastStep,
+                  currentSKm,
+                  delta,
+                });
+                arret.firstMovementTime = nowTs;
+                {
+                  let clockMs = nowTs;
+                  try {
+                    const iso =
+                      (window as any).__limgptDemo?.nowIso?.() ??
+                      (window as any).__limgptReplay?.nowIso?.() ??
+                      null;
+                    if (iso) {
+                      const t = new Date(iso).getTime();
+                      if (Number.isFinite(t)) clockMs = t;
+                    }
+                  } catch {}
+                  arret.firstMovementClockMs = clockMs;
+                }
+                arret.consecutiveSteps = 1;
+              } else {
+                arret.consecutiveSteps++;
+              }
+              arret.lastStepTs = nowTs;
               arret.prevSKm = currentSKm;
 
               if (
@@ -7439,6 +7492,7 @@ if (hasFranceFtLocal) {
   let mainRowCounter = 0;
 
   const arrivalEvents: { arrivalMin: number; rowIndex: number }[] = [];
+  const departureOnlyRows: { rowIndex: number }[] = [];
 
   // Gestion des clics sur le corps de la FT :
   // - en mode horaire actif : sélection de la ligne la plus proche => Standby
@@ -7741,6 +7795,9 @@ const hora = horaFromNormalized || horaFrance;
           rowIndex: i,
         });
       }
+    } else if (departCell.trim() !== "" && parseHoraToMinutes(departCell.trim()) != null) {
+      // Origine : une heure de depart, pas d'arrivee (cf. departureOnlyRowsRef).
+      departureOnlyRows.push({ rowIndex: i });
     }
 
     const bloqueo = (entry as any).bloqueo ?? "";
@@ -8444,6 +8501,7 @@ const vmaxClassForLtv =
 
   // On expose la liste des heures d'arrivée calculées pour le moteur d'auto-scroll
   arrivalEventsRef.current = arrivalEvents;
+  departureOnlyRowsRef.current = departureOnlyRows;
 
   //
   // ===== 7. RENDU FINAL ==============================================

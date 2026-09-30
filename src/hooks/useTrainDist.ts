@@ -262,6 +262,34 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
     return () => window.removeEventListener("ft:auto-scroll-change", h as EventListener);
   }, [points]);
 
+  // ── Écoute : levée du stand-by décidée par FT.tsx ───────────────────────
+  // 30/09 — `lim:hourly-mode {standby: false}` est le message d'autorité de FT.tsx
+  // sur l'état du stand-by : émis au Play sous GPS vert (stand-by initial sauté),
+  // au départ confirmé et à chaque passage en GPS sans verrou. Ce moteur ne
+  // l'écoutait pas : au départ de Perpignan le 30/09, le TitleBar lui avait envoyé
+  // `standby: true` (premier Play), FT.tsx avait sauté le sien, et rien n'a jamais
+  // levé le gel d'ici — 40 min de fiche horizontale figée sur Perpignan, GPS vert,
+  // jusqu'à une sortie manuelle à Gérone. On ne touche pas à la base horaire :
+  // elle arrive séparément par `ft:delta:base-sync`.
+  useEffect(() => {
+    const h = (e: Event) => {
+      const d = (e as CustomEvent).detail ?? {};
+      if (d.standby !== false) return;
+      if (!inStandbyRef.current && standbyIndexRef.current === null) return; // rien à lever
+      const lockedIdx = standbyIndexRef.current;
+      inStandbyRef.current = false;
+      empiricalAnchorRef.current = null;
+      horaireOffsetRef.current = null;
+      // Même ré-ancrage qu'en ② : on est physiquement sur la gare verrouillée.
+      if (lockedIdx != null && points[lockedIdx]) lastFrozenDistRef.current = points[lockedIdx].dist;
+      standbyIndexRef.current = null;
+      setStandbyPointIndex(null);
+      logTestEvent("utd:branch", { branch: "②b-release-hourly-mode", lockedIdx });
+    };
+    window.addEventListener("lim:hourly-mode", h as EventListener);
+    return () => window.removeEventListener("lim:hourly-mode", h as EventListener);
+  }, [points]);
+
   // ── Écoute : sync delta depuis FT.tsx (source de vérité du recalage) ────
   useEffect(() => {
     const h = (e: Event) => {
