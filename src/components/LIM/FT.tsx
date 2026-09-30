@@ -5515,11 +5515,49 @@ const isRelock = acceptedMode === "relock";
         // d'arrêt (en tunnel le GPS peut figer une "bonne" position = case 3, qui trompait l'approche).
         const tunZone = tunnelZoneAt(currentSKm);
 
-        if (currentSKm != null && tunZone) {
-          logTestEvent("gps:arret:rejected-tunnel-zone", {
+        // 30/09 — EXCEPTION ETROITE, dans la MARGE seulement. `tunnelZoneAt` ajoute
+        // 150 m de chaque cote du tunnel. Le 30/09 (9714), arret de 4 min 45 a 128 m
+        // de la SORTIE de T26, cabine dehors : fixes frais (ageSec 0) a 3-4 m pendant
+        // tout l'arret, et pourtant rejete. Le gel « bonne position » du cas 3, lui,
+        // est un fix PERIME (stale_fix, ageSec ~30 s dans T26 le meme jour) ou une
+        // precision degradee (284 m a 18:43:35). On ne leve donc le veto que si :
+        //   - on est dans la marge, PAS dans les bornes du tunnel (la, jamais) ;
+        //   - le fix courant est frais et precis ;
+        //   - les 16 dernieres secondes montrent un FLUX de fixes precis (>= 8),
+        //     ce qu'un tunnel ne produit pas (les fixes s'arretent ou perimen).
+        const inTunnelMargin =
+          tunZone != null &&
+          currentSKm != null &&
+          (currentSKm < tunZone.sKmMin || currentSKm > tunZone.sKmMax);
+        const recentPrecise = recentFixesRef.current.filter(
+          (f) => typeof f.acc === "number" && f.acc <= GPS_STOP_APPROACH_ACC_MAX_M
+        );
+        const fixesLive =
+          !isStale &&
+          typeof accuracyM === "number" &&
+          accuracyM <= GPS_STOP_APPROACH_ACC_MAX_M &&
+          recentPrecise.length >= 8 &&
+          recentPrecise.length === recentFixesRef.current.length;
+        const tunnelVeto = currentSKm != null && tunZone != null && !(inTunnelMargin && fixesLive);
+
+        if (tunZone && currentSKm != null && !tunnelVeto) {
+          logTestEvent("gps:arret:tunnel-margin-override", {
             zone: tunZone.id,
             currentSKm,
             pk,
+            accuracyM,
+            ageSec,
+            recentFixes: recentFixesRef.current.length,
+          });
+        }
+
+        if (tunnelVeto) {
+          logTestEvent("gps:arret:rejected-tunnel-zone", {
+            zone: tunZone!.id,
+            currentSKm,
+            pk,
+            inTunnelMargin,
+            fixesLive,
           });
         } else if (currentSKm != null && tooCloseToLastArret) {
           // Garde-fou anti double-détection "au même endroit" : sortie lente de gare / micro-arrêts
