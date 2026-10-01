@@ -24,6 +24,7 @@ import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 import { APP_VERSION } from '../version'
 import { LIGNE_FT_NORMALIZED } from '../../data/normalized/ligneFT.normalized'
+import { parseLtvPdf2026 } from '../../lib/ltvPdfParser'
 import ManualPdfCanvasViewer from './ManualPdfCanvasViewer'
 import ManualViewer from './ManualViewer'
 import GuiaViewer from './GuiaViewer'
@@ -184,6 +185,10 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   const [referenceMode, setReferenceMode] = useState<'HORAIRE' | 'GPS'>('HORAIRE')
   const [standbyMode, setStandbyMode] = useState(false)
   const [pdfMode, setPdfMode] = useState<'blue' | 'green' | 'red'>('blue')
+  // 01/10 — miroir pour l'effet de mise a jour PWA (monte une seule fois) : 'blue' = aucun
+  // trajet demarre, le seul moment ou un rechargement automatique est sans danger.
+  const pdfModeRef = useRef<'blue' | 'green' | 'red'>('blue')
+  useEffect(() => { pdfModeRef.current = pdfMode }, [pdfMode])
 
   // 'ltv' = mode « LTV seul » : import du seul PDF LTV, pas de train ni de parcours,
   // affichage du seul bloc LTV (Infos + fiche train masqués). Fichier canonique partagé.
@@ -2088,6 +2093,73 @@ ${coords}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testRecording])
 
+  // 01/10 — DÉMARRAGE D'UN TRAIN POUR LE REPLAY D'UNE SESSION MODE 2026.
+  // Demandé par ReplayOverlay (`replay:start-2026`) quand le ZIP chargé est une session
+  // 2026 : on retrouve le train dans le normalisé, on lit le PDF LTV du ZIP avec le
+  // parseur de la modale, et on démarre par `startNormalizedJourneyFromTrain` — le même
+  // chemin que l'usage réel et la démo. Différences voulues avec un vrai départ :
+  //   - pas de `cacheLtvNormalized` : un replay ne doit pas écraser les « dernières LTV
+  //     connues » avec celles d'un trajet passé ;
+  //   - `wasReplaySessionRef` re-posé après le démarrage (il le remet à false) : jamais
+  //     d'upload au STOP, export local seulement ;
+  //   - GPS réel coupé aussitôt : les positions viennent du journal rejoué.
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const d = (e as CustomEvent).detail ?? {}
+      const rawNum = String(d.trainNumber ?? '').trim()
+      const ltvPdfFile: File | null = d.ltvPdfFile instanceof File ? d.ltvPdfFile : null
+      const train =
+        manualImportTrainOptions.find((t) => t.trainNumber === rawNum) ??
+        manualImportTrainOptions.find((t) => Number(t.trainNumber) === Number(rawNum)) ??
+        null
+      if (!train) {
+        logTestEvent('replay:start-2026:failed', { trainNumber: rawNum, reason: 'train_not_in_normalized' })
+        window.dispatchEvent(
+          new CustomEvent('replay:start-2026:done', {
+            detail: { ok: false, reason: 'train introuvable dans le normalisé 2026' },
+          })
+        )
+        return
+      }
+
+      let ltvData: NormalizedLtvFile | null = null
+      if (ltvPdfFile) {
+        try {
+          ltvData = await parseLtvPdf2026(ltvPdfFile)
+        } catch (err: any) {
+          logTestEvent('replay:start-2026:ltv-parse-failed', {
+            file: ltvPdfFile.name,
+            error: String(err?.message ?? err),
+          })
+        }
+      }
+      ltvPdfDataRef.current = ltvData
+      currentLtvPdfFileRef.current = ltvPdfFile
+      currentPdfFileRef.current = null
+      if (ltvPdfFile)
+        window.dispatchEvent(new CustomEvent('lim:ltv-pdf-raw', { detail: { file: ltvPdfFile } }))
+
+      startNormalizedJourneyFromTrain(train, {
+        source: 'mode2026_import',
+        activeMode: '2026',
+        keepPdf: true,
+        closeManualImport: false,
+      })
+      wasReplaySessionRef.current = true
+      stopGpsWatch()
+
+      logTestEvent('replay:start-2026', {
+        trainNumber: train.trainNumber,
+        ltvPdf: ltvPdfFile?.name ?? null,
+        ltvRows: Array.isArray(ltvData?.rows) ? ltvData!.rows.length : null,
+      })
+      window.dispatchEvent(new CustomEvent('replay:start-2026:done', { detail: { ok: true } }))
+    }
+    window.addEventListener('replay:start-2026', handler as EventListener)
+    return () => window.removeEventListener('replay:start-2026', handler as EventListener)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualImportTrainOptions, testRecording, simulationEnabled])
+
   // Pendant le replay, le player/overlay dispatch lim:pdf-mode-change avec
   // source='replay' ou 'replay-catchup'. TitleBar étant la source de vérité de
   // pdfMode, il doit se mettre à jour pour rendre les indicateurs (GPS, Play, 🕑).
@@ -2814,6 +2886,9 @@ ${coords}
   // ----- MISE À JOUR PWA (Service Worker) -----
   const [swUpdateAvailable, setSwUpdateAvailable] = useState(false)
   const swRegRef = useRef<ServiceWorkerRegistration | null>(null)
+  // 01/10 — vrai quand un NOUVEAU worker a pris le controle pendant que cette page tourne
+  // encore sur l'ancien bundle (mode autoUpdate : pas d'etat « en attente »).
+  const swControllerChangedRef = useRef(false)
 
   // Attend qu'un service worker en cours d'installation atteigne un état terminal
   // ('installed' = waiting, 'activated' ou 'redundant'). Garde-fou 4 s pour ne jamais
@@ -2838,6 +2913,15 @@ ${coords}
 
       const reg = swRegRef.current ?? (await navigator.serviceWorker.getRegistration())
       if (!reg?.waiting) {
+        // 01/10 — en mode `autoUpdate` (vite.config), le nouveau worker fait skipWaiting()
+        // lui-meme : il n'est JAMAIS « en attente », il prend le controle directement. Si
+        // c'est deja arrive (cf. onControllerChange), la seule chose qui manque est le
+        // rechargement de la page, qui tourne encore sur l'ancien bundle.
+        if (swControllerChangedRef.current) {
+          console.log('[TitleBar][SW] new controller already active -> reload')
+          window.location.reload()
+          return
+        }
         console.log('[TitleBar][SW] no waiting worker')
         return
       }
@@ -2934,8 +3018,32 @@ ${coords}
     const t1 = window.setTimeout(() => check('boot+800ms'), 800)
     const t2 = window.setTimeout(() => check('boot+2500ms'), 2500)
 
+    // 01/10 — POURQUOI LA MISE A JOUR « AUTOMATIQUE » NE L'ETAIT PAS. Le service worker est
+    // genere en `registerType: 'autoUpdate'` : il fait skipWaiting() + clientsClaim(), donc
+    // un nouveau worker prend le controle tout seul, sans jamais etre « en attente ». Or
+    // tout ce qui precede (markIfWaiting, bouton MAJ, applySwUpdate) ne regarde que
+    // `reg.waiting` — jamais vrai. Et ici, au changement de controleur, on se contentait
+    // d'eteindre le bouton : le cache etait renouvele, mais la page continuait sur
+    // l'ANCIEN bundle jusqu'a un vrai rechargement. Sur iPad, « relancer » une PWA restee
+    // en memoire est une reprise, pas un rechargement : version figee pendant des jours
+    // (24/08 affiche le 01/10 malgre deux deploiements la veille).
+    // Regle : nouveau controleur + aucun trajet demarre -> recharger tout de suite ;
+    // trajet en cours -> ne rien casser, afficher MAJ (qui rechargera sur demande).
+    const hadControllerAtBoot = !!navigator.serviceWorker.controller
     const onControllerChange = () => {
-      setSwUpdateAvailable(false)
+      if (!hadControllerAtBoot) {
+        // Premiere installation : le worker prend le controle d'une page deja a jour.
+        setSwUpdateAvailable(false)
+        return
+      }
+      swControllerChangedRef.current = true
+      if (pdfModeRef.current === 'blue') {
+        console.log('[TitleBar][SW] new controller, no journey -> reload')
+        window.location.reload()
+        return
+      }
+      console.log('[TitleBar][SW] new controller during journey -> MAJ offered')
+      setSwUpdateAvailable(true)
     }
     navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
 
@@ -4013,6 +4121,69 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
     console.log('[TitleBar] Arrêt watchPosition GPS')
   }
 
+  // 01/10 — REDÉMARRAGE À CHAUD (demande du 01/10, après deux trajets relancés en route).
+  // Même train, mêmes LTV, journal CONSERVÉ : on arrête tout, on remet les deux moteurs à
+  // zéro (lim:soft-reset), on recharge le train et on rejoue un premier Play. Le GPS n'est
+  // pas coupé : sous GPS vert, le stand-by initial est sauté et le défilement reprend.
+  const softRestartJourney = async (source: string) => {
+    if (simulationEnabled) {
+      logTestEvent('ui:blocked', { control: 'softRestart', source })
+      return
+    }
+    const num = trainDisplay
+    const train = num
+      ? (manualImportTrainOptions.find((t) => t.trainNumber === num) ??
+         manualImportTrainOptions.find((t) => Number(t.trainNumber) === Number(num)) ??
+         null)
+      : null
+    if (!train) {
+      window.alert('Redémarrage impossible : train courant introuvable dans le normalisé.')
+      return
+    }
+    const ok = window.confirm(
+      'Redémarrer le parcours à chaud ?\n\n' +
+        'Même train, mêmes LTV, journal conservé.\n' +
+        'Stand-by, arrêt et recalages en cours seront effacés,\n' +
+        'puis le défilement sera relancé comme après un Play.'
+    )
+    if (!ok) return
+    if (settingsDetailsRef.current?.hasAttribute('open')) {
+      settingsDetailsRef.current.removeAttribute('open')
+    }
+    logTestEvent('ui:soft-reset', { source, train: train.trainNumber })
+
+    setAutoScroll(false)
+    setAutoScrollStartedOnce(false)
+    window.dispatchEvent(
+      new CustomEvent('ft:auto-scroll-change', { detail: { enabled: false, source: 'soft-reset' } })
+    )
+    setGpsPkDisplay(null)
+    setGpsPkPeekVisible(false)
+    setScheduleDelta(null)
+    setScheduleDeltaIsLarge(false)
+    setScheduleDeltaSec(null)
+    window.dispatchEvent(new CustomEvent('lim:soft-reset', { detail: { source } }))
+
+    startNormalizedJourneyFromTrain(train, {
+      source: 'mode2026_import',
+      activeMode: '2026',
+      keepPdf: true,
+      closeManualImport: false,
+    })
+
+    window.setTimeout(() => {
+      setAutoScroll(true)
+      setAutoScrollStartedOnce(true)
+      logTestEvent('ui:autoScroll:toggle', { enabled: true, source: 'soft-reset', isFirstPlay: true })
+      window.dispatchEvent(
+        new CustomEvent('ft:auto-scroll-change', {
+          detail: { enabled: true, standby: true, source: 'soft-reset' },
+        })
+      )
+      if (!simulationEnabled) startGpsWatch()
+    }, 800)
+  }
+
   const resetCurrentJourney = async (source: string) => {
     if (simulationEnabled) {
       logTestEvent('ui:blocked', {
@@ -4277,9 +4448,11 @@ const autoScrollButtonActive = autoScroll || autoScrollStartedOnce
       </g>
     </svg>
   )
+  // 01/10 — en mode nuit la lune héritait d'un noir sur fond sombre : bouton illisible.
+  // Couleur explicite, gris moyen, pour un contraste net sans éblouir en cabine.
   const IconMoon = () => (
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" className="opacity-80">
-      <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />
+      <path fill={dark ? '#a1a1aa' : 'currentColor'} d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />
     </svg>
   )
   const IconBrightness = () => (
@@ -4550,6 +4723,9 @@ style={{
                   logTestEvent('ui:autoScroll:toggle', {
                     enabled: next,
                     source: 'titlebar',
+                    // 01/10 — pour que le replay rejoue le PREMIER Play avec standby:true,
+                    // comme le dispatch ci-dessous (il ne le deduisait que de ce champ).
+                    isFirstPlay,
                   })
 setAutoScroll(next)
 setAutoScrollStartedOnce(next)
@@ -5247,6 +5423,18 @@ setAutoScrollStartedOnce(next)
                   className="h-4 w-4 cursor-pointer accent-blue-600"
                 />
               </label>
+
+              {/* 01/10 — Redémarrage à chaud : même train, journal conservé (cf. softRestartJourney) */}
+              {pdfMode !== 'blue' && (
+                <button
+                  type="button"
+                  onClick={() => { void softRestartJourney('settings') }}
+                  className="w-full mt-1 h-8 px-3 text-xs rounded-md bg-amber-500 text-white font-semibold"
+                  title="Recharge le train en cours avec ses LTV et relance le défilement, sans interrompre le journal"
+                >
+                  Redémarrer le parcours (même train, journal conservé)
+                </button>
+              )}
 
               {/* Mise à l'échelle de la fiche train (#25) — VERTICAL uniquement */}
               {ftScrollMode === 'vertical' && (

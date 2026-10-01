@@ -179,6 +179,12 @@ export class ReplayPlayer {
   private interactivePrompt: ((desc: string) => Promise<boolean>) | null = null;
   private seenFirstGreenMode = false;
   private seenFirstUnfold = false;
+  // 01/10 — le journal ne portait PAS `isFirstPlay` (TitleBar ne le loguait pas, malgre
+  // le commentaire ci-dessous) : le premier Play etait rejoue avec standby:false, donc
+  // comme une REPRISE — FT.tsx levait alors l'arret GPS arme a la gare d'origine
+  // (`lim:station-arret active:false, horaire_resume`) et le depart ne recalait rien.
+  // Repli : le premier toggle `enabled` d'une session EST le premier Play.
+  private seenFirstPlay = false;
 
   private startedAtPerf: number | null = null;
   private startedAtNowMs: number | null = null;
@@ -367,7 +373,9 @@ export class ReplayPlayer {
 
       case "ui:autoScroll:toggle": {
         const enabled = !!payload?.enabled;
-        const isFirstPlay = !!payload?.isFirstPlay;
+        const isFirstPlay =
+          typeof payload?.isFirstPlay === "boolean" ? payload.isFirstPlay : enabled && !this.seenFirstPlay;
+        if (enabled) this.seenFirstPlay = true;
         const standby = !!payload?.standby || (isFirstPlay && enabled);
         dispatch("ft:auto-scroll-change", { ...(payload ?? {}), enabled, standby, source: "replay-catchup" });
         dispatch("lim:hourly-mode", { enabled, standby });
@@ -582,7 +590,9 @@ export class ReplayPlayer {
       case "ui:autoScroll:toggle": {
         this.opts.logger("[replay] ui:autoScroll:toggle", payload);
         const enabled = !!payload?.enabled;
-        const isFirstPlay = !!payload?.isFirstPlay;
+        const isFirstPlay =
+          typeof payload?.isFirstPlay === "boolean" ? payload.isFirstPlay : enabled && !this.seenFirstPlay;
+        if (enabled) this.seenFirstPlay = true;
 
         // Reconstituer "standby: true" pour le premier Play :
         // Le log stocke isFirstPlay mais pas standby (standby est ajouté côté

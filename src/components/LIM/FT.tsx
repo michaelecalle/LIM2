@@ -15,7 +15,7 @@ import type { FTEntry, CsvSens } from "../../data/ligneFT";
 import { logTestEvent } from "../../lib/testLogger";
 import { onLtvZoneClick } from "../../lib/ltvFold";
 import { getFtFranceHhmm } from "../../data/ftFranceTimes"
-import { tunnelZoneAt } from "../../data/tunnelZones"
+import { tunnelZoneAt, tunnelZoneAtStrict } from "../../data/tunnelZones"
 import { empiricalPkAtElapsed, isInEmpiricalZone } from "../../data/empiricalCurve"
 import { networkFromSkm } from "../../lib/gpsPkEngine"
 
@@ -217,6 +217,15 @@ function getRowU(entry: any): number | null {
   return pkToU(pkCandidate, netRow);
 }
 
+/** 01/10 — sens de marche de la fiche en U : "SN" si U croît du 1er au dernier point. */
+function routeDirection(entries: any[]): "SN" | "NS" | null {
+  let first: number | null = null, last: number | null = null;
+  for (let i = 0; i < entries.length; i++) { const u = getRowU(entries[i]); if (u != null) { first = u; break; } }
+  for (let i = entries.length - 1; i >= 0; i--) { const u = getRowU(entries[i]); if (u != null) { last = u; break; } }
+  if (first == null || last == null || first === last) return null;
+  return last > first ? "SN" : "NS";
+}
+
 export default function FT({ variant = "classic" }: FTProps) {
   // ⚠️ 15/08 — La « plage de lignes visibles » (`visibleRows`) a DISPARU avec la
   // refonte du scroll intelligent (cf. FT_LABEL_COLS en tête de fichier). Elle
@@ -326,7 +335,9 @@ export default function FT({ variant = "classic" }: FTProps) {
         // mais la FT ne doit utiliser la référence GPS que lorsque l'autoscroll est engagé.
         const gpsModeAllowed = autoScrollEnabledRef.current;
         // Garde-fou tunnel : jamais GPS en zone tunnel (même si l'event dit GREEN)
-        const inTunnel = tunnelZoneAt(lastGpsSKmRef.current) != null;
+        // 01/10 — bornes STRICTES pour le mode (la marge de 150 m basculait en horaire avant
+        // chaque entrée de tunnel). La marge reste aux garde-fous.
+        const inTunnel = tunnelZoneAtStrict(lastGpsSKmRef.current) != null;
         const nextMode: ReferenceMode =
           (s === "GREEN" || s === "ARRET") && gpsModeAllowed && !inTunnel ? "GPS" : "HORAIRE";
 
@@ -1289,6 +1300,10 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   // Vrai après une reprise à l'ORIGINE du parcours (Barcelone) : autorise le repli "ancre = origine"
   // dans le bloc position. Ailleurs (gare en cours), c'est le GPS qui (ré)ancre.
   const empiricalResumeAtOriginRef = React.useRef<boolean>(false);
+  // 01/10 — vitesse GPS récente (km/h, fixes ≤ 50 m, fenêtre ≥ 8 s) pour l'estime à vitesse
+  // constante en tunnel (repli avant l'horaire théorique).
+  const lastGpsSpeedKmhRef = React.useRef<number | null>(null);
+  const lastSpeedFixRef = React.useRef<{ t: number; s: number } | null>(null);
   const lastEmpVertLogAtRef = React.useRef<number>(0);
 
   // Pendant RED : on applique un offset à l'horaire pour partir exactement du Y courant
@@ -1543,21 +1558,40 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
               const p = ftEntryPkNum(rawEntries[i]);
               if (p != null) { originPk = p; break; }
             }
-            if (originPk != null && isInEmpiricalZone(originPk, curveVariantRef.current)) {
+            if (originPk != null && isInEmpiricalZone(originPk, { ...curveVariantRef.current, direction: routeDirection(rawEntries) })) {
               empiricalAnchorVertRef.current = { pk: originPk, minFloat: nowMinFloat };
               empiricalResumeAtOriginRef.current = false;
             }
           }
           {
             const ea = empiricalAnchorVertRef.current;
-            const empPk =
+            const dirRoute = routeDirection(rawEntries);
+            const variantDir = { ...curveVariantRef.current, direction: dirRoute };
+            let empPk: number | null =
               ea != null
-                ? empiricalPkAtElapsed(
-                    ea.pk,
-                    (nowMinFloat - ea.minFloat) * 60,
-                    curveVariantRef.current
-                  )
+                ? empiricalPkAtElapsed(ea.pk, (nowMinFloat - ea.minFloat) * 60, variantDir)
                 : null;
+            let estimeSource: "empirique" | "vitesse-constante" = "empirique";
+            // 01/10 — ESTIME À VITESSE CONSTANTE en repli de la courbe (hors segment ou au-delà),
+            // AVANT l'horaire théorique : dans le Perthus le 01/10, l'horaire supposait 146 km/h
+            // pour un train à 288 — 4,9 km de retard à la sortie. Vitesse constante : 260 m.
+            if (ea != null && empPk == null && dirRoute != null) {
+              const v = lastGpsSpeedKmhRef.current;
+              if (v != null && v >= 5) {
+                const uDir = dirRoute === "SN" ? 1 : -1;
+                let drU = ea.pk + uDir * (v / 3600) * ((nowMinFloat - ea.minFloat) * 60);
+                // Jamais au-delà du prochain arrêt commercial : le train s'y arrêtera.
+                const stopsU = (arrivalEventsRef.current || [])
+                  .map((s) => getRowU(rawEntries[s.rowIndex]))
+                  .filter((u): u is number => u != null && (u - ea.pk) * uDir > 0.05);
+                if (stopsU.length) {
+                  const next = uDir > 0 ? Math.min(...stopsU) : Math.max(...stopsU);
+                  if ((drU - next) * uDir > 0) drU = next;
+                }
+                empPk = drU;
+                estimeSource = "vitesse-constante";
+              }
+            }
             if (ea != null && empPk != null) {
               const ptsPk: { pk: number; y: number }[] = [];
               for (const tr of rows) {
@@ -1586,9 +1620,12 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
                   if (nowT - lastEmpVertLogAtRef.current >= 5000) {
                     lastEmpVertLogAtRef.current = nowT;
                     logTestEvent("ft:tick-empirique", {
+                      source: estimeSource,
+                      direction: dirRoute,
                       anchorPk: Math.round(ea.pk * 1000) / 1000,
                       elapsedSec: Math.round((nowMinFloat - ea.minFloat) * 60),
                       empPk: Math.round(empPk * 1000) / 1000,
+                      vKmh: lastGpsSpeedKmhRef.current != null ? Math.round(lastGpsSpeedKmhRef.current) : null,
                     });
                   }
                   commitTrainPos(Math.max(0, Math.min(yEmp, h)));
@@ -2060,7 +2097,7 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
       // -------------------------
       const emitGpsState = (forced: boolean) => {
         // Garde-fou tunnel : ne pas émettre GREEN ni PK en zone tunnel
-        const inTunnelNow = tunnelZoneAt(lastGpsSKmRef.current) != null;
+        const inTunnelNow = tunnelZoneAtStrict(lastGpsSKmRef.current) != null;   // 01/10 — bornes strictes
         const pkForUi = nextState === "GREEN" && !inTunnelNow ? pkFinite : null;
 
         const lastEmitAt = lastGpsStateEmitAtRef.current;
@@ -2317,6 +2354,11 @@ const orangeToRedStartedAtRef = React.useRef<number | null>(null);
           // c'est le « GPS passif » décrit dans ce même handler.
           // Garde-fou tunnel repris à l'identique : vert en zone tunnel = on
           // force l'horaire, donc le stand-by garde tout son sens.
+          // NB 01/10 — `gpsStateRef` porte l'état BRUT du watchdog (`effectiveNextState`),
+          // jamais "ARRET" : "ARRET" n'existe que dans l'événement lim:gps-state émis vers
+          // l'UI quand un arrêt est armé. Un arrêt armé à l'origine (gare reconnue depuis
+          // le 30/09) laisse donc bien ce test à "GREEN" — vérifié sur le journal du 30/09
+          // (`ui:standby:skipped-gps gpsState: "GREEN"` avec un arrêt armé à 18:05:07).
           const gpsVertAvantPlay =
             gpsStateRef.current === "GREEN" &&
             tunnelZoneAt(lastGpsSKmRef.current) == null;
@@ -2532,6 +2574,43 @@ detail: { enabled: true, standby: true, origine: "auto" },
     };
     window.addEventListener("ft:station-arret-manual-exit", handler);
     return () => window.removeEventListener("ft:station-arret-manual-exit", handler);
+  }, []);
+
+  // 01/10 — REDÉMARRAGE À CHAUD (bouton des paramètres). Tout l'état de position repart de
+  // zéro, comme après un STOP, mais le journal continue et le train est rechargé derrière.
+  // Le Play virtuel qui suit repasse par le stand-by initial (initialStandbyDoneRef remis à
+  // false), que la détection GPS verte saute aussitôt.
+  useEffect(() => {
+    const handler = () => {
+      if (filetStandbyTimerRef.current != null) {
+        window.clearTimeout(filetStandbyTimerRef.current);
+        filetStandbyTimerRef.current = null;
+      }
+      initialStandbyDoneRef.current = false;
+      inStandbyRef.current = false;
+      standbyLockedRowRef.current = null;
+      recalibrateFromRowRef.current = null;
+      recalibrateAtTimeRef.current = null;
+      skipInitialStandbyRecalibrationRef.current = false;
+      stationArretRef.current = null;
+      autoStandbyFromFreezeRef.current = null;
+      empiricalAnchorVertRef.current = null;
+      empiricalResumeAtOriginRef.current = false;
+      lastDeltaRecalageRef.current = null;
+      nextStopAnchorRowRef.current = -1;
+      lastAnchoredRowRef.current = null;
+      lastDepartedRowRef.current = null;
+      lastDepartedSKmRef.current = null;
+      lastArretSKmRef.current = null;
+      forceRealignOnResumeRef.current = false;
+      setSelectedRowIndex(null);
+      window.dispatchEvent(
+        new CustomEvent("lim:station-arret", { detail: { active: false, source: "soft-reset" } })
+      );
+      logTestEvent("ft:soft-reset", {});
+    };
+    window.addEventListener("lim:soft-reset", handler);
+    return () => window.removeEventListener("lim:soft-reset", handler);
   }, []);
 
     // ✅ Replay / Simulation : sélection et recalage "déterministes" sans clic DOM
@@ -4536,6 +4615,19 @@ const isRelock = acceptedMode === "relock";
       // Mémoriser s_km pour le garde-fou tunnel (mode GPS bloqué en zone tunnel)
       const rawSKm = (detail as any).s_km;
       if (typeof rawSKm === "number" && Number.isFinite(rawSKm)) lastGpsSKmRef.current = rawSKm;
+      // 01/10 — vitesse sur fixes précis, fenêtre ≥ 8 s (ruban de 25 m → paliers sinon).
+      {
+        const accV = (detail as any).accuracy;
+        if (typeof rawSKm === "number" && Number.isFinite(rawSKm) && typeof accV === "number" && accV <= 50) {
+          const prev = lastSpeedFixRef.current;
+          if (!prev) lastSpeedFixRef.current = { t: sampleTs, s: rawSKm };
+          else if (sampleTs - prev.t >= 8000) {
+            const v = Math.abs(rawSKm - prev.s) / ((sampleTs - prev.t) / 3600000);
+            if (Number.isFinite(v) && v <= 350) lastGpsSpeedKmhRef.current = v;
+            lastSpeedFixRef.current = { t: sampleTs, s: rawSKm };
+          }
+        }
+      }
 
       const ageSec = Math.max(0, (nowTs - sampleTs) / 1000);
       const isStale = ageSec > GPS_FRESH_SEC;
@@ -5059,7 +5151,7 @@ const isRelock = acceptedMode === "relock";
 
         // Garde-fou tunnel : ne pas émettre GREEN ni PK en zone tunnel
         // (empêche le flash PK parasite sur un retour GPS fugitif en souterrain)
-        const inTunnelNow = tunnelZoneAt(lastGpsSKmRef.current) != null;
+        const inTunnelNow = tunnelZoneAtStrict(lastGpsSKmRef.current) != null;   // 01/10 — bornes strictes
 
         // On n'affiche un PK que si GREEN ET hors tunnel
         const pkForUi = nextState === "GREEN" && !inTunnelNow ? pkFinite : null;

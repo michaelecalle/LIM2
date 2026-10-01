@@ -29,6 +29,8 @@
 //    la pleine puissance = quelques secondes). À affiner par médiane quand d'autres parcours seront
 //    disponibles. Perthus : segment à ajouter dès qu'un relevé sera fait (théorique en attendant).
 
+import { EMPIRICAL_CURVES_2026 } from "./empiricalCurves2026";
+
 export type EmpiricalPoint = { pk: number; dtSec: number };
 export type EmpiricalSegment = {
   /** Identifiant lisible (zone). */
@@ -101,6 +103,8 @@ export type CurveVariant = {
   composition?: string | null;
   /** 0, 1 ou 2. */
   moteursIsoles?: number | null;
+  /** 01/10 — sens de marche : "SN" (U croissant) ou "NS" (U décroissant). Connu → courbes 2026. */
+  direction?: "SN" | "NS" | null;
 };
 
 const variantKey = (composition?: string | null, moteursIsoles?: number | null) =>
@@ -116,6 +120,12 @@ const CURVES: Record<string, EmpiricalSegment[]> = {
 const DEFAULT_CURVE = EMPIRICAL_SEGMENTS;
 
 function selectSegments(variant?: CurveVariant): EmpiricalSegment[] {
+  // 01/10 — sens connu → courbes 2026 (médiane des 8 parcours filmés, un jeu par sens,
+  // un segment par tunnel, Perthus compris). Sans le sens, on ne peut pas choisir :
+  // comportement historique (segments de juin, sens SN uniquement).
+  if (variant?.direction === "SN" || variant?.direction === "NS") {
+    return EMPIRICAL_CURVES_2026[variant.direction];
+  }
   const exact = CURVES[variantKey(variant?.composition, variant?.moteursIsoles)];
   return exact ?? DEFAULT_CURVE;
 }
@@ -127,8 +137,10 @@ function segmentForPk(
 ): EmpiricalSegment | null {
   if (typeof pk !== "number" || !Number.isFinite(pk)) return null;
   for (const seg of selectSegments(variant)) {
-    const lo = seg.points[0].pk;
-    const hi = seg.points[seg.points.length - 1].pk;
+    // 01/10 — les segments NS ont un PK DÉCROISSANT dans le sens du temps : bornes par min/max.
+    const a = seg.points[0].pk;
+    const b = seg.points[seg.points.length - 1].pk;
+    const lo = Math.min(a, b), hi = Math.max(a, b);
     if (pk >= lo && pk <= hi) return seg;
   }
   return null;
@@ -145,16 +157,19 @@ export function isInEmpiricalZone(
 /** Δt (s) au PK donné DANS un segment (interpolation PK → Δt). */
 function dtAtPkInSegment(seg: EmpiricalSegment, pk: number): number {
   const pts = seg.points;
-  if (pk <= pts[0].pk) return pts[0].dtSec;
-  if (pk >= pts[pts.length - 1].pk) return pts[pts.length - 1].dtSec;
+  const first = pts[0], last = pts[pts.length - 1];
+  const asc = last.pk >= first.pk;   // 01/10 — PK croissant (SN) ou décroissant (NS) avec le temps
+  if (asc ? pk <= first.pk : pk >= first.pk) return first.dtSec;
+  if (asc ? pk >= last.pk : pk <= last.pk) return last.dtSec;
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
-    if (pk >= a.pk && pk <= b.pk) {
+    const lo = Math.min(a.pk, b.pk), hi = Math.max(a.pk, b.pk);
+    if (pk >= lo && pk <= hi) {
       const f = b.pk === a.pk ? 0 : (pk - a.pk) / (b.pk - a.pk);
       return a.dtSec + f * (b.dtSec - a.dtSec);
     }
   }
-  return pts[pts.length - 1].dtSec;
+  return last.dtSec;
 }
 
 /**

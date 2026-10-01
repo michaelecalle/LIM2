@@ -46,6 +46,51 @@ const GH_REPO = (import.meta.env.VITE_GITHUB_LOG_REPO as string | undefined) ?? 
 
 type GhFile = { name: string; size: number; sha: string };
 
+
+/**
+ * 01/10 — Une session MODE 2026 se reconnaît en tête de journal : l'événement
+ * `testlog:silent-start` porte `source: "mode2026_import"` et le numéro de train.
+ * Repli : l'en-tête `# sessionId=..._silent_mode2026_import_<n°>`.
+ */
+function detectMode2026Session(logText: string): { trainNumber: string } | null {
+  const head = logText.split(/\r?\n/, 60);
+  for (const line of head) {
+    if (!line.startsWith("{")) continue;
+    try {
+      const e = JSON.parse(line);
+      if (e?.kind === "testlog:silent-start" && e?.payload?.source === "mode2026_import") {
+        return { trainNumber: String(e.payload.trainNumber ?? "") };
+      }
+    } catch {}
+  }
+  const m = logText.match(/sessionId=\S*silent_mode2026_import_(\d+)/);
+  return m ? { trainNumber: m[1] } : null;
+}
+
+/** Attend UN événement (ou le délai) et renvoie son detail, null si délai dépassé. */
+function waitForEventOnce(name: string, timeoutMs: number): Promise<any | null> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: any) => {
+      if (done) return;
+      done = true;
+      window.removeEventListener(name, onEv as EventListener);
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const onEv = (e: Event) => finish((e as CustomEvent).detail ?? {});
+    const timer = window.setTimeout(() => finish(null), timeoutMs);
+    window.addEventListener(name, onEv as EventListener);
+  });
+}
+
+/** Clé de tri chronologique d'un fichier de journal : « ... du YYYY-MM-DD - HHhMM... » → epoch ms, 0 si absent. */
+function replayFileKey(name: string): number {
+  const m = name.match(/(\d{4})-(\d{2})-(\d{2})(?:\s*-\s*(\d{2})h(\d{2}))?/);
+  if (!m) return 0;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], m[4] ? +m[4] : 0, m[5] ? +m[5] : 0);
+}
+
 export default function ReplayOverlay() {
   /* ── Visibilité : ouverte via le bouton Replay dans les paramètres ── */
   const [isVisible, setIsVisible] = useState(false);
@@ -203,7 +248,10 @@ export default function ReplayOverlay() {
       const data: any[] = await res.json();
       const zips = data
         .filter((f) => f.type === "file" && f.name.toLowerCase().endsWith(".zip"))
-        .sort((a, b) => b.name.localeCompare(a.name)); // plus récent en premier
+        // 01/10 — tri CHRONOLOGIQUE sur la date du nom (« 9714 du 2026-09-30 - 20h16 »),
+        // plus recent en premier. L'ancien tri par nom classait d'abord par numero de
+        // train : les deux fichiers de la veille se retrouvaient sous ceux du 20/08.
+        .sort((a, b) => replayFileKey(b.name) - replayFileKey(a.name) || b.name.localeCompare(a.name));
       setGhFiles(zips.map((f) => ({ name: f.name, size: f.size, sha: f.sha })));
     } catch (err: any) {
       setGhListError(err?.message ?? "Erreur de chargement");
@@ -313,7 +361,40 @@ export default function ReplayOverlay() {
         }
       }
 
-      if (pdfKey) {
+      // 01/10 — SESSION MODE 2026 : le PDF du ZIP est le PDF LTV (DHLTV), PAS une fiche
+      // train. L'importer comme fiche train échouait (parseur fiche train sur un document
+      // LTV), le replay attendait 15 s une FT qui ne venait jamais : « le train n'est même
+      // pas chargé » — cassé pour TOUTE session 2026 depuis la mi-août. Le repli
+      // `replay:start-manual` n'avait d'ailleurs plus d'écouteur depuis le 10/08. On arme
+      // donc le train par son numéro et le PDF LTV par le chemin de l'usage réel / démo
+      // (événement `replay:start-2026`, écouté par TitleBar).
+      const session2026 = detectMode2026Session(logText);
+      if (session2026) {
+        const ltvKey =
+          Object.keys(entries).find((k) => /dhltv/i.test(k) && k.toLowerCase().endsWith(".pdf")) ??
+          pdfKey ??
+          null;
+        const ltvPdfFile = ltvKey
+          ? new File([entries[ltvKey]], ltvKey, { type: "application/pdf" })
+          : null;
+        const zipNum = file.name.match(ZIP_FILENAME_REGEX)?.[1] ?? "";
+        const trainNumber = session2026.trainNumber || zipNum;
+
+        // Barrières posées AVANT le démarrage : `ft:route-pk-range` est émis par la FT
+        // quand ses lignes sont en place (c'est aussi ce qu'attend TitleBar pour les LTV).
+        // `ft:conc:resolved`, lui, n'est plus émis en mode 2026.
+        const started = waitForEventOnce("replay:start-2026:done", 20_000);
+        const ftReady = waitForEventOnce("ft:route-pk-range", 15_000);
+        window.dispatchEvent(
+          new CustomEvent("replay:start-2026", { detail: { trainNumber, ltvPdfFile } })
+        );
+        const res = await started;
+        if (!res) throw new Error("Démarrage du train (mode 2026) sans réponse de l'application.");
+        if (res.ok === false) {
+          throw new Error(`Train ${trainNumber} : ${res.reason ?? "démarrage impossible"}.`);
+        }
+        await ftReady;
+      } else if (pdfKey) {
         // Barrière : attendre ft:conc:resolved avant de terminer le chargement,
         // pour garantir que la FT a ses lignes dans le DOM quand l'utilisateur appuie sur Play.
         const pdfReady = new Promise<void>((resolve) => {

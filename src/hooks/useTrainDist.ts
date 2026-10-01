@@ -12,7 +12,7 @@
 // FT.tsx garde son propre moteur DOM-based (non refactorisé ici pour éviter tout risque).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { tunnelZoneAt } from "../data/tunnelZones";
+import { tunnelZoneAt, tunnelZoneAtStrict } from "../data/tunnelZones";
 import { logTestEvent } from "../lib/testLogger";
 import { empiricalPkAtElapsed, isInEmpiricalZone } from "../data/empiricalCurve";
 
@@ -129,6 +129,13 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
   useEffect(() => { gpsStateRef.current = gpsState; }, [gpsState]);
   useEffect(() => { autoScrollEnabledRef.current = autoScrollEnabled; }, [autoScrollEnabled]);
 
+  // 01/10 — point verrouillé libéré par ②b, consommé par la ② qui suit (cf. ces branches).
+  const releasedLockedIdxRef = useRef<number | null>(null);
+  // 01/10 — vitesse GPS récente (km/h, fixes ≤ 50 m, fenêtre ≥ 8 s) pour l'estime à vitesse
+  // constante en tunnel. Dernier fix retenu pour la dériver.
+  const lastGpsSpeedKmhRef = useRef<number | null>(null);
+  const lastSpeedFixRef = useRef<{ t: number; s: number } | null>(null);
+
   // ── Écoute : état GPS (émis par FT.tsx watchdog) ──────────────────────────
   useEffect(() => {
     const h = (e: Event) => {
@@ -150,6 +157,19 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
       const skm = d?.s_km;
       if (typeof pk  === "number" && isFinite(pk))  lastGpsPkRef.current  = pk;
       if (typeof skm === "number" && isFinite(skm)) lastGpsSKmRef.current = skm;
+      // 01/10 — vitesse sur fixes précis. Fenêtre ≥ 8 s : le s_km est accroché à un ruban de
+      // 25 m, une fenêtre courte donnerait des paliers de 45 km/h.
+      const acc = d?.accuracy;
+      if (typeof skm === "number" && isFinite(skm) && typeof acc === "number" && acc <= 50) {
+        const now = Date.now();
+        const prev = lastSpeedFixRef.current;
+        if (!prev) lastSpeedFixRef.current = { t: now, s: skm };
+        else if (now - prev.t >= 8000) {
+          const v = Math.abs(skm - prev.s) / ((now - prev.t) / 3600000);
+          if (isFinite(v) && v <= 350) lastGpsSpeedKmhRef.current = v;
+          lastSpeedFixRef.current = { t: now, s: skm };
+        }
+      }
     };
     window.addEventListener("gps:position", h as EventListener);
     return () => window.removeEventListener("gps:position", h as EventListener);
@@ -218,11 +238,10 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
         inStandbyRef.current = false;       // départ réel : le tick peut de nouveau avancer
         empiricalAnchorRef.current = null;  // départ/reprise : la courbe empirique se ré-ancrera
         horaireOffsetRef.current = null;
-        const lockedIdx = standbyIndexRef.current;
-        // On cherche le point de référence : soit la ligne verrouillée, soit le premier point horaire
-        const refPt = lockedIdx != null
-          ? points[lockedIdx]
-          : points.find(p => parseMin(p.hora) != null);
+        // Verrou courant, ou verrou que ②b vient de libérer dans la même pile d'événements.
+        const lockedIdx = standbyIndexRef.current ?? releasedLockedIdxRef.current;
+        releasedLockedIdxRef.current = null;
+        const refPt = lockedIdx != null ? points[lockedIdx] : null;
         if (refPt) {
           const horaMin = parseMin(refPt.hora);
           if (horaMin != null) {
@@ -232,13 +251,18 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
           // Sans ça, si le GPS était périmé à l'approche, le repli horaire recalcule son offset
           // sur le dernier fix GPS (lastFrozenDist) et téléporte le train en arrière.
           lastFrozenDistRef.current = refPt.dist;
-        } else {
-          // Pas de point horaire : base = heure courante (train à l'heure)
+        } else if (!initialStandbyDoneRef.current || lastFrozenDistRef.current == null) {
+          // Tout premier démarrage sans verrou : base = heure courante (train à l'heure).
           autoScrollBaseRef.current = { firstHoraMin: nowMinFloat(), realMinFloat: nowMinFloat() };
         }
+        // ⚠️ 01/10 — PLUS JAMAIS de repli sur le « premier point horaire » en cours de
+        // trajet : c'est ce repli qui a renvoyé le 9707 à Barcelone (dist 0, base 16:24)
+        // à la sortie du stand-by de Gérone, puis à chaque recalage manuel. Sans verrou,
+        // on ne sait pas mieux où est le train que là où il était : on garde la position
+        // et la base horaire (celle de FT.tsx arrive de toute façon par ft:delta:base-sync).
         logTestEvent("utd:branch", {
           branch: "②-resume", lockedIdx, refHora: refPt?.hora ?? null,
-          usedFirstHoraPoint: lockedIdx == null,
+          keptPosition: refPt == null, dist: lastFrozenDistRef.current,
         });
         standbyIndexRef.current = null;
         setStandbyPointIndex(null);
@@ -282,6 +306,13 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
       horaireOffsetRef.current = null;
       // Même ré-ancrage qu'en ② : on est physiquement sur la gare verrouillée.
       if (lockedIdx != null && points[lockedIdx]) lastFrozenDistRef.current = points[lockedIdx].dist;
+      // ⚠️ 01/10 — TÉLÉPORTATION À BARCELONE (9707 du 01/10, sortie de stand-by à Gérone).
+      // FT.tsx émet `lim:hourly-mode {standby:false}` AVANT que `ft:auto-scroll-change
+      // {standby:false}` n'atteigne ce hook : ce bloc effaçait le verrou, puis la branche ②
+      // le trouvait nul et se rabattait sur le PREMIER point horaire — Barcelone, 16:24,
+      // dist 0. Cent kilomètres en arrière. On mémorise donc le point libéré pour la ②
+      // qui suit dans la même pile d'événements.
+      releasedLockedIdxRef.current = lockedIdx;
       standbyIndexRef.current = null;
       setStandbyPointIndex(null);
       logTestEvent("utd:branch", { branch: "②b-release-hourly-mode", lockedIdx });
@@ -289,6 +320,28 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
     window.addEventListener("lim:hourly-mode", h as EventListener);
     return () => window.removeEventListener("lim:hourly-mode", h as EventListener);
   }, [points]);
+
+  // ── Écoute : redémarrage à chaud (bouton des paramètres, 01/10) ───────────
+  // Tout l'état de position repart de zéro, le journal continue. Le Play virtuel qui suit
+  // (ft:auto-scroll-change standby:true) repasse alors par le stand-by initial, que FT.tsx
+  // saute aussitôt sous GPS vert (lim:hourly-mode standby:false → ②b ci-dessus).
+  useEffect(() => {
+    const h = () => {
+      inStandbyRef.current = false;
+      initialStandbyDoneRef.current = false;
+      standbyIndexRef.current = null;
+      releasedLockedIdxRef.current = null;
+      empiricalAnchorRef.current = null;
+      horaireOffsetRef.current = null;
+      lastFrozenDistRef.current = null;
+      autoScrollBaseRef.current = null;
+      setStandbyPointIndex(null);
+      setDist(null);
+      logTestEvent("utd:soft-reset", {});
+    };
+    window.addEventListener("lim:soft-reset", h as EventListener);
+    return () => window.removeEventListener("lim:soft-reset", h as EventListener);
+  }, []);
 
   // ── Écoute : sync delta depuis FT.tsx (source de vérité du recalage) ────
   useEffect(() => {
@@ -319,7 +372,9 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
 
       const gs   = gpsStateRef.current;
       // Garde-fou tunnel : bloquer le GPS tant que le dernier s_km est dans une zone tunnel
-      const inTunnel = tunnelZoneAt(lastGpsSKmRef.current) != null;
+      // 01/10 — bornes STRICTES du tunnel pour le mode (la marge de 150 m faisait basculer
+      // en horaire avant chaque entrée). La marge reste aux garde-fous.
+      const inTunnel = tunnelZoneAtStrict(lastGpsSKmRef.current) != null;
       const mode: ReferenceMode =
         (gs === "GREEN" || gs === "ARRET") && !inTunnel ? "GPS" : "HORAIRE";
 
@@ -332,7 +387,7 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
         if (pk == null) return;
 
         // Gel en tunnel (on garde la dernière dist connue)
-        if (tunnelZoneAt(skm)) {
+        if (tunnelZoneAtStrict(skm)) {
           if (lastFrozenDistRef.current != null) setDist(lastFrozenDistRef.current);
           return;
         }
@@ -360,29 +415,58 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
       // le saut à la bascule ET reste correct si le GPS revient puis se reperd. Hors segment mesuré
       // → empPk null → repli sur le calcul horaire théorique ci-dessous.
       const pk0 = points[0]?.pkInternal;
-      if (pk0 != null) {
+      const pkLast = points.length ? points[points.length - 1]?.pkInternal : null;
+      if (pk0 != null && pkLast != null) {
+        // 01/10 — sens de marche en U : SN = U croît avec la distance, NS = U décroît.
+        const direction: "SN" | "NS" = pkLast >= pk0 ? "SN" : "NS";
+        const uDir = direction === "SN" ? 1 : -1;
         if (empiricalAnchorRef.current == null) {
           // 1re entrée en horaire : ancrer sur la position courante (0 au départ, sinon dernier GPS)
           const curDist = lastFrozenDistRef.current ?? 0;
-          empiricalAnchorRef.current = { pk: pk0 + curDist, minFloat: nowMinFloat() };
+          empiricalAnchorRef.current = { pk: pk0 + uDir * curDist, minFloat: nowMinFloat() };
         }
         const anchor = empiricalAnchorRef.current;
-        if (isInEmpiricalZone(anchor.pk)) {
-          const elapsedSec = (nowMinFloat() - anchor.minFloat) * 60;
-          const empPk = empiricalPkAtElapsed(anchor.pk, elapsedSec);
-          if (empPk != null) {
-            const empDist = empPk - pk0;
-            setDist(empDist);
-            const nowT = Date.now();
-            if (active && nowT - lastHoraLogAtRef.current >= 5000) {
-              lastHoraLogAtRef.current = nowT;
-              logTestEvent("utd:tick-empirique", {
-                anchorPk: Math.round(anchor.pk * 1000) / 1000, elapsedSec: Math.round(elapsedSec),
-                empPk: Math.round(empPk * 1000) / 1000, dist: Math.round(empDist * 100) / 100,
-              });
-            }
-            return;
+        const elapsedSec = (nowMinFloat() - anchor.minFloat) * 60;
+        const variant = { direction };
+        let estPk: number | null = null;
+        let estSource: "empirique" | "vitesse-constante" | null = null;
+        if (isInEmpiricalZone(anchor.pk, variant)) {
+          estPk = empiricalPkAtElapsed(anchor.pk, elapsedSec, variant);
+          if (estPk != null) estSource = "empirique";
+        }
+        // 01/10 — ESTIME À VITESSE CONSTANTE, en repli de la courbe empirique et AVANT
+        // l'horaire théorique. Le 01/10 dans le Perthus (9707), sans courbe, l'horaire
+        // supposait 146 km/h là où le train roulait à 288 : 4,9 km de retard d'estimation
+        // à la sortie. La dernière vitesse GPS tenue constante donnait 260 m.
+        if (estPk == null) {
+          const v = lastGpsSpeedKmhRef.current;
+          if (v != null && v >= 5) {
+            let u = anchor.pk + uDir * (v / 3600) * elapsedSec;
+            // Jamais au-delà du prochain arrêt commercial : le train s'y arrêtera.
+            const anchorDist = (anchor.pk - pk0) * uDir;
+            const nextStop = points
+              .filter((p) => p.arr && parseMin(p.arr) != null && p.dist > anchorDist + 0.05)
+              .map((p) => p.dist)
+              .sort((a, b) => a - b)[0];
+            if (nextStop != null && (u - pk0) * uDir > nextStop) u = pk0 + uDir * nextStop;
+            estPk = u;
+            estSource = "vitesse-constante";
           }
+        }
+        if (estPk != null) {
+          const estDist = (estPk - pk0) * uDir;
+          setDist(estDist);
+          const nowT = Date.now();
+          if (active && nowT - lastHoraLogAtRef.current >= 5000) {
+            lastHoraLogAtRef.current = nowT;
+            logTestEvent("utd:tick-empirique", {
+              source: estSource, direction,
+              anchorPk: Math.round(anchor.pk * 1000) / 1000, elapsedSec: Math.round(elapsedSec),
+              empPk: Math.round(estPk * 1000) / 1000, dist: Math.round(estDist * 100) / 100,
+              vKmh: lastGpsSpeedKmhRef.current != null ? Math.round(lastGpsSpeedKmhRef.current) : null,
+            });
+          }
+          return;
         }
       }
 

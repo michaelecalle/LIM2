@@ -100,6 +100,20 @@ export const TUNNEL_ZONES_PKINTERNAL: TunnelZonePk[] = [
   { id: "T34", pkIntMin: 759.228, pkIntMax: 759.402 }, // LFP
 ]
 
+/**
+ * 01/10 — Zone tunnel SANS marge : pour les décisions de MODE (GPS/horaire) et le gel
+ * de position. La marge de 150 m reste réservée aux garde-fous (veto d'arrêt, flash GPS
+ * aux portails) : avec elle, l'application passait en horaire 110 à 140 m AVANT chaque
+ * entrée de tunnel, de façon systématique (20 tunnels mesurés le 01/10, 9707).
+ */
+export function tunnelZoneAtStrict(sKm: number | null | undefined): TunnelZone | null {
+  if (typeof sKm !== "number" || !Number.isFinite(sKm)) return null
+  for (const z of TUNNEL_ZONES) {
+    if (sKm >= z.sKmMin && sKm <= z.sKmMax) return z
+  }
+  return null
+}
+
 /** Retourne la zone tunnel contenant ce s_km (avec marge), ou null. */
 export function tunnelZoneAt(sKm: number | null | undefined): TunnelZone | null {
   if (typeof sKm !== "number" || !Number.isFinite(sKm)) return null
