@@ -668,6 +668,11 @@ export default function FT({ variant = "classic" }: FTProps) {
       } else {
         // Scroll manuel utilisateur pendant que le mode horaire est actif
         isManualScrollRef.current = true;
+        // Un retour en cours est interrompu : l'utilisateur reprend la main.
+        if (ressortAnimRef.current !== null) {
+          window.cancelAnimationFrame(ressortAnimRef.current);
+          ressortAnimRef.current = null;
+        }
 
         // On relance un timer de 5s à chaque nouveau mouvement manuel
         if (manualScrollTimeoutRef.current !== null) {
@@ -676,24 +681,35 @@ export default function FT({ variant = "classic" }: FTProps) {
 
         manualScrollTimeoutRef.current = window.setTimeout(() => {
           manualScrollTimeoutRef.current = null;
-          isManualScrollRef.current = false;
 
           // En stand-by, l'utilisateur choisit une ligne de référence : ne pas déclencher le ressort
-          if (standbyLockedRowRef.current !== null) return;
+          if (standbyLockedRowRef.current !== null) { isManualScrollRef.current = false; return; }
 
           const container = scrollContainerRef.current;
-          if (!container) return;
-          if (!autoScrollEnabledRef.current) return;
+          if (!container) { isManualScrollRef.current = false; return; }
+          if (!autoScrollEnabledRef.current) { isManualScrollRef.current = false; return; }
 
           const target = lastAutoScrollTopRef.current;
-          if (target == null) return;
+          if (target == null) { isManualScrollRef.current = false; return; }
 
-          // On revient à la position auto d'avant le scroll manuel
-          isProgrammaticScrollRef.current = true;
-          container.scrollTo({
-            top: target,
-            behavior: "auto",
-          });
+          // 10/10 — RETOUR GLISSÉ au lieu du saut sec : animation rAF de RESSORT_DUREE_MS
+          // (ease in-out). `isManualScrollRef` reste vrai pendant l'animation pour que le
+          // tick ne se batte pas avec elle ; chaque écriture est marquée programmatique.
+          const from = container.scrollTop;
+          const t0 = performance.now();
+          const step = (now: number) => {
+            const k = Math.min(1, (now - t0) / RESSORT_DUREE_MS);
+            const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+            isProgrammaticScrollRef.current = true;
+            container.scrollTop = from + (target - from) * e;
+            if (k < 1) {
+              ressortAnimRef.current = window.requestAnimationFrame(step);
+            } else {
+              ressortAnimRef.current = null;
+              isManualScrollRef.current = false;
+            }
+          };
+          ressortAnimRef.current = window.requestAnimationFrame(step);
         }, 5000);
       }
     } else {
@@ -2315,6 +2331,9 @@ const orangeToRedStartedAtRef = React.useRef<number | null>(null);
   // Suivi du scroll manuel pendant que le mode horaire est actif
   const isManualScrollRef = React.useRef(false);
   const manualScrollTimeoutRef = React.useRef<number | null>(null);
+  // 10/10 — animation du retour « ressort » (rAF), annulable par un nouveau scroll manuel.
+  const ressortAnimRef = React.useRef<number | null>(null);
+  const RESSORT_DUREE_MS = 1500;
   const lastAutoScrollTopRef = React.useRef<number | null>(null);
   const isProgrammaticScrollRef = React.useRef(false);
   const forceRealignOnResumeRef = React.useRef(false);
