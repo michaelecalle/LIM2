@@ -222,10 +222,14 @@ function parseDataRows(taggedRows: Array<{ row: RawItem[]; linea: string }>): Di
         obsParts:  [itemsInRange(row, COL.CSV_MAX, 842)],
       }
     } else if (current) {
-      // Ligne de continuation (suite trayecto ou observations)
+      // Ligne de continuation (suite trayecto, motif ou observations)
       const sectionCont = itemsInRange(row, COL.CODE_MAX, COL.SECTION_MAX)
+      // 10/10 — le MOTIF aussi peut tenir sur deux lignes dans le PDF (constaté sur la 1re
+      // LTV de la 050 du 10/10) : la seconde ligne était ignorée, le motif tronqué.
+      const motivoCont  = itemsInRange(row, COL.SPEED_MAX, COL.MOTIVO_MAX)
       const obsCont     = itemsInRange(row, COL.CSV_MAX, 842)
       if (sectionCont) current.sectionParts.push(sectionCont)
+      if (motivoCont)  current.motivo = `${current.motivo} ${motivoCont}`.trim()
       if (obsCont)     current.obsParts.push(obsCont)
     }
   }
