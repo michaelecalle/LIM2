@@ -11,13 +11,15 @@ import {
 // CSV_ZONES reste pour l'instant issu de l'ancien module (donnée de ligne, pas
 // de train) — à réévaluer, le 2026 portant déjà un booléen `csv` par ligne.
 import { CSV_ZONES } from "../../data/ligneFT.normalized.adapter";
+// 10/10 — s_km de chaque ligne de la fiche, calculé une fois par tableau (cf. rowSKmList).
+const ROW_SKM_CACHE = new WeakMap<object, (number | null)[]>();
 import type { FTEntry, CsvSens } from "../../data/ligneFT";
 import { logTestEvent } from "../../lib/testLogger";
 import { onLtvZoneClick } from "../../lib/ltvFold";
 import { getFtFranceHhmm } from "../../data/ftFranceTimes"
 import { tunnelZoneAt, tunnelZoneAtStrict } from "../../data/tunnelZones"
 import { empiricalPkAtElapsed, isInEmpiricalZone } from "../../data/empiricalCurve"
-import { networkFromSkm } from "../../lib/gpsPkEngine"
+import { networkFromSkm, sKmFromNetworkPk } from "../../lib/gpsPkEngine"
 
 // Mise à l'échelle FT (#25) : PK numérique d'une entrée (pk_internal sinon champs PK / sit km).
 function ftEntryPkNum(e: any): number | null {
@@ -1216,6 +1218,11 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   const [forceRealignTrigger, setForceRealignTrigger] = React.useState(0);
   // Dernière ligne FT utilisée comme “point d’ancrage” GPS
   const lastAnchoredRowRef = React.useRef<number | null>(null);
+  // 10/10 — redémarrage à chaud : le delta d'avant est conservé, le premier ancrage GPS ne
+  // doit pas le recalculer sur une ligne déjà franchie (+4 pendant 90 s le 10/10, 9705).
+  const keepDeltaAfterResetRef = React.useRef<boolean>(false);
+  // 10/10 — dernière position donnée par la COURBE (vertical), pour la continuité du repli.
+  const lastEmpiricalVertRef = React.useRef<{ anchorPk: number; pk: number; minFloat: number } | null>(null);
   // Premier démarrage déjà “consommé” ?
   const initialStandbyDoneRef = React.useRef(false);
   // Index de la première ligne principale non-noteOnly (tenu à jour plus bas)
@@ -1593,6 +1600,9 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
                 ? empiricalPkAtElapsed(ea.pk, (nowMinFloat - ea.minFloat) * 60, variantDir)
                 : null;
             let estimeSource: "empirique" | "vitesse-constante" = "empirique";
+            if (ea != null && empPk != null) {
+              lastEmpiricalVertRef.current = { anchorPk: ea.pk, pk: empPk, minFloat: nowMinFloat };
+            }
             // 01/10 — ESTIME À VITESSE CONSTANTE en repli de la courbe (hors segment ou au-delà),
             // AVANT l'horaire théorique : dans le Perthus le 01/10, l'horaire supposait 146 km/h
             // pour un train à 288 — 4,9 km de retard à la sortie. Vitesse constante : 260 m.
@@ -1600,7 +1610,11 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
               const v = lastGpsSpeedKmhRef.current;
               if (v != null && v >= 5) {
                 const uDir = dirRoute === "SN" ? 1 : -1;
-                let drU = ea.pk + uDir * (v / 3600) * ((nowMinFloat - ea.minFloat) * 60);
+                // 10/10 — continuité : on repart de la DERNIÈRE position empirique de cette ancre
+                // (et de son instant), pas de l'ancre : saut de 650 m sinon (Perthus, 9705).
+                const le = lastEmpiricalVertRef.current;
+                const from = le && le.anchorPk === ea.pk ? le : { pk: ea.pk, minFloat: ea.minFloat };
+                let drU = from.pk + uDir * (v / 3600) * ((nowMinFloat - from.minFloat) * 60);
                 // Jamais au-delà du prochain arrêt commercial : le train s'y arrêtera.
                 const stopsU = (arrivalEventsRef.current || [])
                   .map((s) => getRowU(rawEntries[s.rowIndex]))
@@ -2636,11 +2650,15 @@ detail: { enabled: true, standby: true, origine: "auto" },
       lastDepartedSKmRef.current = null;
       lastArretSKmRef.current = null;
       forceRealignOnResumeRef.current = false;
+      lastEmpiricalVertRef.current = null;
+      // Le delta d'avant est conservé (autoScrollBaseRef n'est pas remis à zéro) : le premier
+      // ancrage GPS le resynchronise vers useTrainDist au lieu de le recalculer.
+      keepDeltaAfterResetRef.current = autoScrollBaseRef.current != null;
       setSelectedRowIndex(null);
       window.dispatchEvent(
         new CustomEvent("lim:station-arret", { detail: { active: false, source: "soft-reset" } })
       );
-      logTestEvent("ft:soft-reset", {});
+      logTestEvent("ft:soft-reset", { keepDelta: keepDeltaAfterResetRef.current });
     };
     window.addEventListener("lim:soft-reset", handler);
     return () => window.removeEventListener("lim:soft-reset", handler);
@@ -4264,6 +4282,80 @@ const note = observationText
   
   // Trouve l'index de la ligne FT correspondant au PK GPS,
   // en prenant la dernière ligne "atteinte" (en amont) dans le sens du parcours.
+// ─────────────────────────────────────────────────────────────────────────────
+// 10/10 — PLACEMENT DES LIGNES SUR L'ABSCISSE s_km DU MOTEUR GPS.
+// L'ancienne recherche (findRowIndexFromPk, conservée en repli) devine le réseau d'après la
+// VALEUR du PK : le PK 2,0 du raccordement y passe pour du LFP et la ligne active est revenue
+// à « Saut de Mouton » (recalage +4 puis -1 en une minute, 9705 du 10/10). Ici chaque ligne
+// est convertie en s_km par les ancres du moteur selon SA colonne réseau, et comparée au s_km
+// du fix, continu et sans ambiguïté. Priorité LFP > RAC > RFN > ADIF (le pk_rac 4,5 de
+// « Limite LGV-Rac » dépasse le raccordement de 2,1 km connu du moteur).
+// ─────────────────────────────────────────────────────────────────────────────
+function rowSKmOf(e: any): number | null {
+  if (!e || e.isNoteOnly) return null;
+  const p = (v: any): number | null => {
+    if (v == null) return null;
+    const s = String(v).trim().replace(",", ".");
+    if (!s) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  };
+  const lfp = p(e.pk_lfp);
+  if (lfp != null) return sKmFromNetworkPk("LFP", lfp);
+  const rac = p(e.pk_rac);
+  if (rac != null) return sKmFromNetworkPk("RAC", rac);
+  const rfn = p(e.pk_rfn);
+  if (rfn != null) return sKmFromNetworkPk("RFN", rfn);
+  const adif = p(e.pk_adif);
+  if (adif != null) return sKmFromNetworkPk("ADIF", adif);
+  const main = p(e.pk);
+  if (main == null) return null;
+  if (main >= 752.4) {
+    // PK « interne » continu (fiche fusionnée sans colonnes réseau) : ADIF prolongé.
+    const sLimite = sKmFromNetworkPk("ADIF", 752.4);
+    return sLimite != null ? sLimite + (main - 752.4) : null;
+  }
+  return sKmFromNetworkPk(main >= 600 ? "ADIF" : main >= 300 ? "RFN" : "LFP", main);
+}
+
+function rowSKmList(): (number | null)[] {
+  const key = rawEntries as unknown as object;
+  let list = ROW_SKM_CACHE.get(key);
+  if (!list) {
+    list = rawEntries.map((e) => rowSKmOf(e as any));
+    ROW_SKM_CACHE.set(key, list);
+  }
+  return list;
+}
+
+function findRowIndexFromS(targetS: number | null): number | null {
+  if (targetS == null || !Number.isFinite(targetS)) return null;
+  const list = rowSKmList();
+  let firstS: number | null = null;
+  let lastS: number | null = null;
+  for (const s of list) if (s != null) { firstS = s; break; }
+  for (let i = list.length - 1; i >= 0; i--) if (list[i] != null) { lastS = list[i]; break; }
+  if (firstS == null || lastS == null) return null;
+  const increasing = lastS >= firstS;
+  // Dernière ligne atteinte dans le sens du tableau.
+  let candidate: number | null = null;
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    if (s == null) continue;
+    if (increasing ? s <= targetS : s >= targetS) candidate = i;
+  }
+  if (candidate == null) {
+    let best = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      if (s == null) continue;
+      const d = Math.abs(s - targetS);
+      if (d < best) { best = d; candidate = i; }
+    }
+  }
+  return candidate;
+}
+
 function findRowIndexFromPk(targetPk: number | null): number | null {
   if (targetPk == null || !Number.isFinite(targetPk)) return null;
 
@@ -5998,7 +6090,17 @@ const isRelock = acceptedMode === "relock";
   " isRelock=",
   isRelock
 );
-        const idx = findRowIndexFromPk(pk);
+        // 10/10 — placement par s_km quand le moteur a ACCEPTÉ le fix (continuité vérifiée) ;
+        // sinon (saut rejeté, PK figé) on garde l'ancienne recherche par PK.
+        const pkDecisionReason = (detail as any)?.pkDecision?.reason ?? null;
+        const sKmForRows =
+          (pkDecisionReason == null || pkDecisionReason === "accepted") &&
+          typeof (detail as any)?.s_km === "number" &&
+          Number.isFinite((detail as any).s_km)
+            ? ((detail as any).s_km as number)
+            : null;
+        const idxFromS = sKmForRows != null ? findRowIndexFromS(sKmForRows) : null;
+        const idx = idxFromS != null ? idxFromS : findRowIndexFromPk(pk);
         if (idx != null) {
           const entry = rawEntries[idx];
                     // ✅ Buffer index FT calculé (pour diagnostiquer un "idx bloqué")
@@ -6076,6 +6178,34 @@ const isRelock = acceptedMode === "relock";
             if (isNewAnchor) {
               lastAnchoredRowRef.current = idx;
 
+              // 10/10 — PREMIER ancrage depuis le Play / le redémarrage à chaud : si la ligne est
+              // déjà dépassée (> 150 m), « maintenant - heure de la ligne » surestime le retard
+              // du temps de trajet depuis cette ligne (+4 au lieu de +3 pendant 90 s, 9705).
+              //  - delta antérieur conservé (redémarrage à chaud) : on le garde, on le resynchronise ;
+              //  - sinon : delta interpolé entre cette ligne et la suivante dotée d'une heure.
+              const firstAnchor = lastIdx == null;
+              const keepDeltaAfterReset = keepDeltaAfterResetRef.current;
+              if (firstAnchor) keepDeltaAfterResetRef.current = false;
+              let passedKm = 0;
+              let nextHourRow: { idx: number; min: number; s: number } | null = null;
+              const rowSList = rowSKmList();
+              const rowS = rowSList[idx] ?? null;
+              if (firstAnchor && sKmForRows != null && rowS != null) {
+                let fS: number | null = null;
+                let lS: number | null = null;
+                for (const s of rowSList) if (s != null) { fS = s; break; }
+                for (let i = rowSList.length - 1; i >= 0; i--) if (rowSList[i] != null) { lS = rowSList[i]; break; }
+                const dir = fS != null && lS != null && lS < fS ? -1 : 1;
+                passedKm = (sKmForRows - rowS) * dir;
+                for (let j = idx + 1; j < rawEntries.length; j++) {
+                  const sj = rowSList[j];
+                  if (sj == null) continue;
+                  const mj = parseHoraToMinutes(resolveHoraForRowIndex(j));
+                  if (mj != null) { nextHourRow = { idx: j, min: mj, s: sj }; break; }
+                }
+              }
+              const firstAnchorAlreadyPassed = firstAnchor && passedKm > 0.15;
+
               const lastDeltaRecalage = lastDeltaRecalageRef.current;
               const gpsRecalageBlockedByManual =
                 lastDeltaRecalage != null &&
@@ -6094,7 +6224,33 @@ const isRelock = acceptedMode === "relock";
               const blockedByStopOrStandby =
                 standbyLockedRowRef.current != null || stationArretRef.current != null;
 
-              if (gpsRecalageBlockedByManual) {
+              if (firstAnchorAlreadyPassed && keepDeltaAfterReset && autoScrollBaseRef.current) {
+                const base = autoScrollBaseRef.current;
+                recalibrateFromRowRef.current = idx;
+                window.dispatchEvent(
+                  new CustomEvent("ft:delta:base-sync", {
+                    detail: { firstHoraMin: base.firstHoraMin, realMinFloat: base.realMinFloat },
+                  })
+                );
+                const fd = base.fixedDelay;
+                const text = fd === 0 ? "0 min" : fd > 0 ? `+ ${fd} min` : `- ${-fd} min`;
+                if (effectiveFtViewRef.current === "ES") {
+                  window.dispatchEvent(
+                    new CustomEvent("lim:schedule-delta", {
+                      detail: { text, isLargeDelay: Math.abs(fd) >= 5, deltaSec: base.deltaSec },
+                    })
+                  );
+                }
+                logTestEvent("ft:delta:gps-recalage:skip", {
+                  rowIndex: idx,
+                  pk: entry?.pk ?? null,
+                  dependencia: entry?.dependencia ?? null,
+                  reason: "first_anchor_row_already_passed_keep_delta",
+                  passedKm: Math.round(passedKm * 1000) / 1000,
+                  fixedDelay: fd,
+                  deltaSec: base.deltaSec,
+                });
+              } else if (gpsRecalageBlockedByManual) {
                 logTestEvent("ft:delta:gps-recalage:skip", {
                   rowIndex: idx,
                   pk: entry?.pk ?? null,
@@ -6155,7 +6311,8 @@ const isRelock = acceptedMode === "relock";
                   // on l'utilise pour le calcul du delta (objectif : heure réelle d'arrivée).
                   let usedMinutes: number | null = departMinutes;
                   let usedHoraText: string = departHoraText;
-                  let usedSource: "DEPART" | "ARRIVEE" = "DEPART";
+                  let usedSource: "DEPART" | "ARRIVEE" | "INTERPOLE" = "DEPART";
+                  let anchorType: "REAL_DEPARTURE_TIME" | "INTERPOLATED_FIRST_ANCHOR" = "REAL_DEPARTURE_TIME";
 
                   let arrivalMinutes: number | null = null;
                   const arrivalList = arrivalEventsRef.current || [];
@@ -6169,6 +6326,31 @@ const isRelock = acceptedMode === "relock";
                     usedMinutes = arrivalMinutes;
                     usedHoraText = formatMinutesToHora(arrivalMinutes);
                     usedSource = "ARRIVEE";
+                  }
+
+                  // 10/10 — premier ancrage sur une ligne déjà dépassée, sans delta antérieur :
+                  // heure attendue interpolée entre le DÉPART de cette ligne et la ligne suivante
+                  // dotée d'une heure, au prorata de la distance parcourue.
+                  if (
+                    firstAnchorAlreadyPassed &&
+                    departMinutes != null &&
+                    nextHourRow != null &&
+                    rowS != null &&
+                    sKmForRows != null &&
+                    nextHourRow.min >= departMinutes
+                  ) {
+                    const span = nextHourRow.s - rowS;
+                    const frac = span !== 0 ? Math.max(0, Math.min(1, (sKmForRows - rowS) / span)) : 0;
+                    const interp = departMinutes + frac * (nextHourRow.min - departMinutes);
+                    if (Number.isFinite(interp)) {
+                      usedMinutes = interp;
+                      const hh = Math.floor(interp / 60);
+                      const mm = Math.floor(interp % 60);
+                      const ss = Math.round((interp - Math.floor(interp)) * 60);
+                      usedHoraText = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+                      usedSource = "INTERPOLE";
+                      anchorType = "INTERPOLATED_FIRST_ANCHOR";
+                    }
                   }
 
                   if (usedMinutes != null) {
@@ -6266,10 +6448,14 @@ const isRelock = acceptedMode === "relock";
                       usedMinutes,
 
                       // debug ancrage
-                      anchorType: "REAL_DEPARTURE_TIME",
+                      anchorType,
                       departHora: departHoraText || null,
                       departMinutes: departMinutes ?? null,
                       arrivalMinutes,
+                      sKm: sKmForRows != null ? Math.round(sKmForRows * 1000) / 1000 : null,
+                      rowSKm: rowS != null ? Math.round(rowS * 1000) / 1000 : null,
+                      passedKm: firstAnchor ? Math.round(passedKm * 1000) / 1000 : null,
+                      nextHourRowIndex: nextHourRow ? nextHourRow.idx : null,
                     });
                   } else {
                     logTestEvent("ft:delta:gps-recalage:skip", {

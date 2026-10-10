@@ -233,6 +233,36 @@ export function networkFromSkm(s_km: number | null | undefined): "ADIF" | "LFP" 
   return null
 }
 
+// 10/10 — INVERSE : PK d'un réseau métier -> s_km, sur les MÊMES ancres que la projection.
+// Sert à placer les lignes de la fiche train sur l'abscisse du ruban, là où le GPS les verra
+// vraiment (Perpignan RFN 467,5 -> s 187,7 où le train s'arrête). Hors des ancres : extrapolation
+// linéaire sur le segment d'extrémité, bornée à S_FROM_PK_EXTRAPOLATE_MARGIN_KM.
+const S_FROM_PK_EXTRAPOLATE_MARGIN_KM = 5
+export function sKmFromNetworkPk(net: "ADIF" | "LFP" | "RAC" | "RFN", pk: number): number | null {
+  if (!Number.isFinite(pk)) return null
+  const ref: PkRef = net === "LFP" ? "LFP_MAIN" : net === "RAC" ? "LFP_LINK" : net
+  const anchors = ANCHORS_BY_REF[ref]
+  if (!Array.isArray(anchors) || anchors.length < 2) return null
+  for (let i = 0; i < anchors.length - 1; i++) {
+    const a = anchors[i]
+    const b = anchors[i + 1]
+    if (a.pk === b.pk) continue
+    const lo = Math.min(a.pk, b.pk)
+    const hi = Math.max(a.pk, b.pk)
+    if (pk >= lo && pk <= hi) return a.s_km + ((pk - a.pk) / (b.pk - a.pk)) * (b.s_km - a.s_km)
+  }
+  const first = anchors[0]
+  const last = anchors[anchors.length - 1]
+  const increasing = last.pk >= first.pk
+  const beforeStart = increasing ? pk < first.pk : pk > first.pk
+  const a = beforeStart ? anchors[0] : anchors[anchors.length - 2]
+  const b = beforeStart ? anchors[1] : anchors[anchors.length - 1]
+  if (a.pk === b.pk) return null
+  const s = a.s_km + ((pk - a.pk) / (b.pk - a.pk)) * (b.s_km - a.s_km)
+  if (s < first.s_km - S_FROM_PK_EXTRAPOLATE_MARGIN_KM || s > last.s_km + S_FROM_PK_EXTRAPOLATE_MARGIN_KM) return null
+  return s
+}
+
 const REF_SWITCH_BACKTRACK_HYSTERESIS_KM = 0.35
 
 type RibbonTravelDir = 1 | -1 | 0

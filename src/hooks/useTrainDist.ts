@@ -117,6 +117,9 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
   const lastFrozenDistRef       = useRef<number | null>(null);  // gel tunnel
   const lastHoraLogAtRef        = useRef<number>(0);  // throttle log diagnostic horaire
   const empiricalAnchorRef      = useRef<{ pk: number; minFloat: number } | null>(null);  // ancrage courbe empirique
+  // 10/10 — dernière position donnée par la COURBE (et son instant), pour que le repli à vitesse
+  // constante reparte de là et non de l'ancre (saut de 650 m à la fin de la courbe, Perthus 9705).
+  const lastEmpiricalRef        = useRef<{ anchorPk: number; pk: number; minFloat: number } | null>(null);
   // Offset d'ancrage du repli THEORIQUE : l'horaire fait PROGRESSER le train depuis la
   // derniere position connue au lieu de le placer en absolu (evite le saut a la bascule).
   const horaireOffsetRef        = useRef<number | null>(null);
@@ -434,6 +437,9 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
           estPk = empiricalPkAtElapsed(anchor.pk, elapsedSec, variant);
           if (estPk != null) estSource = "empirique";
         }
+        if (estPk != null) {
+          lastEmpiricalRef.current = { anchorPk: anchor.pk, pk: estPk, minFloat: nowMinFloat() };
+        }
         // 01/10 — ESTIME À VITESSE CONSTANTE, en repli de la courbe empirique et AVANT
         // l'horaire théorique. Le 01/10 dans le Perthus (9707), sans courbe, l'horaire
         // supposait 146 km/h là où le train roulait à 288 : 4,9 km de retard d'estimation
@@ -441,7 +447,11 @@ export function useTrainDist(points: TDPoint[], active: boolean): TrainDistResul
         if (estPk == null) {
           const v = lastGpsSpeedKmhRef.current;
           if (v != null && v >= 5) {
-            let u = anchor.pk + uDir * (v / 3600) * elapsedSec;
+            // 10/10 — continuité : on repart de la DERNIÈRE position empirique de cette ancre
+            // (et de son instant), pas de l'ancre elle-même.
+            const le = lastEmpiricalRef.current;
+            const from = le && le.anchorPk === anchor.pk ? le : { pk: anchor.pk, minFloat: anchor.minFloat };
+            let u = from.pk + uDir * (v / 3600) * ((nowMinFloat() - from.minFloat) * 60);
             // Jamais au-delà du prochain arrêt commercial : le train s'y arrêtera.
             const anchorDist = (anchor.pk - pk0) * uDir;
             const nextStop = points

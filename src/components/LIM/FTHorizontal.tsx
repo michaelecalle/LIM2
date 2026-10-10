@@ -884,8 +884,9 @@ export default function FTHorizontal() {
         .ft-h-kmtick { stroke: #00000066; stroke-width: 1.4; }
         .dark .ft-h-kmtick { stroke: #ffffff80; }
         .ft-h-tick { stroke: currentColor; stroke-width: 1.5; }
-        /* 10/10 — heures et kilometres agrandis de moitie : illisibles en cabine a 10 px. */
-        .ft-h-pk { font-size: 15px; fill: currentColor; text-anchor: middle; }
+        /* 10/10 — heures agrandies de moitie (illisibles en cabine a 10 px) ; les PK
+           restent a leur taille d'origine (essai a 15 px abandonne le jour meme). */
+        .ft-h-pk { font-size: 10px; fill: currentColor; text-anchor: middle; }
         .ft-h-name { font-size: 11px; font-weight: 700; fill: currentColor; text-anchor: middle; }
         .ft-hs-dot { stroke: #333; stroke-width: 1.5; }
         .dark .ft-hs-dot { stroke: #ddd; }
@@ -898,7 +899,7 @@ export default function FTHorizontal() {
         .dark .ft-h-pk, .dark .ft-h-name, .dark .ft-hs-dep, .dark .ft-hs-arr, .dark .ft-h-note
           { stroke: #111827; }
         .ft-h-ltv-tick { stroke: #f97316; stroke-width: 1.5; }
-        .ft-h-ltv-pk { font-size: 13px; fill: #f97316; text-anchor: middle; font-weight: 700; }
+        .ft-h-ltv-pk { font-size: 9px; fill: #f97316; text-anchor: middle; font-weight: 700; }
         .ft-h-ltv-vbox { fill: #fff7ed; stroke: #f97316; stroke-width: 1; }
         .ft-h-ltv-vlabel { font-size: 11px; font-weight: 700; fill: #ea580c; text-anchor: middle; }
         .ft-h-relief { fill: rgb(150,150,150); fill-opacity: 0.11; stroke: rgb(150,150,150); stroke-opacity: 0.11; stroke-width: 1; }
