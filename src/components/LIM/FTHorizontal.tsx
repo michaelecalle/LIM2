@@ -27,6 +27,7 @@ const LABEL_SAFE_RIGHT_PX = 70;
 const DOT_R         = 5;
 const SCROLL_EASE   = 0.12;   // lissage rAF (même valeur que FT_SCROLL_EASE)
 const RUBBER_BAND_MS = 5000;  // délai avant ressort (ms)
+const RESSORT_DUREE_MS = 1500; // 10/10 — durée du retour glissé (même valeur que FT.tsx)
 const RELIEF_FLOOR_KMH = 10;  // plancher : le creux se pose au niveau ~10 km/h (mi-chemin 0–20)
 const RELIEF_BAND_KMH  = 60;  // amplitude du relief en équivalent km/h (sommet ≈ floor + band)
 
@@ -487,6 +488,10 @@ export default function FTHorizontal() {
   const isProgrammaticScrollRef = useRef(false);
   const isManualScrollRef       = useRef(false);
   const manualScrollTimerRef    = useRef<number | null>(null);
+  // 10/10 — retour « ressort » en cours : point de départ et instant de départ. Pendant ce
+  // retour, la boucle rAF suit une courbe en temps (ease in-out, RESSORT_DUREE_MS) au lieu
+  // du lissage exponentiel, qui ramenait le train en une demi-seconde — comme en vertical.
+  const ressortRef              = useRef<{ from: number; t0: number } | null>(null);
   const autoScrollEnabledRef    = useRef(false);
 
   useEffect(() => { autoScrollEnabledRef.current = trainDist.autoScrollEnabled; }, [trainDist.autoScrollEnabled]);
@@ -547,8 +552,15 @@ export default function FTHorizontal() {
         const target = targetScrollLeftRef.current;
         const cur    = displayScrollLeftRef.current;
         const diff   = target - cur;
-        // Resync immédiat si saut énorme (changement de train, seek replay…)
-        if (Math.abs(diff) > div.clientWidth * 1.5) {
+        const ressort = ressortRef.current;
+        if (ressort) {
+          // Retour glissé en temps (la cible peut bouger pendant le retour : on la relit).
+          const k = Math.min(1, (performance.now() - ressort.t0) / RESSORT_DUREE_MS);
+          const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+          displayScrollLeftRef.current = ressort.from + (target - ressort.from) * e;
+          if (k >= 1) ressortRef.current = null;
+        } else if (Math.abs(diff) > div.clientWidth * 1.5) {
+          // Resync immédiat si saut énorme (changement de train, seek replay…)
           displayScrollLeftRef.current = target;
         } else {
           displayScrollLeftRef.current = cur + diff * SCROLL_EASE;
@@ -575,14 +587,18 @@ export default function FTHorizontal() {
     }
     // Scroll déclenché par l'utilisateur
     isManualScrollRef.current = true;
+    ressortRef.current = null;   // un retour en cours est interrompu : l'utilisateur reprend la main
     if (manualScrollTimerRef.current != null) clearTimeout(manualScrollTimerRef.current);
     manualScrollTimerRef.current = window.setTimeout(() => {
       manualScrollTimerRef.current = null;
       if (trainDist.standbyPointIndex !== null) return; // stand-by : pas de ressort
       isManualScrollRef.current = false;
-      // Resync displayScrollLeft pour reprendre le lerp depuis la position actuelle
+      // Resync displayScrollLeft pour reprendre depuis la position actuelle, en retour glissé
       const div = scrollDivRef.current;
-      if (div) displayScrollLeftRef.current = div.scrollLeft;
+      if (div) {
+        displayScrollLeftRef.current = div.scrollLeft;
+        ressortRef.current = { from: div.scrollLeft, t0: performance.now() };
+      }
     }, RUBBER_BAND_MS);
   }, [trainDist.standbyPointIndex]);
 
