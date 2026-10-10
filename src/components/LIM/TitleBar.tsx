@@ -269,6 +269,12 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   // l'ancien format (ligne, composition US/UM) n'ont pas d'équivalent 2026
   // et restent vides — volontaire, sert à voir ce qui reste à adapter.
   const ligneFt2026 = useLigneFt2026TrainOptions()
+  // 10/10 — dernier train réellement démarré (option 2026 complète : matériel, longueur,
+  // masse…). C'est LUI que le redémarrage à chaud doit recharger — pas une recherche dans
+  // `manualImportTrainOptions`, qui vient de l'ANCIEN normalisé : le 10/10 (9710), après un
+  // redémarrage à chaud, le bloc info avait perdu « matériel » et « longueur — masse ».
+  const lastStartedTrainRef = useRef<ManualTrainOption | null>(null)
+
   const effective2026TrainOptions = useMemo<ManualTrainOption[]>(
     () =>
       sdmTrain
@@ -2108,7 +2114,10 @@ ${coords}
       const d = (e as CustomEvent).detail ?? {}
       const rawNum = String(d.trainNumber ?? '').trim()
       const ltvPdfFile: File | null = d.ltvPdfFile instanceof File ? d.ltvPdfFile : null
+      // 10/10 — d'abord le normalisé 2026 (matériel, longueur, masse), l'ancien en repli.
       const train =
+        effective2026TrainOptions.find((t) => t.trainNumber === rawNum) ??
+        effective2026TrainOptions.find((t) => Number(t.trainNumber) === Number(rawNum)) ??
         manualImportTrainOptions.find((t) => t.trainNumber === rawNum) ??
         manualImportTrainOptions.find((t) => Number(t.trainNumber) === Number(rawNum)) ??
         null
@@ -2158,7 +2167,7 @@ ${coords}
     window.addEventListener('replay:start-2026', handler as EventListener)
     return () => window.removeEventListener('replay:start-2026', handler as EventListener)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manualImportTrainOptions, testRecording, simulationEnabled])
+  }, [effective2026TrainOptions, manualImportTrainOptions, testRecording, simulationEnabled])
 
   // Pendant le replay, le player/overlay dispatch lim:pdf-mode-change avec
   // source='replay' ou 'replay-catchup'. TitleBar étant la source de vérité de
@@ -3358,6 +3367,7 @@ ${coords}
     }
   ) => {
     const trainNumber = train.trainNumber
+    lastStartedTrainRef.current = train
     const parsedFields = {
       ...buildManualParsedFields(train),
       source: options.source,
@@ -4131,13 +4141,15 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
       return
     }
     const num = trainDisplay
-    const train = num
-      ? (manualImportTrainOptions.find((t) => t.trainNumber === num) ??
-         manualImportTrainOptions.find((t) => Number(t.trainNumber) === Number(num)) ??
-         null)
-      : null
+    const train =
+      lastStartedTrainRef.current ??
+      (num
+        ? (effective2026TrainOptions.find((t) => t.trainNumber === num) ??
+           effective2026TrainOptions.find((t) => Number(t.trainNumber) === Number(num)) ??
+           null)
+        : null)
     if (!train) {
-      window.alert('Redémarrage impossible : train courant introuvable dans le normalisé.')
+      window.alert('Redémarrage impossible : train courant introuvable dans le normalisé 2026.')
       return
     }
     const ok = window.confirm(
