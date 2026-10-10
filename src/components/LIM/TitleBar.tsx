@@ -639,6 +639,9 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
 
   // État de l’upload au moment du Stop ('idle' | 'uploading' | 'success' | 'failed')
   const [stopUploadStatus, setStopUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'failed'>('idle')
+  // 10/10 — zip du trajet conservé après un ÉCHEC d'envoi, pour pouvoir RETENTER l'envoi
+  // automatique (ex. après avoir partagé la connexion du smartphone) avant l'export local.
+  const pendingStopZipRef = useRef<{ blob: Blob; filename: string } | null>(null)
 
   useEffect(() => {
     window.dispatchEvent(
@@ -1543,6 +1546,33 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
 
     const zipBlob = await buildZipBlob(entries)
     return { blob: zipBlob, filename: zipFilename }
+  }
+
+  // 10/10 — Nouvelle tentative d'envoi automatique du zip conservé après un échec.
+  const retryStopUpload = async (): Promise<void> => {
+    const z = pendingStopZipRef.current
+    if (!z) {
+      setStopUploadStatus('idle')
+      return
+    }
+    setStopUploadStatus('uploading')
+    const ok = await uploadZipToGitHub(z.blob, z.filename)
+    if (ok) {
+      pendingStopZipRef.current = null
+      setStopUploadStatus('success')
+      await new Promise<void>(resolve => window.setTimeout(resolve, 3000))
+      setStopUploadStatus('idle')
+    } else {
+      setStopUploadStatus('failed')
+    }
+  }
+
+  // 10/10 — Export local du zip conservé (feuille de partage), sur demande seulement.
+  const localExportPendingZip = async (): Promise<void> => {
+    const z = pendingStopZipRef.current
+    if (z) await doLocalExport(z.blob, z.filename)
+    pendingStopZipRef.current = null
+    setStopUploadStatus('idle')
   }
 
   // Lance l’export local (share sheet iPad ou téléchargement fallback).
@@ -5172,30 +5202,52 @@ setAutoScrollStartedOnce(next)
             </button>
           )}
 
-          {/* STOP — visible dès qu’un trajet est en cours, mode test ou non */}
-          {pdfMode !== 'blue' && (
-            stopUploadStatus !== 'idle' ? (
-              /* Indicateur de statut pendant / après l’upload */
-              <div
-                className={`h-8 px-3 text-xs rounded-md font-semibold flex items-center gap-1.5 ${
-                  stopUploadStatus === 'success'
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                    : stopUploadStatus === 'failed'
-                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'
-                    : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700/60 dark:text-zinc-300'
-                }`}
+          {/* Indicateur d’upload des logs — reste visible après le retour à l’accueil (10/10) :
+              en cas d’échec, deux boutons « ↻ Renvoyer » (nouvelle tentative d’envoi
+              automatique) et « 📥 Local » (feuille de partage). */}
+          {stopUploadStatus === 'failed' ? (
+            <div className="h-8 flex items-center gap-1" role="group" aria-label="Envoi des logs échoué">
+              <button
+                type="button"
+                onClick={() => { void retryStopUpload() }}
+                className="h-8 px-2 text-xs rounded-md font-semibold bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
+                title="L’envoi automatique des logs a échoué — réessayer (après avoir rétabli le réseau)"
+                aria-label="Réessayer l’envoi des logs"
               >
-                {stopUploadStatus === 'uploading' && (
-                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                  </svg>
-                )}
-                {stopUploadStatus === 'uploading' && 'Envoi en cours…'}
-                {stopUploadStatus === 'success' && '✅ Logs envoyés'}
-                {stopUploadStatus === 'failed' && '📥 Export local…'}
-              </div>
-            ) : (
+                ↻ Renvoyer
+              </button>
+              <button
+                type="button"
+                onClick={() => { void localExportPendingZip() }}
+                className="h-8 px-2 text-xs rounded-md font-semibold bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
+                title="Exporter les logs localement (feuille de partage)"
+                aria-label="Export local des logs"
+              >
+                📥 Local
+              </button>
+            </div>
+          ) : stopUploadStatus !== 'idle' ? (
+            /* Indicateur de statut pendant / après l’upload */
+            <div
+              className={`h-8 px-3 text-xs rounded-md font-semibold flex items-center gap-1.5 ${
+                stopUploadStatus === 'success'
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                  : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700/60 dark:text-zinc-300'
+              }`}
+            >
+              {stopUploadStatus === 'uploading' && (
+                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+              )}
+              {stopUploadStatus === 'uploading' && 'Envoi en cours…'}
+              {stopUploadStatus === 'success' && '✅ Logs envoyés'}
+            </div>
+          ) : null}
+
+          {/* STOP — visible dès qu’un trajet est en cours, mode test ou non */}
+          {pdfMode !== 'blue' && stopUploadStatus === 'idle' && (
               <button
                 type="button"
                 onClick={async () => {
@@ -5242,6 +5294,7 @@ setAutoScrollStartedOnce(next)
                     }
                   }
 
+                  let uploadFailed = false
                   if (!wasReplaySessionRef.current && !demoActive) {
                     const zipData = await buildCurrentZipBundle()
                     if (zipData) {
@@ -5251,13 +5304,17 @@ setAutoScrollStartedOnce(next)
                         setStopUploadStatus('success')
                         await new Promise<void>(resolve => window.setTimeout(resolve, 3000))
                       } else {
+                        // 10/10 — échec : on GARDE le zip et l'indicateur passe en « échec » avec
+                        // deux boutons (↻ Renvoyer / 📥 Local). Plus d'export local d'office :
+                        // l'utilisateur peut d'abord rétablir le réseau (partage de connexion).
+                        pendingStopZipRef.current = zipData
                         setStopUploadStatus('failed')
-                        await doLocalExport(zipData.blob, zipData.filename)
+                        uploadFailed = true
                       }
                     }
                   }
 
-                  setStopUploadStatus('idle')
+                  if (!uploadFailed) setStopUploadStatus('idle')
 
                   // Reset mode demo : exporter le log de debug localement (diagnostic iPad)
                   if (demoActive) {
@@ -5313,7 +5370,6 @@ setAutoScrollStartedOnce(next)
               >
                 <IconStopSign />
               </button>
-            )
           )}
           {/* Paramètres */}
           <details ref={settingsDetailsRef} className="relative">
