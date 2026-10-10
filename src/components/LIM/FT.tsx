@@ -1894,6 +1894,13 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   const lastLatLonChangeAtRef = React.useRef<number>(0);
   // Garde "une seule évaluation d'arrêt GPS par épisode d'immobilité" (réarmé quand le train rebouge).
   const gpsArretEvaluatedRef = React.useRef<boolean>(false);
+  // 10/10 — instant du PREMIER rejet « approche trop rapide » de l'épisode d'immobilité.
+  // Au-delà de GPS_ARRET_DWELL_MS d'immobilité avec des fixes frais et précis, on arme
+  // quand même : un train qui ne bouge pas depuis 20 s avec un GPS qui parle n'est pas un
+  // gel de tunnel. Constaté le 10/10 (9710) : arrêt de 292 s en pleine ligne jamais détecté,
+  // parce que les 8 s de freinage précédant l'immobilisation faisaient 28 km/h de moyenne
+  // (seuil 12) et qu'on n'évaluait qu'UNE fois par épisode.
+  const gpsArretDwellSinceRef = React.useRef<number | null>(null);
   // s_km du dernier arrêt armé : garde-fou anti double-détection "au même endroit" (#20)
   // (sortie lente de gare / micro-arrêts sur aiguilles).
   const lastArretSKmRef = React.useRef<number | null>(null);
@@ -1926,6 +1933,7 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
       lastLonRef.current = null;
       lastLatLonChangeAtRef.current = 0;
       gpsArretEvaluatedRef.current = false;
+      gpsArretDwellSinceRef.current = null;
       freezeArretEvaluatedRef.current = false;
       lastArretSKmRef.current = null;
       recentFixesRef.current = [];
@@ -2232,6 +2240,7 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   // sur une gare dont on vient de confirmer le départ (log 9705 : re-posé à 938 m de Figueres).
   const STANDBY_REARM_MIN_KM = 3.0;
   const GPS_STOP_DECEL_MAX_KMH = 12; // approche: vitesse max (décél vers ~0) pour valider un arrêt (#20)
+  const GPS_ARRET_DWELL_MS = 20_000; // 10/10 — immobilité (fixes vivants) qui vaut approche, cf. gpsArretDwellSinceRef
   const GPS_STOP_APPROACH_ACC_MAX_M = 18; // approche: précision max (rejette la dégradation type tunnel) (#20)
   const GPS_ARRET_DEPARTURE_MAX_KM = 0.5; // reprise au-delà => c'était un tunnel, pas un arrêt → annuler sans recalage (#20)
 
@@ -5040,6 +5049,7 @@ const isRelock = acceptedMode === "relock";
               lastLonRef.current = curLon;
               // Le train bouge réellement -> on réarme l'évaluation d'arrêt GPS.
               gpsArretEvaluatedRef.current = false;
+              gpsArretDwellSinceRef.current = null;
             }
           } else {
             lastLatRef.current = curLat;
@@ -5560,11 +5570,17 @@ const isRelock = acceptedMode === "relock";
         isStop &&
         stationArretRef.current === null &&
         gpsArretEvaluatedRef.current === false &&
+        (gpsArretDwellSinceRef.current == null ||
+          nowTs - gpsArretDwellSinceRef.current >= GPS_ARRET_DWELL_MS) &&
         typeof pk === "number" &&
         Number.isFinite(pk)
       ) {
-        // une seule évaluation par épisode d'immobilité (réarmé quand le train rebouge)
+        // une seule évaluation par épisode d'immobilité (réarmé quand le train rebouge) —
+        // sauf après un rejet d'approche : seconde évaluation à l'échéance du dwell (10/10).
         gpsArretEvaluatedRef.current = true;
+        const dwelled =
+          gpsArretDwellSinceRef.current != null &&
+          nowTs - gpsArretDwellSinceRef.current >= GPS_ARRET_DWELL_MS;
 
         const currentSKm =
           typeof (detail as any).s_km === "number" && Number.isFinite((detail as any).s_km)
@@ -5667,16 +5683,27 @@ const isRelock = acceptedMode === "relock";
           const nearest = findNearestCommercialStopRowIndex(pk, STATION_PROX_KM, {
             includeDepartureOnly: true,
           });
-          if (!approachOk && !nearest) {
-            logTestEvent("gps:arret:rejected-approach", {
-              approachSpeedKmh,
-              approachAccMax,
-              maxKmh: GPS_STOP_DECEL_MAX_KMH,
-              maxAccM: GPS_STOP_APPROACH_ACC_MAX_M,
-              currentSKm,
-              pk,
-              reason: "no_nearby_station",
-            });
+          // 10/10 — l'immobilité prolongée avec des fixes vivants vaut approche.
+          const approachOkEff = approachOk || (dwelled && fixesLive);
+          if (!approachOkEff && !nearest) {
+            if (gpsArretDwellSinceRef.current == null) {
+              // Premier rejet : on garde l'épisode ouvert et on reviendra à l'échéance.
+              gpsArretDwellSinceRef.current = nowTs;
+              gpsArretEvaluatedRef.current = false;
+              logTestEvent("gps:arret:rejected-approach", {
+                approachSpeedKmh,
+                approachAccMax,
+                maxKmh: GPS_STOP_DECEL_MAX_KMH,
+                maxAccM: GPS_STOP_APPROACH_ACC_MAX_M,
+                currentSKm,
+                pk,
+                reason: "no_nearby_station",
+                reevaluateInMs: GPS_ARRET_DWELL_MS,
+              });
+            } else {
+              // Échéance atteinte mais fixes pas vivants (gel type tunnel) : on abandonne.
+              logTestEvent("gps:arret:rejected-dwell", { currentSKm, pk, fixesLive });
+            }
           } else {
             if (!approachOk) {
               logTestEvent("gps:arret:approach-warning-near-station", {
@@ -5717,6 +5744,7 @@ const isRelock = acceptedMode === "relock";
               currentSKm,
               accuracyM,
               deptThreshKm,
+              viaDwell: dwelled && !approachOk,
             });
           }
         }
