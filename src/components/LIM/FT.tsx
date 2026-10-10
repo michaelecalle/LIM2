@@ -131,6 +131,9 @@ type StationArretState = {
   // 30/09 — horodatage du dernier pas de mouvement, pour re-dater un premier
   // mouvement fantome (cf. GPS_ARRET_FIRST_MOVE_STALE_MS).
   lastStepTs?: number | null;
+  // 10/10 — debut de l'immobilite (horloge), pour ajouter la DUREE d'un arret de pleine
+  // ligne au delta au redemarrage.
+  stoppedAtMs?: number | null;
 };
 
 type FtLtvRowForFtDisplay = {
@@ -1304,6 +1307,8 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   // constante en tunnel (repli avant l'horaire théorique).
   const lastGpsSpeedKmhRef = React.useRef<number | null>(null);
   const lastSpeedFixRef = React.useRef<{ t: number; s: number } | null>(null);
+  // 10/10 — vue courante (ES/FR) en ref, pour l'affichage du delta depuis le handler GPS.
+  const effectiveFtViewRef = React.useRef<"ES" | "FR">("ES");
   const lastEmpVertLogAtRef = React.useRef<number>(0);
 
   // Pendant RED : on applique un offset à l'horaire pour partir exactement du Y courant
@@ -2621,6 +2626,8 @@ detail: { enabled: true, standby: true, origine: "auto" },
     window.addEventListener("lim:soft-reset", handler);
     return () => window.removeEventListener("lim:soft-reset", handler);
   }, []);
+
+  useEffect(() => { effectiveFtViewRef.current = effectiveFtView; }, [effectiveFtView]);
 
     // ✅ Replay / Simulation : sélection et recalage "déterministes" sans clic DOM
   // Le player peut injecter : window.dispatchEvent(new CustomEvent("ft:standby:set", { detail: { rowIndex } }))
@@ -5728,6 +5735,7 @@ const isRelock = acceptedMode === "relock";
               firstMovementTime: null,
               prevSKm: currentSKm,
               consecutiveSteps: 0,
+              stoppedAtMs: lastLatLonChangeAtRef.current > 0 ? lastLatLonChangeAtRef.current : nowTs,
             };
 
             window.dispatchEvent(
@@ -5900,11 +5908,58 @@ const isRelock = acceptedMode === "relock";
                   setSelectedRowIndex(null);
                   forceRealignOnResumeRef.current = true;
                 } else {
-                  // PLEINE LIGNE : aucune heure de référence -> PAS de recalage, reprise GPS sèche.
-                  logTestEvent("gps:arret:departure-no-recal", {
-                    reason: "pleine-ligne",
-                    frozenSKm: arret.frozenSKm,
-                  });
+                  // PLEINE LIGNE : aucune heure de référence -> pas de RECALAGE. Mais (10/10) la
+                  // DURÉE de l'arrêt est une perte de temps certaine : on l'ajoute au delta, et
+                  // la base horaire recule d'autant (les deux moteurs, via ft:delta:base-sync).
+                  // Le 30/09 (Vilademuls, 4 min 45 d'arrêt), le delta est resté à +2 jusqu'à la
+                  // ligne horaire suivante avant de sauter à +8.
+                  const departureClockMs = arret.firstMovementClockMs ?? firstMovementTime;
+                  const stoppedAtMs = arret.stoppedAtMs ?? null;
+                  const stopSec =
+                    stoppedAtMs != null
+                      ? Math.max(0, Math.round((departureClockMs - stoppedAtMs) / 1000))
+                      : 0;
+                  const base = autoScrollBaseRef.current;
+                  if (base && stopSec >= 10) {
+                    const deltaSec = (base.deltaSec ?? 0) + stopSec;
+                    const fixedDelay = Math.round(deltaSec / 60);
+                    const realMinFloat = base.realMinFloat + stopSec / 60;
+                    autoScrollBaseRef.current = {
+                      ...base,
+                      realMinInt: Math.floor(realMinFloat),
+                      realMinFloat,
+                      deltaSec,
+                      fixedDelay,
+                    };
+                    window.dispatchEvent(
+                      new CustomEvent("ft:delta:base-sync", {
+                        detail: { firstHoraMin: base.firstHoraMin, realMinFloat },
+                      })
+                    );
+                    const text =
+                      fixedDelay === 0 ? "0 min" : fixedDelay > 0 ? `+ ${fixedDelay} min` : `- ${-fixedDelay} min`;
+                    if (effectiveFtViewRef.current === "ES") {
+                      window.dispatchEvent(
+                        new CustomEvent("lim:schedule-delta", {
+                          detail: { text, isLargeDelay: Math.abs(fixedDelay) >= 5, deltaSec },
+                        })
+                      );
+                    }
+                    logTestEvent("gps:arret:departure-delta-shift", {
+                      stopSec,
+                      deltaSecBefore: base.deltaSec ?? null,
+                      deltaSecAfter: deltaSec,
+                      fixedDelay,
+                      frozenSKm: arret.frozenSKm,
+                    });
+                  } else {
+                    logTestEvent("gps:arret:departure-no-recal", {
+                      reason: "pleine-ligne",
+                      frozenSKm: arret.frozenSKm,
+                      stopSec,
+                      hasBase: !!base,
+                    });
+                  }
                 }
               }
             }
