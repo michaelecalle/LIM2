@@ -2945,6 +2945,21 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
         }
 
         recalibrateFromRowRef.current = null;
+      } else if (
+        stationArretRef.current !== null &&
+        stationArretRef.current.kind === "station" &&
+        stationArretRef.current.frozenRowIndex === 0
+      ) {
+        // 11/10 — Play « prêt au départ » à l'ORIGINE alors qu'un arrêt GPS est déjà armé sur
+        // la gare de départ (9710 du 11/10 : Play à 12:04:55, départ réel 12:06:29) : on
+        // calculait ici un delta « − 1 min » sur l'heure du clic, qui n'a aucun sens tant que
+        // le train n'est pas parti. Pas de base : le delta naît au départ confirmé
+        // (chemin gps:arret:departure-confirmed → recalibrateAtTimeRef), comme en stand-by.
+        autoScrollBaseRef.current = null;
+        logTestEvent("ft:delta:play-skip-arret-origine", {
+          frozenRowIndex: stationArretRef.current.frozenRowIndex,
+          frozenSKm: stationArretRef.current.frozenSKm,
+        });
       } else {
         autoScrollBaseRef.current = captureBaseFromFirstRow();
       }
@@ -5824,14 +5839,29 @@ const isRelock = acceptedMode === "relock";
             }
           } else {
             if (!approachOk) {
-              logTestEvent("gps:arret:approach-warning-near-station", {
-                approachSpeedKmh,
-                approachAccMax,
-                currentSKm,
-                pk,
-                stationRow: nearest!.rowIndex,
-                stationDeltaKm: nearest!.deltaKm,
-              });
+              if (nearest) {
+                logTestEvent("gps:arret:approach-warning-near-station", {
+                  approachSpeedKmh,
+                  approachAccMax,
+                  currentSKm,
+                  pk,
+                  stationRow: nearest.rowIndex,
+                  stationDeltaKm: nearest.deltaKm,
+                });
+              } else {
+                // 11/10 — BUG (9710 du 11/10, arrêt de 7 min au pk 627,09 avant le souterrain
+                // de Barcelone, jamais détecté) : ici on arrive aussi par le chemin « dwell »
+                // (immobilité prolongée + fixes vivants) SANS gare proche, et `nearest!` était
+                // déréférencé à null → TypeError, fin du handler, aucun arrêt armé, aucun log.
+                logTestEvent("gps:arret:dwell-validated", {
+                  approachSpeedKmh,
+                  approachAccMax,
+                  currentSKm,
+                  pk,
+                  accuracyM,
+                  dwellMs: gpsArretDwellSinceRef.current != null ? nowTs - gpsArretDwellSinceRef.current : null,
+                });
+              }
             }
             lastArretSKmRef.current = currentSKm;
             const deptThreshKm = Math.max(0.075, (4 * (accuracyM ?? 0)) / 1000);
