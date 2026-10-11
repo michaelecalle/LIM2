@@ -1,4 +1,5 @@
 // src/lib/testLogger.ts
+import { BUILD_TIME } from '../buildInfo'
 
 export type TestLogEvent = {
   t: string // horodatage ISO
@@ -34,6 +35,7 @@ export function startTestSession(label?: string): void {
 
   // on loggue un événement spécial "start"
   logTestEvent('session:start', {
+    build: BUILD_TIME,
     sessionId: currentSessionId,
     label: label ?? null,
   })
@@ -95,6 +97,7 @@ export function buildTestLogFile(): {
   const headerLines: string[] = []
   headerLines.push(`# LIM test log`)
   headerLines.push(`# sessionId=${sessionId}`)
+  headerLines.push(`# build=${BUILD_TIME}`) // 11/10 — build qui tournait (BUILD_TIME de src/buildInfo.ts)
   headerLines.push(`# startedAt=${events[0]?.t ?? ''}`)
   headerLines.push(`# endedAt=${events[events.length - 1]?.t ?? ''}`)
   headerLines.push(`# totalEvents=${events.length}`)

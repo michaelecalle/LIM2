@@ -3101,9 +3101,17 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
           if (matchingArrival) {
             // Garde-fou PK : si le dernier PK GPS connu est a plus de 10 km du PK de la gare,
             // ne pas declencher le standby (delta faux ou position incoherente).
-            const frozenPk = lastGpsPositionRef.current?.pk
+            // 11/10 — comparaison en U (pkInternal) des DEUX cotes : le PK GPS est le PK brut du
+            // reseau (RFN 467,5 a Perpignan) alors que `entry.pk` de la fiche est deja l'U (805,5).
+            // Le 9705 du 11/10 a vu son stand-by d'arrivee a Perpignan rejete pour « 338 km ».
+            const frozenPkRaw = lastGpsPositionRef.current?.pk
+            const frozenPk =
+              frozenPkRaw != null && Number.isFinite(frozenPkRaw)
+                ? pkToU(frozenPkRaw, guessNetFromPk(frozenPkRaw))
+                : null
             const stationPkRaw = rawEntries[matchingArrival.rowIndex]?.pk
-            const stationPk = stationPkRaw != null ? Number(stationPkRaw) : NaN
+            const stationPkU = getRowU(rawEntries[matchingArrival.rowIndex])
+            const stationPk = stationPkU ?? (stationPkRaw != null ? Number(stationPkRaw) : NaN)
             const HORAIRE_STANDBY_MAX_PK_DIST_KM = 10
 
             if (
@@ -3115,6 +3123,7 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
               logTestEvent("ft:auto:arrival-stop:rejected-pk-too-far", {
                 rowIndex: matchingArrival.rowIndex,
                 frozenPk,
+                frozenPkRaw,
                 stationPk,
                 distKm: Math.abs(frozenPk - stationPk),
                 threshold: HORAIRE_STANDBY_MAX_PK_DIST_KM,
