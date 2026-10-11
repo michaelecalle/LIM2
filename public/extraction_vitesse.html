@@ -101,7 +101,7 @@
   <div class="row" style="margin-top:6px">
     <div class="muted" id="roiInfo">
       <b class="warn">Étape 1 :</b> trace au doigt ou à la souris, sur l'image de gauche, un rectangle
-      <b>autour de la pastille de vitesse</b> (sur téléphone : pince à deux doigts pour zoomer sur la pastille, puis trace à un doigt ; ensuite, tire un coin pour ajuster, ou l'intérieur pour déplacer), assez large pour la contenir même si le cadrage
+      <b>autour de la pastille de vitesse</b> (sur téléphone : pince à deux doigts pour zoomer sur la pastille, puis trace à un doigt ; ensuite, tire une poignée de bord pour ajuster un côté, ou l'intérieur pour déplacer), assez large pour la contenir même si le cadrage
       bouge un peu — inutile d'englober tout le cadran. Avec le suivi activé, cette zone ne sert
       que d'amorce et de repli : elle se resserre et suit la pastille dès la première lecture.
     </div>
@@ -490,13 +490,28 @@ function cvPos(e){
 // déplace, tracer AILLEURS en crée un nouveau. Rayon de prise : 22 px d'écran, convertis
 // en pixels de canvas selon le zoom courant (le doigt a toujours la même largeur).
 const POIGNEE_RAYON_ECRAN = 22;
-function poigneeRayon(){ return POIGNEE_RAYON_ECRAN * frameCv.width / Math.max(1, frameCv.clientWidth); }
+// 11/10 — divisé par l'échelle du zoom à deux doigts (visualViewport.scale) : clientWidth ne
+// change pas quand on pince, les poignées grossissaient d'autant (capture du 11/10 : à 5×,
+// un carré de 110 px d'écran couvrait toute la pastille).
+function zoomVisuel(){ return (window.visualViewport && window.visualViewport.scale) || 1; }
+function poigneeRayon(){ return POIGNEE_RAYON_ECRAN * frameCv.width / Math.max(1, frameCv.clientWidth) / zoomVisuel(); }
 function coinsDe(r){ return [{x:r.x0,y:r.y0},{x:r.x1,y:r.y0},{x:r.x0,y:r.y1},{x:r.x1,y:r.y1}]; }
+// 11/10 — poignées DE BORD (idées de l'utilisateur) : une par côté, DÉPORTÉE à l'extérieur
+// du cadre, et chacune ne déplace QUE son bord (gauche/droite = largeur, haut/bas = hauteur).
+// Elles ne masquent pas la pastille et le doigt n'est pas sur le trait.
+// `poigneeDecal()` = distance bord -> centre de la poignée.
+const POIGNEES = [ {cle:'x0', sx:-1, sy:0}, {cle:'x1', sx:1, sy:0}, {cle:'y0', sx:0, sy:-1}, {cle:'y1', sx:0, sy:1} ];
+function poigneeDecal(){ return poigneeRayon()*0.6; }
+function centresPoignees(r){
+  const d = poigneeDecal(), cx=(r.x0+r.x1)/2, cy=(r.y0+r.y1)/2;
+  return POIGNEES.map(p=>({ x: p.sx ? (p.sx<0 ? r.x0 : r.x1) + p.sx*d : cx,
+                            y: p.sy ? (p.sy<0 ? r.y0 : r.y1) + p.sy*d : cy }));
+}
 function drawPoignees(r){
   if(!r) return;
-  const half = Math.max(4, poigneeRayon()*0.35);
+  const half = Math.max(2, poigneeRayon()*0.35);
   frameCx.fillStyle='#fbbf24';
-  for(const c of coinsDe(r)) frameCx.fillRect(c.x-half, c.y-half, 2*half, 2*half);
+  for(const c of centresPoignees(r)) frameCx.fillRect(c.x-half, c.y-half, 2*half, 2*half);
 }
 function drawRoiTemp(r){
   drawFrame();
@@ -505,7 +520,7 @@ function drawRoiTemp(r){
   drawPoignees(r);
 }
 let dragMode=null;        // 'new' | 'move' | 'corner'
-let dragCoin=-1;          // index du coin tiré (0 HG, 1 HD, 2 BG, 3 BD)
+let dragCoin=-1;          // index de la poignée de bord tirée (0 gauche, 1 droite, 2 haut, 3 bas)
 let dragRoi0=null;        // cadre au début du geste (pour 'move' et 'corner')
 function roiNormalisee(r){
   return { x0:Math.min(r.x0,r.x1), y0:Math.min(r.y0,r.y1), x1:Math.max(r.x0,r.x1), y1:Math.max(r.y0,r.y1) };
@@ -518,9 +533,10 @@ function roiPendantGeste(b){
     const y0=Math.max(0, Math.min(frameCv.height-h, dragRoi0.y0+dy));
     return { x0, y0, x1:x0+w, y1:y0+h };
   }
-  // coin : le coin opposé reste fixe
-  const fixe = coinsDe(dragRoi0)[3-dragCoin];
-  return roiNormalisee({x0:fixe.x, y0:fixe.y, x1:b.x, y1:b.y});
+  // bord : seul le bord tiré bouge, il suit le doigt avec le même décalage que la poignée
+  const d = poigneeDecal(), pg = POIGNEES[dragCoin], r = {...dragRoi0};
+  r[pg.cle] = pg.sx ? b.x - pg.sx*d : b.y - pg.sy*d;
+  return roiNormalisee(r);
 }
 // Evenements de POINTEUR : souris, doigt et stylet passent par le meme chemin (les
 // evenements souris seuls ignorent le toucher sur smartphone). La capture garde le geste
@@ -538,7 +554,7 @@ frameCv.addEventListener('pointerdown', e=>{
   dragMode='new'; dragCoin=-1; dragRoi0=null;
   if(roi){
     const R=poigneeRayon();
-    coinsDe(roi).forEach((c,i)=>{ if(dragCoin<0 && Math.hypot(c.x-dragA.x, c.y-dragA.y)<=R){ dragCoin=i; } });
+    centresPoignees(roi).forEach((c,i)=>{ if(dragCoin<0 && Math.hypot(c.x-dragA.x, c.y-dragA.y)<=R){ dragCoin=i; } });
     if(dragCoin>=0){ dragMode='corner'; dragRoi0={...roi}; }
     else if(dragA.x>roi.x0 && dragA.x<roi.x1 && dragA.y>roi.y0 && dragA.y<roi.y1){ dragMode='move'; dragRoi0={...roi}; }
   }
