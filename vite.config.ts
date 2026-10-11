@@ -52,6 +52,11 @@ export default defineConfig({
         // moteur qui manquait. Le limite par défaut (2 Mio) exclurait ce fichier.
         globPatterns: ['**/*.{js,css,html,svg,mjs}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        // 11/10 — l'extracteur vidéo (public/extraction_vitesse.html) est une page autonome
+        // hébergée ici pour avoir une vraie origine https (sur le téléphone, ouvert depuis
+        // Téléchargements, Chrome refusait le verrou de veille : « Wake Lock permission
+        // request denied »). Il ne doit pas être remplacé par index.html à la navigation.
+        navigateFallbackDenylist: [/^\/extraction_vitesse\.html/],
       },
       manifest: {
         name: 'LIM2',

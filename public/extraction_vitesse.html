@@ -1,0 +1,1602 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extraction courbe de vitesse — LIM</title>
+<style>
+  body{font:14px/1.5 system-ui,sans-serif;margin:0;padding:16px;background:#14171c;color:#e6e6e6}
+  h1{font-size:17px;margin:0 0 4px}
+  .sub{color:#9aa3ad;font-size:12px;margin-bottom:14px}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+  .card{background:#1c2027;border:1px solid #2c323b;border-radius:10px;padding:12px;margin-bottom:12px}
+  label{display:inline-flex;align-items:center;gap:6px;margin-right:14px;color:#c8ced6}
+  input[type=number]{width:70px}
+  input,button,select{background:#252b33;color:#e6e6e6;border:1px solid #39414c;border-radius:6px;padding:6px 9px;font:inherit}
+  button{cursor:pointer;font-weight:600}
+  button.primary{background:#2563eb;border-color:#2563eb;color:#fff}
+  button:disabled{opacity:.45;cursor:default}
+  canvas{background:#000;border:1px solid #39414c;border-radius:6px;display:block}
+  #frameCv{width:min(520px,100%);height:auto;touch-action:pinch-zoom}  /* un doigt : trace le cadre (pas de defilement) ; deux doigts : zoom de la page pour viser la pastille */
+  #maskCv{width:260px;height:auto}
+  #badgeCv{width:220px;height:auto;image-rendering:pixelated}
+  .glyphs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .glyphs canvas{width:44px;height:60px;image-rendering:pixelated;background:#fff}
+  .big{font-size:34px;font-weight:700;letter-spacing:2px}
+  .muted{color:#9aa3ad;font-size:12px}
+  .warn{color:#fbbf24}
+  .err{color:#f87171}
+  .ok{color:#4ade80}
+  #bar{height:8px;background:#252b33;border-radius:4px;overflow:hidden;margin:8px 0}
+  #barIn{height:100%;width:0;background:#2563eb}
+  #learn{display:none;border-color:#fbbf24}
+  #learn.on{display:block}
+  .keys{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+  .keys button{width:44px;height:40px;font-size:17px}
+  table{border-collapse:collapse;font-size:12px}
+  td,th{border:1px solid #2c323b;padding:2px 7px;text-align:right}
+  #plot{width:100%;height:130px;background:#0f1216;border:1px solid #2c323b;border-radius:6px}
+  /* 10/10 — ecran etroit (smartphone) : tout s'empile, cibles tactiles plus grandes */
+  @media (max-width:700px){
+    body{padding:8px}
+    .row{gap:8px}
+    .card{padding:10px;margin-bottom:10px}
+    label{margin-right:6px}
+    input,button,select{min-height:38px;padding:6px 10px}
+    input[type=number]{width:64px}
+    input[type=file]{max-width:100%}
+    #frameCv{width:100%}
+    #maskCv{width:48%}
+    #badgeCv{width:48%}
+    #scrub{min-width:0!important;width:100%}
+    .row>.card{flex:1 1 100%}
+    .big{font-size:28px}
+  }
+</style>
+
+<h1>Extraction de la courbe de vitesse</h1>
+<div class="sub">
+  Tout se passe <b>localement</b> : la vidéo ne quitte pas cet appareil, rien n'est envoyé sur le réseau.
+  Sortie = un fichier CSV <code>temps,vitesse</code>.
+</div>
+
+<div class="card">
+  <div class="row" style="align-items:center">
+    <input type="file" id="file" accept="video/*" multiple>
+    <label>Pas d'échantillonnage <input type="number" id="step" value="1" min="0.2" max="10" step="0.2"> s</label>
+    <label>Début <input type="number" id="tStart" value="0" min="0" step="1"> s</label>
+    <label>Fin (0 = tout) <input type="number" id="tEnd" value="0" min="0" step="1"> s</label>
+    <label title="Oriente l'image AVANT toute lecture. À 90° et 270°, largeur et hauteur sont échangées : les zones de lecture doivent être redéfinies pour cette orientation.">Rotation
+      <select id="rotation">
+        <option value="0">0° (à l'endroit)</option>
+        <option value="90">90° horaire</option>
+        <option value="180">180° (tête en bas)</option>
+        <option value="270">90° anti-horaire</option>
+      </select>
+    </label>
+  </div>
+  <div class="muted" style="margin-top:4px" id="clipsInfo"></div>
+  <div class="row" style="align-items:center;margin-top:10px">
+    <label>Seuil de clarté <input type="number" id="thLum" value="170" min="80" max="250"></label>
+    <input type="range" id="thLumRange" min="80" max="250" value="170" style="width:150px" title="Glisse : le masque se met à jour en direct">
+    <label title="Seuil LOCAL adaptatif : chaque pixel comparé à la moyenne de son voisinage. Rattrape les chiffres faiblement contrastés / pastilles surexposées, là où un seuil global échoue. Recommandé si l'exposition varie ou si l'image est délavée."><input type="checkbox" id="autoTh"> Seuil auto (local)</label>
+    <label title="Recolle les traits cassés (ex. anneau du 0 rompu en haut/bas) avant de découper les chiffres. À activer si des chiffres se scindent dans le masque. Change la forme des glyphes → apprends des modèles frais avec cette option."><input type="checkbox" id="reconnect"> Reconnecter les traits</label>
+    <label>Hauteur mini d'un chiffre (px) <input type="number" id="thMinH" value="14" min="5" max="120"></label>
+    <label title="Recommandé : dès que la pastille est lue, la hauteur mini devient 0,6 × la hauteur de ses chiffres (mesurée en pixels natifs de la vidéo, reconvertie à chaque image). Les étiquettes du cadran et les textes des boutons, plus petits, ne sont plus candidats. La valeur du champ reste un plancher ; après un abandon du suivi, on y revient."><input type="checkbox" id="autoMinH" checked> Hauteur mini auto (0,6 × pastille)</label>
+    <button id="btnTest">Tester la détection sur l'image courante</button>
+    <button id="btnRoi">Effacer la zone</button>
+    <label title="La zone de lecture se recentre sur la pastille trouvée à l'image précédente, au lieu de rester fixe dans le cadre. Indispensable quand le cadrage dérive : sans ça, il faut élargir la zone, et les graduations du cadran ETCS entrent en concurrence avec les chiffres."><input type="checkbox" id="suivrePastille" checked> Suivre la pastille</label>
+    <label title="Si coché, l'extraction s'arrête sur chaque image illisible pour te laisser saisir la vitesse à la main. Décoche pour ignorer silencieusement (utile en tunnel)."><input type="checkbox" id="askIllisible" checked> Demander la saisie manuelle si illisible</label>
+    <label title="Si coché, l'extraction s'arrête quand une lecture provoque un saut de vitesse invraisemblable (ex. 250 lu 25 : un 0 manquant), pour te laisser corriger."><input type="checkbox" id="askIllogical" checked> Vérifier les sauts invraisemblables</label>
+    <label title="Recommandé : l'extraction ne s'interrompt JAMAIS. Les images douteuses sont mises de côté et présentées EN BLOC à la fin, pour une saisie rapide au clavier. (Ignore alors les deux cases ci-dessus.)"><input type="checkbox" id="deferReview" checked> Réviser à la fin (ne pas interrompre)</label>
+  </div>
+  <div class="row" style="align-items:center;margin-top:10px">
+    <span class="muted">Se déplacer :</span>
+    <button id="btnM60">−60 s</button>
+    <button id="btnM10">−10 s</button>
+    <button id="btnP10">+10 s</button>
+    <button id="btnP60">+60 s</button>
+    <label>aller à <input type="number" id="goto" value="0" min="0" step="1"> s</label>
+    <button id="btnGo">OK</button>
+    <input type="range" id="scrub" min="0" max="1000" value="0" style="flex:1;min-width:240px">
+    <span class="muted" id="tNow">t = 0 s</span>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <div class="muted" id="roiInfo">
+      <b class="warn">Étape 1 :</b> trace au doigt ou à la souris, sur l'image de gauche, un rectangle
+      <b>autour de la pastille de vitesse</b> (sur téléphone : pince à deux doigts pour zoomer sur la pastille, puis trace à un doigt ; ensuite, tire un coin pour ajuster, ou l'intérieur pour déplacer), assez large pour la contenir même si le cadrage
+      bouge un peu — inutile d'englober tout le cadran. Avec le suivi activé, cette zone ne sert
+      que d'amorce et de repli : elle se resserre et suit la pastille dès la première lecture.
+    </div>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <button id="btnRun" class="primary" disabled>Lancer l'extraction</button>
+    <button id="btnPause" disabled>Pause</button>
+    <button id="btnStop" disabled>Arrêter</button>
+    <button id="btnCsv" disabled>Exporter CSV</button>
+    <button id="btnTpl">Exporter modèles</button>
+    <button id="btnJrn" title="Télécharge le journal interne du suivi (une ligne par image analysée) — à envoyer pour diagnostic">Journal de suivi</button>
+    <button id="btnReset">Effacer les modèles</button>
+    <input type="file" id="tplIn" accept=".json" style="max-width:190px">
+  </div>
+  <div id="bar"><div id="barIn"></div></div>
+  <div id="status" class="muted">Choisis une vidéo pour commencer.</div>
+</div>
+
+<div class="row">
+  <div class="card">
+    <div class="muted">Image courante + pastille détectée</div>
+    <canvas id="frameCv"></canvas>
+  </div>
+  <div class="card">
+    <div class="muted">Masque de détection</div>
+    <canvas id="maskCv"></canvas>
+  </div>
+  <div class="card">
+    <div class="muted">Pastille recadrée</div>
+    <canvas id="badgeCv"></canvas>
+    <div class="big" id="readOut">—</div>
+    <div class="muted" id="conf"></div>
+    <div class="glyphs" id="glyphs"></div>
+  </div>
+</div>
+
+<div class="card" id="learn">
+  <b class="warn">Vitesse à confirmer</b>
+  <div class="muted" id="learnMsg">Ce symbole n'est pas encore reconnu. Clique sur le chiffre correspondant (il sera mémorisé).</div>
+  <div class="row" style="margin-top:8px;align-items:center">
+    <canvas id="learnCv" style="width:60px;height:80px;image-rendering:pixelated;background:#fff"></canvas>
+    <div class="keys" id="keys"></div>
+    <button id="btnSkip">Ignorer cette image</button>
+  </div>
+  <div class="row" style="margin-top:10px;align-items:center;border-top:1px solid #2c323b;padding-top:10px">
+    <label>Ou saisis la vitesse lue à l'écran : <input type="number" id="manualV" min="0" max="400" step="1" style="width:80px"></label>
+    <button id="btnManual" class="primary">Valider cette vitesse</button>
+    <button id="btnKeep" style="display:none">Garder la valeur détectée</button>
+    <span class="muted">(saisie manuelle prise telle quelle pour cette image — aucun modèle n'est appris)</span>
+  </div>
+</div>
+
+<div class="card" id="review" style="display:none;border-color:#fbbf24">
+  <b class="warn">Révision groupée</b> — <span id="revProg" class="muted"></span>
+  <div class="muted" id="revMsg" style="margin-top:4px"></div>
+  <div class="row" style="margin-top:8px;align-items:center">
+    <label>Vitesse lue à l'écran : <input type="number" id="revV" min="0" max="400" step="1" style="width:90px"></label>
+    <button id="revOk" class="primary">Valider (Entrée) →</button>
+    <button id="revEmpty">Laisser vide →</button>
+    <button id="revPrev">← Précédent</button>
+    <button id="revDone">Terminer la révision</button>
+  </div>
+  <div class="muted" style="margin-top:6px">La pastille de l'image en cours est affichée plus haut (« Pastille recadrée »). Tape le nombre puis <b>Entrée</b> pour enchaîner. Champ vide = Entrée laisse l'image vide.</div>
+</div>
+
+<div class="card">
+  <div class="muted">Courbe de vitesse (aperçu)</div>
+  <canvas id="plot"></canvas>
+  <div id="summary" class="muted"></div>
+</div>
+
+<video id="vid" style="display:none" muted playsinline></video>
+
+<script>
+// ============================================================================
+// Extraction de la vitesse depuis une video du compteur ETCS.
+//
+// Principe (apres avoir constate que TOUTE detection automatique globale echoue :
+// l'ecran ETCS contient toujours un autre objet qui satisfait le critere choisi --
+// pictogramme jaune, aiguille collee a la pastille, cadre du bouton "Especial"...) :
+//
+//  1) L'UTILISATEUR trace UNE FOIS un rectangle autour du cadran (ROI). Toute
+//     l'analyse est ensuite strictement limitee a cette zone : plus aucun concurrent.
+//  2) Dans la ROI : on remplit le fond sombre depuis le bord de la zone ; les pixels
+//     sombres NON atteints sont donc enfermes dans du clair = les chiffres.
+//     Les boucles du 0/6/8/9 restent claires, donc la forme interne est preservee.
+//  3) On garde le groupe de composantes les plus hautes, alignees = le nombre.
+//  4) Chaque chiffre est normalise puis compare a des modeles appris sur TA video
+//     (police fixe => reconnaissance fiable, rapide, sans aucune dependance).
+// ============================================================================
+
+const $ = id => document.getElementById(id);
+const vid = $('vid');
+const frameCv = $('frameCv'), frameCx = frameCv.getContext('2d', {willReadFrequently:true});
+const maskCv = $('maskCv'), maskCx = maskCv.getContext('2d');
+const badgeCv = $('badgeCv'), badgeCx = badgeCv.getContext('2d');
+const learnCv = $('learnCv'), learnCx = learnCv.getContext('2d');
+const plot = $('plot'), plotCx = plot.getContext('2d');
+
+const WORK_W = 1100;          // largeur de travail (compromis vitesse/precision)
+const GW = 16, GH = 24;       // taille normalisee d'un chiffre
+const MATCH_MAX = 0.22;       // distance max acceptee (0 = identique)
+const MAX_DKMH_PER_S = 8;     // saut de vitesse juge invraisemblable
+
+let templates = [];           // {digit:'0'..'9', data:Float32Array}
+let results = [];             // {t, v, conf, flag}
+let running = false, abortFlag = false, paused = false;
+// ---------- VERROU DE VEILLE (11/10) ----------
+// Sur Android, l'extinction automatique de l'ecran gele l'onglet et arrete l'analyse
+// (constate le 11/10). Le verrou de veille garde l'ecran allume TANT QUE l'extraction
+// tourne, et il est relache a la fin ou a l'arret. Il est perdu quand on quitte l'onglet :
+// on le redemande au retour si l'extraction est toujours en cours. Sans effet sur PC.
+let wakeLock = null;
+async function prendreVerrouVeille(){
+  if(!('wakeLock' in navigator)){
+    $('status').innerHTML += ` <span class="warn">(verrou de veille indisponible ici : regle la mise en veille du telephone)</span>`;
+    return;
+  }
+  try{ wakeLock = await navigator.wakeLock.request('screen');
+       wakeLock.addEventListener('release', ()=>{ wakeLock=null; }); }
+  catch(e){ wakeLock=null; $('status').innerHTML += ` <span class="warn">(verrou de veille refuse : ${e.message})</span>`; }
+}
+function lacherVerrouVeille(){ if(wakeLock){ try{ wakeLock.release(); }catch(_){} wakeLock=null; } }
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && running && !wakeLock) prendreVerrouVeille(); });
+const AUTO_PAUSE_UNREAD = 8;   // images illisibles d'affilee avant pause automatique
+let pendingResolve = null;
+
+// 10/10 — MODÈLES EMBARQUÉS (modeles_chiffres.json du 20/07, 10 chiffres) : plus rien à
+// importer. Sur Android, un fichier ouvert depuis Téléchargements arrive dans Chrome sous
+// une adresse content:// pour laquelle rien n'est mémorisé d'une ouverture à l'autre
+// (constaté le 10/10 : « Modèles connus : 2 » sur le téléphone). Les modèles appris en
+// plus sont ajoutés par-dessus quand le stockage du navigateur fonctionne.
+const TEMPLATES_EMBARQUES = [{"digit":"0","data":[0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,0,0,0,0,1,1,1,1,1,0,0,1,1,1,1,1,0,0,0,0,1,1,1,1,1,0,0,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,0,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,0,0,1,1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,1,1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0,1,1,1,1,1,0,0,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0]},{"digit":"1","data":[0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]},{"digit":"2","data":[0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]},{"digit":"3","data":[0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,0,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0]},{"digit":"4","data":[0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,0,1,1,1,1,0,0,0,0,0,0,0,1,1,1,0,0,1,1,1,1,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,0,0,0,0,0,0,1,1,1,0,0,0,1,1,1,1,0,0,0,0,0,1,1,1,1,0,0,0,1,1,1,1,1,0,0,0,0,1,1,1,0,0,0,0,1,1,1,1,1,0,0,0,1,1,1,0,0,0,0,0,1,1,1,1,1,0,0,1,1,1,1,0,0,0,0,0,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0]},{"digit":"5","data":[0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0]},{"digit":"6","data":[0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,0,0,0,0,1,1,1,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,1,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,1,1,1,1,0,0,0,0,1,1,1,1,1,0,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,0,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,0,0,0,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0]},{"digit":"7","data":[0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0]},{"digit":"8","data":[0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,0,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,0,0,1,1,1,1,0,0,0,0,0,1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0,0,1,1,1,1,1,0,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,0,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,0,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,0,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,0,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,0,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0]},{"digit":"9","data":[0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,0,0,1,1,1,1,0,0,0,1,1,1,1,1,0,0,0,0,0,1,1,1,1,0,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,0,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,0,1,1,1,1,0,0,0,0,0,1,1,1,1,1,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,1,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,1,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,1,1,0,0,0,0,0,0,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0]}];
+const toTemplate = t => ({digit:t.digit, data:Float32Array.from(t.data)});
+const sameTemplate = (a,b) => a.digit===b.digit && a.data.length===b.data.length && a.data.every((v,i)=>v===b.data[i]);
+templates = TEMPLATES_EMBARQUES.map(toTemplate);
+try {
+  const s = localStorage.getItem('lim-vit-templates');
+  if (s) for (const t of JSON.parse(s).map(toTemplate)) { if (!templates.some(e => sameTemplate(e,t))) templates.push(t); }
+} catch {}
+
+function saveTemplates(){
+  try { localStorage.setItem('lim-vit-templates', JSON.stringify(templates.map(t=>({digit:t.digit,data:Array.from(t.data)})))); } catch {}
+}
+
+// Glyphes de la DERNIERE image traitee (pour apprendre depuis une vitesse saisie).
+let lastGlyphs = [];
+// Apprentissage depuis une vitesse SAISIE a la main : si le nombre de glyphes detectes
+// egale le nombre de chiffres de la vitesse, on associe chaque glyphe a son chiffre et on
+// memorise. Compte different (transition, chiffre manquant) => on n'apprend rien (aucun
+// risque de memoriser un mauvais modele). Vaut en cours d'extraction ET en revision.
+function learnFromSpeed(speed){
+  const s = String(speed);
+  if(!lastGlyphs || lastGlyphs.length !== s.length) return 0;
+  for(let i=0;i<lastGlyphs.length;i++) templates.push({ digit:s[i], data:Float32Array.from(lastGlyphs[i].g) });
+  saveTemplates();
+  return lastGlyphs.length;
+}
+
+// ---------- timeline virtuelle (plusieurs fichiers GoPro concatenes) ----------
+// Une GoPro decoupe un meme parcours en GX01xxxx, GX02xxxx... On les enchaine en
+// UNE seule timeline continue : le temps global T = temps depuis le tout debut,
+// mappe vers (clip, temps local). Le CSV sort avec un t_s continu de bout en bout.
+let clips = [];          // {name, url, duration, startT, w, h}
+let totalDur = 0;        // duree totale (s) de tous les clips
+let curClip = -1;        // index du clip actuellement charge dans <video>
+let curGlobalT = 0;      // position courante sur la timeline globale (s)
+
+function clipAt(T){
+  for(let i=0;i<clips.length;i++){
+    if(T < clips[i].startT + clips[i].duration) return i;
+  }
+  return Math.max(0, clips.length-1);
+}
+function loadClip(i){
+  if(i===curClip) return Promise.resolve();
+  resetSuivi();   // autre clip = autre cadrage : le suivi ne vaut plus rien
+  return new Promise((res,rej)=>{
+    const on=()=>{ vid.removeEventListener('loadedmetadata',on); curClip=i; res(); };
+    vid.addEventListener('loadedmetadata',on);
+    vid.onerror=()=>rej(new Error('clip'));
+    vid.src=clips[i].url;
+  });
+}
+
+// ---------- rotation 180 (camera montee tete en bas) ----------
+// 14/08 : 0 / 90 / 180 / 270 au lieu de la seule case 180°. L'ancienne clé
+// 'lim-vit-flip' est relue pour ne pas perdre le réglage existant.
+let rotation = 0;
+try {
+  const r = localStorage.getItem('lim-vit-rot');
+  if(r!==null) rotation = parseInt(r,10)||0;
+  else if(localStorage.getItem('lim-vit-flip')==='1') rotation = 180;
+} catch {}
+$('rotation').value = String(rotation);
+const srcCv = document.createElement('canvas');
+const srcCx = srcCv.getContext('2d', {willReadFrequently:true});
+let _srcKey = null;
+// Renvoie la source image du frame courant, TOUJOURS a l'endroit et en resolution
+// native. Sans rotation -> l'element <video> directement (chemin rapide inchange).
+function currentSource(){
+  if(!rotation) return vid;
+  const key = curClip+'@'+vid.currentTime+'@'+rotation;
+  if(_srcKey===key && srcCv.width) return srcCv;
+  const vw = vid.videoWidth, vh = vid.videoHeight;
+  // À 90° et 270°, le cadre bascule : largeur et hauteur sont échangées.
+  const quart = (rotation===90 || rotation===270);
+  srcCv.width  = quart ? vh : vw;
+  srcCv.height = quart ? vw : vh;
+  srcCx.setTransform(1,0,0,1,0,0);
+  if(rotation===90){        // horaire
+    srcCx.translate(srcCv.width, 0);
+    srcCx.rotate(Math.PI/2);
+  } else if(rotation===180){
+    srcCx.translate(srcCv.width, srcCv.height);
+    srcCx.rotate(Math.PI);
+  } else if(rotation===270){ // anti-horaire
+    srcCx.translate(0, srcCv.height);
+    srcCx.rotate(-Math.PI/2);
+  }
+  srcCx.drawImage(vid,0,0);
+  srcCx.setTransform(1,0,0,1,0,0);
+  _srcKey=key;
+  return srcCv;
+}
+$('rotation').onchange = async e => {
+  rotation = parseInt(e.target.value,10)||0;
+  try { localStorage.setItem('lim-vit-rot', String(rotation)); } catch {}
+  _srcKey=null;
+  ajusterCanvas();   // le format bascule entre paysage et portrait
+  if(clips.length){ drawFrame(); if(!running || paused) await processFrame(false); }
+};
+
+// ---------- navigation dans la video ----------
+async function gotoTime(t){
+  if(!totalDur) return;
+  // Saut manuel important : la derive de cadrage entre les deux instants peut etre
+  // de plusieurs centaines de pixels. Le suivi repart de la zone de reference.
+  if(Math.abs(t - curGlobalT) > 30) resetSuivi();
+  await seek(Math.max(0, Math.min(totalDur-0.05, t)));
+  $('goto').value = Math.round(curGlobalT);
+  $('scrub').value = Math.round(curGlobalT / totalDur * 1000);
+  $('tNow').textContent = 't = ' + curGlobalT.toFixed(0) + ' s';
+  await processFrame(false);          // apercu seul : pas d'apprentissage interactif
+}
+$('btnM60').onclick = ()=> gotoTime(curGlobalT-60);
+$('btnM10').onclick = ()=> gotoTime(curGlobalT-10);
+$('btnP10').onclick = ()=> gotoTime(curGlobalT+10);
+$('btnP60').onclick = ()=> gotoTime(curGlobalT+60);
+$('btnGo').onclick  = ()=> gotoTime(+$('goto').value);
+$('scrub').oninput  = e => { if(totalDur) $('tNow').textContent = 't = ' + Math.round(totalDur*e.target.value/1000) + ' s'; };
+$('scrub').onchange = e => { if(totalDur) gotoTime(totalDur * e.target.value/1000); };
+
+// ---------- zone d'interet (ROI), tracee a la souris, memorisee ----------
+let roi = null;
+try { const r0 = localStorage.getItem('lim-vit-roi'); if (r0) roi = JSON.parse(r0); } catch {}
+function saveRoi(){ try{ localStorage.setItem('lim-vit-roi', JSON.stringify(roi)); }catch{} }
+
+// ---------- SUIVI DE LA PASTILLE (15/08) ----------------------------------
+// PROBLEME : le cadrage derive au fil de l'enregistrement (mesure sur la video du
+// 14/08 a 09h25 : ~270 px en 38 min, soit environ 0,12 px/s en 4K). Une zone fixe
+// dans le cadre finit donc par laisser sortir la pastille. L'elargir n'est pas une
+// solution : la barre verticale ETCS et les graduations du cadran entrent alors
+// dans la zone, et leurs intervalles entre traits forment exactement le motif
+// recherche — une zone sombre encerclee de clair. Ils gagnent des que les chiffres
+// sont tronques.
+//
+// SOLUTION : la zone n'est plus fixe, elle se recentre a chaque image sur la
+// pastille trouvee a la precedente. A 1 image par seconde la derive est d'une
+// FRACTION de pixel entre deux lectures : la zone peut donc rester aussi serree
+// qu'au trace initial sans jamais decrocher. Ce n'est pas du suivi rapide, c'est
+// du rattrapage lent.
+//
+// Pourquoi la pastille comme repere plutot que le contour de l'ecran, les touches
+// F ou les LED : a 1 h 15 de cette meme video, un reflet de pare-brise voile toute
+// l'image et le panneau n'a presque plus de contour detectable. La pastille, elle,
+// reste l'objet le plus clair de l'image dans les trois conditions observees (nuit,
+// jour, voile). Et c'est ce qu'on cherche : autant suivre la cible elle-meme.
+//
+// `roi` = zone de REFERENCE tracee par l'utilisateur, jamais modifiee (c'est le
+// repli). `roiSuivi` = zone reellement analysee, recalculee apres chaque lecture.
+let roiSuivi = null;
+let suiviEchecs = 0;
+/** Hauteur de chiffre de reference, lissee : sert de test de vraisemblance. */
+let suiviRefH = null;
+/** Hauteurs mesurees d'affilee HORS bande : servent a reconnaitre un vrai changement
+ *  de cadrage (elles s'accordent entre elles) d'un accident isole (elles partent
+ *  dans tous les sens). Cf. SUIVI_RECALIBRE. */
+let suiviHorsBande = [];
+// Demi-dimensions de la zone suivie, en HAUTEURS DE CHIFFRE (cf. le recentrage
+// dans processFrame). Valeurs verifiees au banc sur la video du 14/08.
+const SUIVI_DEMI_L = 3.2;
+const SUIVI_DEMI_H = 2.2;
+const SUIVI_ECHECS_ELARGIR = 2;   // echecs avant d'elargir la recherche
+const SUIVI_ECHECS_ABANDON = 6;   // echecs avant de revenir a la zone de reference
+// ⚠️ 22/08 — LE CLIQUET. L'ancien test de vraisemblance etait `|refH - ref| <= 0,5*ref`,
+// et la zone etait dimensionnee sur la mesure BRUTE de l'image courante. Trois defauts
+// qui s'enchainent, constates sur le 9707 du 21/08 :
+//   1. une division par deux tombait PILE a la limite (|0,5H - H| = 0,5H, test <=),
+//      donc elle passait ;
+//   2. une fois passee, la moyenne glissante derivait de 4 % par image vers la mauvaise
+//      valeur ; apres ~30 images la vraie taille devenait un saut de +100 %, donc
+//      rejetee — le cliquet ne tournait que vers le bas et se verrouillait ;
+//   3. rien ne detectait le verrouillage, `suiviEchecs` ne comptant que les echecs
+//      TOTAUX de lecture. Or une zone deux fois trop petite rend encore des chiffres
+//      confiants : 150 s de palier plat a 95 km/h la ou le GPS donnait 49 de moyenne.
+// D'ou : bande en RAPPORT (pas en ecart absolu), zone dimensionnee sur la valeur
+// LISSEE, et porte de sortie pour les vrais changements de cadrage.
+const SUIVI_BANDE_MIN = 0.80;     // rapport refH / suiviRefH accepte
+const SUIVI_BANDE_MAX = 1.25;
+const SUIVI_RECALIBRE = 5;        // images hors bande, mais d'accord entre elles,
+                                  // avant d'adopter le nouveau calibre
+// ⚠️ 10/10 — PLAUSIBILITÉ DURE. La porte de sortie ci-dessus (5 mesures concordantes) admettait
+// N'IMPORTE QUEL rapport, donc un objet DEUX fois plus petit lu proprement cinq images de
+// suite devenait la nouvelle pastille : verrou statique sur l'étiquette « 400 » du cadran
+// (clip du 10/10 : caméra qui bouge, pastille sortie de la zone, 21 px lus contre 47), ou
+// sur le bouton « Especial » (9707 du 21/08). Or la pastille porte les PLUS GRANDS chiffres
+// de l'écran : un objet lu nettement plus petit n'est jamais elle. En dessous de ce rapport,
+// la lecture est REJETÉE (pas de vitesse, pas d'apprentissage) et la zone de recherche
+// s'élargit comme après un échec, jusqu'à retrouver la pastille ; au-delà de l'abandon, on
+// repart de la zone tracée avec une référence vierge. Les objets plus GRANDS gardent la
+// porte des 5 mesures (dérive de zoom, chiffre collé à l'aiguille : rien de durable).
+const SUIVI_RAPPORT_REJET = 0.60;
+// 10/10 — hauteur de référence en pixels NATIFS de la vidéo (suiviRefH est en pixels de la zone
+// analysée, dont l'échelle change avec la taille de la zone). Sert au plancher automatique
+// de hauteur de chiffre (case « Hauteur mini auto »).
+let suiviRefNative = null;
+function resetSuivi(){ roiSuivi = null; suiviEchecs = 0; suiviRefH = null; suiviRefNative = null; suiviHorsBande = []; }
+/** Pose la zone de suivi autour de la boîte lue (coords d'analyse). TAILLE PRISE SUR LA
+ *  VALEUR LISSÉE, jamais sur `refH` brute : la pastille a une taille constante, une image mal
+ *  mesurée ne doit pas pouvoir redimensionner la zone à elle seule (c'est ce point précis qui
+ *  armait le cliquet du 22/08). */
+function placerSuivi(box, map){
+  const s = map ? map.s : 1, ox = map ? map.ox : 0, oy = map ? map.oy : 0;
+  const cx = (box.x0 + box.x1)/2, cy = (box.y0 + box.y1)/2;
+  const hw = SUIVI_DEMI_L * suiviRefH, hh = SUIVI_DEMI_H * suiviRefH;
+  roiSuivi = { x0:Math.max(0,Math.round(ox + (cx-hw)/s)),
+               y0:Math.max(0,Math.round(oy + (cy-hh)/s)),
+               x1:Math.min(frameCv.width-1, Math.round(ox + (cx+hw)/s)),
+               y1:Math.min(frameCv.height-1,Math.round(oy + (cy+hh)/s)) };
+  suiviEchecs = 0;
+}
+/** Un échec de suivi : on élargit la recherche (x1,6 à partir du 2e, BORNÉ à 3 × la zone
+ *  tracée dans chaque dimension), on abandonne au 6e. Sans borne, partie d'une zone
+ *  minuscule, la recherche couvrait tout l'écran et accrochait les boutons F1-F5, dont
+ *  les pictogrammes sont PLUS HAUTS que les chiffres de la pastille (téléphone, 10/10). */
+function suiviEchec(){
+  suiviEchecs++;
+  if(suiviEchecs >= SUIVI_ECHECS_ABANDON){ resetSuivi(); return; }
+  if(suiviEchecs >= SUIVI_ECHECS_ELARGIR){
+    const b = roiSuivi || roi;
+    if(!b) return;
+    const cx=(b.x0+b.x1)/2, cy=(b.y0+b.y1)/2;
+    let hw=(b.x1-b.x0)/2*1.6, hh=(b.y1-b.y0)/2*1.6;
+    if(roi){ hw=Math.min(hw,(roi.x1-roi.x0)/2*3); hh=Math.min(hh,(roi.y1-roi.y0)/2*3); }
+    roiSuivi={ x0:Math.max(0,Math.round(cx-hw)), y0:Math.max(0,Math.round(cy-hh)),
+               x1:Math.min(frameCv.width-1,Math.round(cx+hw)),
+               y1:Math.min(frameCv.height-1,Math.round(cy+hh)) };
+  }
+}
+/** Zone effectivement analysee : le suivi s'il est actif et cale, sinon la zone tracee. */
+function roiActive(){
+  const on = $('suivrePastille') && $('suivrePastille').checked;
+  return (on && roiSuivi) ? roiSuivi : roi;
+}
+function roiText(){
+  $('roiInfo').innerHTML = roi
+    ? `Zone active : <b>${roi.x1-roi.x0}×${roi.y1-roi.y0}</b> px. Retrace un rectangle pour la modifier.`
+    : `<b class="warn">Étape 1 :</b> trace au doigt ou à la souris, sur l'image de gauche, un rectangle autour du <b>cadran de vitesse</b> (en excluant les boutons de droite et les pictogrammes du bas).`;
+}
+let dragging=false, dragA=null;
+function cvPos(e){
+  // 10/10 — offsetX/Y : position DANS l'image calculée par le navigateur lui-même, insensible
+  // au zoom à deux doigts. L'ancien calcul (clientX - getBoundingClientRect) mélangeait deux
+  // repères que Chrome Android ne fait pas coïncider pendant le zoom : le cadre tracé zoomé
+  // sur la pastille se retrouvait sur l'aiguille une fois dézoomé (captures du 10/10).
+  const kx = frameCv.width / Math.max(1, frameCv.clientWidth);
+  const ky = frameCv.height / Math.max(1, frameCv.clientHeight);
+  const ox = (typeof e.offsetX === 'number') ? e.offsetX : (e.clientX - frameCv.getBoundingClientRect().left);
+  const oy = (typeof e.offsetY === 'number') ? e.offsetY : (e.clientY - frameCv.getBoundingClientRect().top);
+  return { x: Math.round(Math.max(0, Math.min(frameCv.width,  ox * kx))),
+           y: Math.round(Math.max(0, Math.min(frameCv.height, oy * ky))) };
+}
+// ---------- POIGNÉES (10/10) ----------
+// Un cadre existant se retouche : tirer un COIN le redimensionne, tirer l'INTÉRIEUR le
+// déplace, tracer AILLEURS en crée un nouveau. Rayon de prise : 22 px d'écran, convertis
+// en pixels de canvas selon le zoom courant (le doigt a toujours la même largeur).
+const POIGNEE_RAYON_ECRAN = 22;
+function poigneeRayon(){ return POIGNEE_RAYON_ECRAN * frameCv.width / Math.max(1, frameCv.clientWidth); }
+function coinsDe(r){ return [{x:r.x0,y:r.y0},{x:r.x1,y:r.y0},{x:r.x0,y:r.y1},{x:r.x1,y:r.y1}]; }
+function drawPoignees(r){
+  if(!r) return;
+  const half = Math.max(4, poigneeRayon()*0.35);
+  frameCx.fillStyle='#fbbf24';
+  for(const c of coinsDe(r)) frameCx.fillRect(c.x-half, c.y-half, 2*half, 2*half);
+}
+function drawRoiTemp(r){
+  drawFrame();
+  frameCx.strokeStyle='#fbbf24'; frameCx.lineWidth=2;
+  frameCx.strokeRect(r.x0, r.y0, r.x1-r.x0, r.y1-r.y0);
+  drawPoignees(r);
+}
+let dragMode=null;        // 'new' | 'move' | 'corner'
+let dragCoin=-1;          // index du coin tiré (0 HG, 1 HD, 2 BG, 3 BD)
+let dragRoi0=null;        // cadre au début du geste (pour 'move' et 'corner')
+function roiNormalisee(r){
+  return { x0:Math.min(r.x0,r.x1), y0:Math.min(r.y0,r.y1), x1:Math.max(r.x0,r.x1), y1:Math.max(r.y0,r.y1) };
+}
+function roiPendantGeste(b){
+  if(dragMode==='new') return roiNormalisee({x0:dragA.x,y0:dragA.y,x1:b.x,y1:b.y});
+  if(dragMode==='move'){
+    const dx=b.x-dragA.x, dy=b.y-dragA.y, w=dragRoi0.x1-dragRoi0.x0, h=dragRoi0.y1-dragRoi0.y0;
+    const x0=Math.max(0, Math.min(frameCv.width-w,  dragRoi0.x0+dx));
+    const y0=Math.max(0, Math.min(frameCv.height-h, dragRoi0.y0+dy));
+    return { x0, y0, x1:x0+w, y1:y0+h };
+  }
+  // coin : le coin opposé reste fixe
+  const fixe = coinsDe(dragRoi0)[3-dragCoin];
+  return roiNormalisee({x0:fixe.x, y0:fixe.y, x1:b.x, y1:b.y});
+}
+// Evenements de POINTEUR : souris, doigt et stylet passent par le meme chemin (les
+// evenements souris seuls ignorent le toucher sur smartphone). La capture garde le geste
+// actif meme si le doigt sort du canvas.
+// 10/10 — PINCEMENT : dès qu'un SECOND doigt touche l'image, le geste en cours est annulé.
+// Sinon le premier doigt d'un dézoom posé dans le cadre valait un déplacement (ou, avant les
+// poignées, un petit cadre là où il avait glissé) : « quand je dézoome, je perds la pastille ».
+const pointeursActifs = new Set();
+function annulerGeste(){ dragging=false; dragMode=null; drawFrame(); if(roi) drawRoiTemp(roi); }
+frameCv.addEventListener('pointerdown', e=>{
+  pointeursActifs.add(e.pointerId);
+  if(pointeursActifs.size > 1){ annulerGeste(); return; }
+  if(!e.isPrimary) return;
+  e.preventDefault(); dragging=true; dragA=cvPos(e);
+  dragMode='new'; dragCoin=-1; dragRoi0=null;
+  if(roi){
+    const R=poigneeRayon();
+    coinsDe(roi).forEach((c,i)=>{ if(dragCoin<0 && Math.hypot(c.x-dragA.x, c.y-dragA.y)<=R){ dragCoin=i; } });
+    if(dragCoin>=0){ dragMode='corner'; dragRoi0={...roi}; }
+    else if(dragA.x>roi.x0 && dragA.x<roi.x1 && dragA.y>roi.y0 && dragA.y<roi.y1){ dragMode='move'; dragRoi0={...roi}; }
+  }
+  try{ frameCv.setPointerCapture(e.pointerId); }catch(_){}
+});
+frameCv.addEventListener('pointermove', e=>{
+  if(!dragging) return;
+  e.preventDefault();
+  drawRoiTemp(roiPendantGeste(cvPos(e)));
+});
+frameCv.addEventListener('pointercancel', e=>{ pointeursActifs.delete(e.pointerId); annulerGeste(); });
+frameCv.addEventListener('lostpointercapture', e=>{ pointeursActifs.delete(e.pointerId); });
+frameCv.addEventListener('pointerup', e=>{
+  pointeursActifs.delete(e.pointerId);
+  if(!dragging) return; dragging=false;
+  try{ frameCv.releasePointerCapture(e.pointerId); }catch(_){}
+  const b=cvPos(e);
+  // Déplacement ou coin : un simple appui (ou un début de pincement) ne vaut pas un geste —
+  // il faut avoir bougé d'au moins ~7 px d'écran.
+  if(dragMode!=='new' && Math.hypot(b.x-dragA.x, b.y-dragA.y) < poigneeRayon()*0.3){ annulerGeste(); return; }
+  const r=roiPendantGeste(b);
+  if(r.x1-r.x0<20||r.y1-r.y0<20){ annulerGeste(); return; }
+  roi=r; saveRoi(); roiText();
+  resetSuivi();   // zone modifiee = le suivi repart de zero
+  if(!running) processFrame(true); else if(paused) processFrame(false);
+});
+
+// ---------- chargement video (un ou plusieurs fichiers) ----------
+function probeMeta(url){
+  return new Promise((res,rej)=>{
+    const v=document.createElement('video'); v.muted=true; v.preload='metadata';
+    v.onloadedmetadata=()=>res({duration:v.duration, w:v.videoWidth, h:v.videoHeight});
+    v.onerror=()=>rej(new Error('meta')); v.src=url;
+  });
+}
+$('file').onchange = async e => {
+  const files=[...e.target.files]; if(!files.length) return;
+  // Tri par nom (numerique) : GX010001 < GX020001 < ... = ordre chronologique GoPro.
+  files.sort((a,b)=>a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'}));
+  $('btnRun').disabled=true;
+  $('status').textContent = 'Lecture des durées de '+files.length+' fichier(s)…';
+  clips=[]; totalDur=0; curClip=-1; curGlobalT=0; _srcKey=null;
+  try {
+    for(const f of files){
+      const url=URL.createObjectURL(f);
+      const m=await probeMeta(url);
+      clips.push({name:f.name, url, duration:m.duration, startT:totalDur, w:m.w, h:m.h});
+      totalDur+=m.duration;
+    }
+  } catch(err){ $('status').innerHTML='<span class="err">Impossible de lire un fichier vidéo.</span>'; clips=[]; return; }
+  ajusterCanvas();
+  await seek(0); drawFrame();
+  $('btnRun').disabled=false;
+  const step=+$('step').value||1;
+  const head = clips.length>1 ? `<b>${clips.length}</b> fichiers concaténés` : 'Vidéo chargée';
+  $('status').innerHTML = `${head} : <b>${clips[0].w}×${clips[0].h}</b>, durée totale <b>${totalDur.toFixed(1)} s</b> (${(totalDur/60).toFixed(1)} min). ` +
+    `À ${step}s ⇒ <b>${Math.floor(totalDur/step)}</b> images. Modèles connus : ${templates.length}.`;
+  // 10/10 — la zone tracée est mémorisée d'une vidéo à l'autre : le dire, et demander de
+  // vérifier qu'elle entoure bien la pastille de CETTE vidéo (téléphone : zone posée sur
+  // l'aiguille, tout le reste en découlait).
+  if(roi){
+    $('roiInfo').innerHTML = `<b class="warn">Zone reprise de la vidéo précédente</b> (${roi.x1-roi.x0}×${roi.y1-roi.y0} px, cadre orange) : ` +
+      `vérifie sur l'image qu'elle entoure bien la <b>pastille de vitesse</b> avec de la marge ; sinon retrace-la au doigt ou à la souris.`;
+  }
+  if(clips.length>1){
+    $('clipsInfo').innerHTML = 'Timeline : ' + clips.map((c,i)=>`${i+1}. ${c.name} (${c.duration.toFixed(0)}s → départ à ${c.startT.toFixed(0)}s)`).join(' · ');
+  } else $('clipsInfo').textContent='';
+};
+
+// Seek sur la TIMELINE GLOBALE : charge le bon clip si besoin, puis se positionne.
+async function seek(T){
+  if(!clips.length) return;
+  T = Math.max(0, Math.min(Math.max(0.05,totalDur)-0.05, T));
+  const i = clipAt(T);
+  await loadClip(i);
+  const local = Math.min(Math.max(0, T-clips[i].startT), Math.max(0, clips[i].duration-0.05));
+  curGlobalT = T;
+  await new Promise(res => {
+    const on = () => { vid.removeEventListener('seeked', on); res(); };
+    vid.addEventListener('seeked', on);
+    vid.currentTime = local;
+  });
+}
+// 14/08 : le canevas d'affichage suit l'orientation. A 90 et 270 l'image devient
+// portrait ; garder le format paysage l'ecraserait, et le facteur d'echelle des
+// zones (sx/sy) cesserait d'etre uniforme.
+function ajusterCanvas(){
+  if(!clips.length) return;
+  const c = clips[0];
+  const quart = (rotation===90 || rotation===270);
+  const sw = quart ? c.h : c.w;
+  const sh = quart ? c.w : c.h;
+  const w = WORK_W, h = Math.round(sh * WORK_W / sw);
+  frameCv.width=w; frameCv.height=h; maskCv.width=w; maskCv.height=h;
+}
+function drawFrame(){ frameCx.drawImage(currentSource(), 0, 0, frameCv.width, frameCv.height); }
+
+// ---------- localisation + extraction des chiffres ----------
+// PROPRIETE DISCRIMINANTE : les chiffres de vitesse sont de grandes zones SOMBRES
+// entierement ENCERCLEES de clair (la pastille). Rien d'autre a l'ecran n'a cette
+// propriete, sauf les contre-formes des textes blancs ("400", "300"...) qui sont
+// beaucoup plus PETITES -> on garde simplement les plus grandes.
+// On remplit le fond sombre depuis le bord de l'image : tout pixel sombre NON atteint
+// est enferme dans du clair => candidat chiffre.
+// Avantages : insensible a la couleur (blanc ou jaune), a l'aiguille collee a la
+// pastille, au cadrage et au zoom. Et les boucles du 0/6/8/9 restent CLAIRES, donc la
+// structure interne des chiffres est preservee.
+function findDigits(img, thLum, minH, roi, auto, reconnect){
+  const {width:w, height:h, data:d} = img;
+  const n=w*h;
+  // bornes de travail = la ZONE choisie par l'utilisateur (sinon toute l'image)
+  const rx0 = roi ? Math.max(0, roi.x0) : 0;
+  const ry0 = roi ? Math.max(0, roi.y0) : 0;
+  const rx1 = roi ? Math.min(w-1, roi.x1) : w-1;
+  const ry1 = roi ? Math.min(h-1, roi.y1) : h-1;
+  if (rx1-rx0 < 10 || ry1-ry0 < 10) return {mask:new Uint8Array(n), digits:[], box:null, refH:0, thUsed:thLum};
+
+  const bright=new Uint8Array(n);
+  let thUsed=thLum;
+
+  if(auto){
+    // SEUIL LOCAL ADAPTATIF (Bradley) : chaque pixel est compare a la MOYENNE de son
+    // voisinage. Un chiffre a peine plus sombre que ce qui l'entoure est capte, meme sur
+    // une pastille surexposee/delavee — la ou un seuil GLOBAL echoue par manque de contraste.
+    const rw=rx1-rx0+1, rh=ry1-ry0+1;
+    const lum=new Float64Array(rw*rh);
+    for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+      const p=((y+ry0)*w+(x+rx0))*4;
+      lum[y*rw+x]=0.299*d[p]+0.587*d[p+1]+0.114*d[p+2];
+    }
+    // image integrale (sommes de rectangles en O(1))
+    const IW=rw+1, I=new Float64Array(IW*(rh+1));
+    for(let y=1;y<=rh;y++){ let row=0; for(let x=1;x<=rw;x++){ row+=lum[(y-1)*rw+(x-1)]; I[y*IW+x]=I[(y-1)*IW+x]+row; } }
+    const R=Math.max(6, Math.round(rh/6)), T=0.06;   // fenetre ~1/3 de hauteur, marge 6 % (capte les traits FAIBLES)
+    for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+      const x0=Math.max(0,x-R), x1=Math.min(rw-1,x+R), y0=Math.max(0,y-R), y1=Math.min(rh-1,y+R);
+      const area=(x1-x0+1)*(y1-y0+1);
+      const s=I[(y1+1)*IW+(x1+1)]-I[y0*IW+(x1+1)]-I[(y1+1)*IW+x0]+I[y0*IW+x0];
+      // CLAIR (fond) si >= moyenne locale*(1-T) ; sinon SOMBRE (chiffre)
+      if(lum[y*rw+x] >= (s/area)*(1-T)) bright[(y+ry0)*w+(x+rx0)]=1;
+    }
+    thUsed='local';
+  } else {
+    for(let y=ry0;y<=ry1;y++) for(let x=rx0;x<=rx1;x++){
+      const k=y*w+x, p=k*4;
+      if(0.299*d[p]+0.587*d[p+1]+0.114*d[p+2] >= thLum) bright[k]=1;
+    }
+  }
+
+  // fond sombre = sombre atteignable depuis le BORD DE LA ZONE
+  const outside=new Uint8Array(n);
+  const st=new Int32Array((rx1-rx0+1)*(ry1-ry0+1)+8); let sp=0;
+  const push=(x,y)=>{
+    if(x<rx0||x>rx1||y<ry0||y>ry1) return;
+    const k=y*w+x; if(!bright[k]&&!outside[k]){outside[k]=1;st[sp++]=k;}
+  };
+  for(let x=rx0;x<=rx1;x++){push(x,ry0);push(x,ry1);}
+  for(let y=ry0;y<=ry1;y++){push(rx0,y);push(rx1,y);}
+  while(sp){ const c=st[--sp], x=c%w, y=(c-x)/w;
+    push(x-1,y); push(x+1,y); push(x,y-1); push(x,y+1); }
+
+  // sombre ENFERME dans du clair = candidat chiffre
+  let enc=new Uint8Array(n);
+  for(let y=ry0;y<=ry1;y++) for(let x=rx0;x<=rx1;x++){
+    const k=y*w+x; enc[k] = (!bright[k] && !outside[k]) ? 1 : 0;
+  }
+
+  // FERMETURE MORPHOLOGIQUE (option) : recolle les traits cassés (ex. anneau du 0 rompu
+  // en haut/bas) — dilatation 3x3 puis erosion 3x3, sur la ZONE. Rebouche les cassures
+  // fines sans coller deux chiffres voisins (l'ecart entre chiffres est plus large).
+  if(reconnect){
+    const dil=new Uint8Array(n);
+    for(let y=ry0;y<=ry1;y++) for(let x=rx0;x<=rx1;x++){
+      let on=0;
+      for(let dy=-1;dy<=1 && !on;dy++) for(let dx=-1;dx<=1;dx++){
+        const yy=y+dy, xx=x+dx;
+        if(yy<ry0||yy>ry1||xx<rx0||xx>rx1) continue;
+        if(enc[yy*w+xx]){ on=1; break; }
+      }
+      dil[y*w+x]=on;
+    }
+    const clo=new Uint8Array(n);
+    for(let y=ry0;y<=ry1;y++) for(let x=rx0;x<=rx1;x++){
+      let all=1;
+      for(let dy=-1;dy<=1 && all;dy++) for(let dx=-1;dx<=1;dx++){
+        const yy=y+dy, xx=x+dx;
+        if(yy<ry0||yy>ry1||xx<rx0||xx>rx1) continue;   // hors zone = ignore (pas d'erosion au bord)
+        if(!dil[yy*w+xx]){ all=0; break; }
+      }
+      clo[y*w+x]=all;
+    }
+    enc=clo;
+  }
+
+  const lab=new Int32Array(n).fill(-1);
+  const comps=[]; let id=0;
+  for(let y0i=ry0;y0i<=ry1;y0i++) for(let x0i=rx0;x0i<=rx1;x0i++){
+    const k0=y0i*w+x0i;
+    if(!enc[k0]||lab[k0]>=0) continue;
+    let s2=0; st[s2++]=k0; lab[k0]=id;
+    let size=0,x0=w,y0=h,x1=0,y1=0;
+    while(s2){
+      const c=st[--s2]; size++;
+      const x=c%w,y=(c-x)/w;
+      if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+      const nb=[x>rx0?c-1:-1, x<rx1?c+1:-1, y>ry0?c-w:-1, y<ry1?c+w:-1];
+      for(const k of nb) if(k>=0 && enc[k] && lab[k]<0){lab[k]=id;st[s2++]=k;}
+    }
+    const ch=y1-y0+1;
+    if(ch>=minH && size>=8) comps.push({size,x0,y0,x1,y1,id,h:ch});
+    id++;
+  }
+  if(!comps.length) return {mask:enc, digits:[], box:null, refH:0, thUsed};
+
+  comps.sort((a,b)=>b.h-a.h);
+  const ref=comps[0];
+  const grp=comps.filter(c=>{
+    if(c.h < ref.h*0.6 || c.h > ref.h*1.5) return false;
+    const ov = Math.min(c.y1,ref.y1)-Math.max(c.y0,ref.y0);
+    if(ov < Math.min(c.h,ref.h)*0.5) return false;
+    const gap = Math.max(0, Math.max(c.x0,ref.x0)-Math.min(c.x1,ref.x1));
+    return gap < ref.h*3;
+  });
+  grp.sort((a,b)=>a.x0-b.x0);
+  const box={ x0:Math.min(...grp.map(c=>c.x0)), y0:Math.min(...grp.map(c=>c.y0)),
+              x1:Math.max(...grp.map(c=>c.x1)), y1:Math.max(...grp.map(c=>c.y1)) };
+
+  const expW=Math.max(4,Math.round(ref.h*0.62));
+  const boxes=[];
+  for(const c of grp){
+    const cw=c.x1-c.x0+1;
+    const parts=Math.round(cw/expW);
+    if(parts>=2 && cw>expW*1.35){
+      const colInk=new Int32Array(cw);
+      for(let x=0;x<cw;x++){ let sI=0;
+        for(let y=c.y0;y<=c.y1;y++) if(lab[y*w+(c.x0+x)]===c.id) sI++;
+        colInk[x]=sI; }
+      const cuts=[0];
+      for(let pI=1;pI<parts;pI++){
+        const target=Math.round(cw*pI/parts), win=Math.max(2,Math.round(expW*0.25));
+        let bx=target,bv=Infinity;
+        for(let x=Math.max(1,target-win);x<=Math.min(cw-2,target+win);x++)
+          if(colInk[x]<bv){bv=colInk[x];bx=x;}
+        cuts.push(bx);
+      }
+      cuts.push(cw);
+      for(let pI=0;pI<parts;pI++) boxes.push({...c, x0:c.x0+cuts[pI], x1:c.x0+cuts[pI+1]-1});
+    } else boxes.push(c);
+  }
+
+  const digits=boxes.map(c=>{
+    const cw=Math.max(1,c.x1-c.x0+1), ch=Math.max(1,c.y1-c.y0+1);
+    const g=new Float32Array(GW*GH);
+    for(let gy=0;gy<GH;gy++) for(let gx=0;gx<GW;gx++){
+      const sx=c.x0+Math.floor(gx*cw/GW), sy=c.y0+Math.floor(gy*ch/GH);
+      g[gy*GW+gx] = enc[sy*w+sx] ? 1 : 0;
+    }
+    return {g, box:c};
+  });
+  return {mask:enc, digits, box, refH:ref.h, thUsed};
+}
+
+// Classement + REJET DES AMBIGUS : si le 2e meilleur modele (d'un autre chiffre) est
+// presque aussi proche, on prefere demander plutot que de deviner.
+function classify(g){
+  let best=null,bd=Infinity, second=Infinity;
+  for(const t of templates){
+    let s=0; for(let i=0;i<g.length;i++){ const d=g[i]-t.data[i]; s+=d*d; }
+    const dist=s/g.length;
+    if(dist<bd){ if(best && best.digit!==t.digit) second=bd; bd=dist; best=t; }
+    else if(best && t.digit!==best.digit && dist<second) second=dist;
+  }
+  const ambiguous = best!=null && second<Infinity && (second-bd) < 0.045;
+  return {digit:best?best.digit:null, dist:bd, ambiguous};
+}
+
+function drawGlyph(cx, g){
+  const im=cx.createImageData(GW,GH);
+  for(let i=0;i<GW*GH;i++){ const v=g[i]?0:255; im.data[i*4]=v;im.data[i*4+1]=v;im.data[i*4+2]=v;im.data[i*4+3]=255; }
+  cx.canvas.width=GW; cx.canvas.height=GH; cx.putImageData(im,0,0);
+}
+
+// ---------- apprentissage interactif ----------
+// Valeurs possibles passees a pendingResolve :
+//   - une chaine "0".."9"  -> chiffre appris (cas carte d'apprentissage)
+//   - {manual:v}           -> vitesse ENTIERE saisie a la main (aucun modele appris)
+//   - null                 -> image ignoree
+const keys=$('keys');
+for(let d=0;d<=9;d++){
+  const b=document.createElement('button'); b.textContent=d;
+  b.onclick=()=>{ if(pendingResolve){ const r=pendingResolve; pendingResolve=null; $('learn').classList.remove('on'); r(String(d)); } };
+  keys.appendChild(b);
+}
+$('btnSkip').onclick=()=>{ if(pendingResolve){ const r=pendingResolve; pendingResolve=null; $('learn').classList.remove('on'); r(null); } };
+$('btnKeep').onclick=()=>{ if(pendingResolve){ const r=pendingResolve; pendingResolve=null; $('learn').classList.remove('on'); r({keep:true}); } };
+
+function submitManual(){
+  if(!pendingResolve) return;
+  const raw=$('manualV').value.trim();
+  if(raw===''){ $('manualV').focus(); return; }
+  const v=parseInt(raw,10);
+  if(!isFinite(v)||v<0||v>400){ $('manualV').focus(); return; }
+  const r=pendingResolve; pendingResolve=null; $('learn').classList.remove('on'); r({manual:v});
+}
+$('btnManual').onclick=submitManual;
+$('manualV').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); submitManual(); } });
+
+// Prepare la carte : mode 'digit' (glyphe inconnu, cle 0-9 + saisie) ou 'manual'
+// (aucun chiffre detecte, saisie seule).
+function showLearnCard(g, mode, info){
+  if(g){ drawGlyph(learnCx, g); learnCv.style.display=''; }
+  else { learnCv.style.display='none'; }
+  keys.style.display = mode==='digit' ? 'flex' : 'none';
+  const keep=$('btnKeep');
+  if(mode==='implausible'){
+    $('learnMsg').innerHTML = `<span class="warn">Saut de vitesse invraisemblable</span> : détecté <b>${info.v}</b> km/h, `
+      + `précédent <b>${info.prev}</b> km/h (${info.jump>0?'+':''}${info.jump} km/h en ${info.dt}s). `
+      + `Corrige la valeur, garde-la si elle est juste, ou ignore l'image.`;
+    keep.textContent = 'Garder ' + info.v; keep.style.display='';
+    $('manualV').value = info.v;
+  } else {
+    $('learnMsg').textContent = mode==='digit'
+      ? "Ce symbole n'est pas reconnu : clique le chiffre correspondant (mémorisé), ou saisis la vitesse entière lue à l'écran."
+      : "Aucun chiffre détecté sur cette image : saisis la vitesse entière lue à l'écran, ou ignore-la.";
+    keep.style.display='none';
+    $('manualV').value='';
+  }
+  $('learn').classList.add('on');
+  setTimeout(()=>{ $('manualV').focus(); if($('manualV').select) $('manualV').select(); }, 0);
+}
+
+// Glyphe inconnu : propose l'apprentissage par chiffre OU la saisie manuelle entiere.
+function askDigit(g){
+  showLearnCard(g, 'digit');
+  return new Promise(res=>{ pendingResolve = d => {
+    if(d && d.manual!=null){ res(d); return; }               // vitesse entiere saisie
+    if(d!=null){ templates.push({digit:d, data:Float32Array.from(g)}); saveTemplates(); }
+    res(d);
+  };});
+}
+
+// Aucun chiffre detecte : saisie manuelle entiere seule (ou ignorer).
+function askManual(){
+  showLearnCard(null, 'manual');
+  return new Promise(res=>{ pendingResolve = d => {
+    res(d && d.manual!=null ? d : null);
+  };});
+}
+
+// Lecture presente mais INVRAISEMBLABLE (gros saut vs derniere bonne valeur : ex. un 0
+// manquant). Propose de corriger, garder telle quelle, ou ignorer.
+// Renvoie {manual:v} (corrige) | {keep:true} (garde le detecte) | null (ignore).
+function askImplausible(v, prev, jump, dt){
+  showLearnCard(null, 'implausible', {v, prev, jump:Math.round(jump), dt:+dt.toFixed(1)});
+  return new Promise(res=>{ pendingResolve = d => { res(d); }; });
+}
+
+// ---------- traitement d'une image ----------
+// Canvas d'analyse : quand une ROI est definie, on la DECOUPE dans la video a sa
+// resolution NATIVE (ex. 4K) au lieu de l'image d'affichage reduite a WORK_W (1100 px).
+// Une petite pastille recupere ainsi 3-4x plus de pixels -> redevient lisible.
+// Les toutes petites ROI sont meme AGRANDIES a >=320 px de large.
+const anaCv = document.createElement('canvas');
+const anaCx = anaCv.getContext('2d', {willReadFrequently:true});
+
+// interactive   : prompte pour TOUT (temps reel).
+// learnUnknown  : en mode differe, prompte UNIQUEMENT pour les glyphes INCONNUS (nouveaux
+//                 modeles a apprendre) ; l'ambiguite et l'illisible partent en revision.
+//                 Apprendre un chiffre une fois supprime des centaines d'echecs ensuite.
+// ---------- LECTURE DE L'AIGUILLE (22/08) ----------
+// Pourquoi : sur les vidéos de nuit, l'exposition automatique sature l'écran ETCS
+// à chaque entrée de tunnel et les chiffres de la pastille deviennent illisibles.
+// Or les tunnels sont exactement là où la courbe empirique sert. L'aiguille, elle,
+// reste un trait blanc franc. C'est aussi un indicateur INDÉPENDANT : il ne peut
+// pas perdre un chiffre, donc il sait contredire une lecture confiante-mais-fausse,
+// ce qu'aucun traitement temporel ne sait faire.
+//
+// Le pivot est GRATUIT : la pastille EST le moyeu du cadran, et `roiSuivi` est déjà
+// recentrée dessus à chaque image. Le rayon du moyeu vaut ~1 hauteur de chiffre, et
+// la demi-largeur de `roiSuivi` vaut SUIVI_DEMI_L hauteurs : le rayon s'en déduit
+// sans nouvelle constante à régler.
+//
+// ⚠️ Cet étage est pour l'instant INERTE : il mesure et rapporte, il ne remplace
+// aucune vitesse. On l'observe avant de lui confier quoi que ce soit.
+// ⚠️ 22/08 — LA COURONNE SE PLACE SUR LE BORD MESURE DU MOYEU, pas sur une
+// constante. La 1re version la dimensionnait en hauteurs de chiffre en supposant
+// « moyeu = 1 hauteur ». Mesure faite sur une image reelle : le moyeu est sature
+// (251) jusqu'a r=105 px puis chute a 134 en quinze pixels — il vaut DEUX hauteurs
+// de chiffre. La couronne balayait donc l'interieur du disque blanc dans toutes les
+// directions, d'ou un contraste mediocre (1,60 au lieu de 2,0) et des directions
+// aleatoires aux vitesses ou l'aiguille est courte : ecart-type de 88 deg entre
+// 10 et 19 km/h, angle median hors tendance entre 90 et 99.
+// La chute etant tres franche, on la detecte : plus rien a regler, et la mesure
+// suit toute variation de cadrage ou de zoom.
+const AIG_R0 = 1.15;   // debut de la couronne, en rayons de MOYEU MESURE
+const AIG_R1 = 1.70;   // fin — au-dela commencent les libelles (~1,8 rayon)
+const AIG_PAS = 0.5;   // pas angulaire, en degres
+const AIG_DIRS = 24;   // directions echantillonnees pour mesurer le bord du moyeu
+// CHUTE SOUTENUE. Premiere version : on validait le bord a la 1re valeur sous la
+// mi-hauteur. Mais la marche demarre A L'INTERIEUR de la pastille, ou vivent les
+// CHIFFRES, qui sont sombres : toute direction traversant un trait s'arretait
+// dessus (rayons mesures a 26 px). Un trait fait ~0,18 hauteur de chiffre ; le
+// vrai bord, lui, a plus de cent pixels de fond derriere lui. On exige donc que
+// la chute dure, ce qui elimine les chiffres avec le double de la marge.
+const AIG_CHUTE = 0.35;   // duree minimale de la chute, en hauteurs de chiffre
+
+const aigCv = document.createElement('canvas');
+const aigCx = aigCv.getContext('2d', {willReadFrequently:true});
+
+function angleAiguille(){
+  if(!roiSuivi) return null;
+  // ⚠️ 22/08 — LECTURE EN RESOLUTION NATIVE.
+  // La 1re version balayait `frameCv`, l'image de travail reduite a WORK_W=1100 px
+  // pour une source 4K. Le rayon du moyeu y tombait a ~16 px : un degre valait un
+  // DEMI-PIXEL, et chaque direction n'etait echantillonnee que sur une vingtaine de
+  // points. C'est le meme defaut que celui corrige le 25/07 pour les CHIFFRES, qui
+  // sont depuis lus sur la source native — l'aiguille suit enfin le meme chemin, et
+  // y gagne le facteur d'echelle complet (~3,5x sur une video 4K).
+  const SRC = currentSource();
+  const SW = SRC.width  || vid.videoWidth;
+  const SH = SRC.height || vid.videoHeight;
+  const k  = SW / frameCv.width;                 // affichage -> natif
+  const cxN = (roiSuivi.x0 + roiSuivi.x1)/2 * k;
+  const cyN = (roiSuivi.y0 + roiSuivi.y1)/2 * k;
+  const rChiffre = (roiSuivi.x1 - roiSuivi.x0)/2 / SUIVI_DEMI_L * k;  // hauteur de chiffre, en natif
+  if(!(rChiffre > 6)) return null;
+  const rMax = rChiffre*6;                       // fenetre de recherche du bord du moyeu
+
+  const r1 = rMax;
+  // on n'extrait que le carre utile de la source, pas toute l'image 4K
+  const bx0 = Math.max(0, Math.floor(cxN - r1 - 2)), by0 = Math.max(0, Math.floor(cyN - r1 - 2));
+  const bx1 = Math.min(SW, Math.ceil(cxN + r1 + 2));
+  const by1 = Math.min(SH, Math.ceil(cyN + r1 + 2));
+  const bw = bx1-bx0, bh = by1-by0;
+  if(bw < 16 || bh < 16) return null;
+  aigCv.width = bw; aigCv.height = bh;
+  aigCx.drawImage(SRC, bx0, by0, bw, bh, 0, 0, bw, bh);
+  const d = aigCx.getImageData(0, 0, bw, bh).data;
+  const lum = (x,y)=>{ const i=(((y-by0)*bw + (x-bx0))<<2); return 0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; };
+  const cx = cxN, cy = cyN;
+  const dans = (x,y)=> x>=bx0 && y>=by0 && x<bx1 && y<by1;
+  const ech = (a,r)=>{ const x=Math.round(cx+Math.cos(a)*r), y=Math.round(cy-Math.sin(a)*r);
+                       return dans(x,y) ? lum(x,y) : null; };
+  const med = t => { const u=t.filter(x=>x!=null).sort((p,q)=>p-q);
+                     return u.length ? u[u.length>>1] : null; };
+
+  // --- BORD DU MOYEU : on marche vers l'exterieur jusqu'a la chute de luminance ---
+  const dirs = [];
+  for(let i=0;i<AIG_DIRS;i++) dirs.push(i*2*Math.PI/AIG_DIRS);
+  const nivMoyeu = med(dirs.map(a=>ech(a, rChiffre*0.35)));
+  const nivFond  = med(dirs.flatMap(a=>[ech(a, rChiffre*4.5), ech(a, rChiffre*5.5)]));
+  // SECOURS PLUTOT QU'ABANDON : si le bord n'est pas mesurable (entree de tunnel,
+  // toute la dalle saturee), on retombe sur le rapport mesure moyeu = 2 hauteurs de
+  // chiffre. Renvoyer null ici priverait d'aiguille exactement les images pour
+  // lesquelles on la lit — celles ou les chiffres sont grilles.
+  let rMoyeu = null;
+  if(nivMoyeu!=null && nivFond!=null && nivMoyeu - nivFond >= 25){
+    const mi = (nivMoyeu + nivFond)/2;
+    const chute = Math.max(4, Math.round(rChiffre*AIG_CHUTE));
+    const rayons = [];
+    for(const a of dirs){
+      let rr = null, n = 0;
+      for(let r=rChiffre*0.5; r<=rMax; r+=1){
+        const L = ech(a,r);
+        if(L!=null && L < mi){ if(++n >= chute){ rr = r - chute + 1; break; } }
+        else n = 0;
+      }
+      if(rr!=null) rayons.push(rr);
+    }
+    // MEDIANE : la direction de l'aiguille donne un rayon plus grand, mais elle est
+    // minoritaire parmi les 24 — la mediane l'ignore sans avoir a la reconnaitre.
+    rMoyeu = med(rayons);
+  }
+  if(rMoyeu==null || rMoyeu < rChiffre*0.8 || rMoyeu > rChiffre*4) rMoyeu = rChiffre*2;
+
+  const nA = Math.round(360/AIG_PAS);
+  const prof = new Float32Array(nA);
+  const r0 = rMoyeu*AIG_R0, rFin = Math.min(rMoyeu*AIG_R1, rMax);
+  for(let k=0;k<nA;k++){
+    const a = k*AIG_PAS*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a);
+    let somme=0, n=0;
+    for(let r=r0;r<=rFin;r+=1){
+      const x=Math.round(cx+ca*r), y=Math.round(cy-sa*r);
+      if(x<bx0||y<by0||x>=bx1||y>=by1) continue;
+      somme += lum(x,y); n++;
+    }
+    prof[k] = n ? somme/n : 0;
+  }
+  let kMax=0, moy=0;
+  for(let k=0;k<nA;k++){ moy+=prof[k]; if(prof[k]>prof[kMax]) kMax=k; }
+  moy/=nA;
+  const pic = prof[kMax];
+  if(pic <= 0) return null;
+
+  // affinage sous-degré : barycentre des voisins au-dessus de 90 % du pic, en
+  // angle RELATIF pour ne pas se faire piéger par le passage 359,5 -> 0.
+  const seuil = pic*0.90;
+  let poids=0, somme=0;
+  for(let dk=-30; dk<=30; dk++){
+    const k = ((kMax+dk)%nA+nA)%nA;
+    if(prof[k] >= seuil){ poids += prof[k]; somme += prof[k]*(kMax+dk)*AIG_PAS; }
+  }
+  const ang = poids ? ((somme/poids)%360+360)%360 : kMax*AIG_PAS;
+  return { ang, contraste: pic/Math.max(moy, 1e-6), rMoyeu };
+}
+
+// 10/10 — JOURNAL DE SUIVI : une ligne par image analysée (instant, zone analysée, zone de
+// suivi, hauteur de référence, échecs, lecture, message). Exportable par le bouton
+// « Journal de suivi », pour diagnostiquer sur téléphone sans captures d'écran.
+const journalSuivi = [];
+function jrnZone(r){ return r ? `${r.x0},${r.y0} ${r.x1-r.x0}x${r.y1-r.y0}` : '-'; }
+async function processFrame(interactive, learnUnknown){
+  const zoneAvant = roiActive();
+  const r = await processFrameInterne(interactive, learnUnknown);
+  try{
+    journalSuivi.push([
+      (typeof curGlobalT==='number' ? curGlobalT.toFixed(2) : '?'),
+      'zone=' + jrnZone(zoneAvant) + (zoneAvant===roi ? '(tracee)' : '(suivi)'),
+      'suivi=' + jrnZone(roiSuivi),
+      'refH=' + (suiviRefH==null ? '-' : Math.round(suiviRefH)) + '/' + (suiviRefNative==null ? '-' : Math.round(suiviRefNative)),
+      'echecs=' + suiviEchecs,
+      'v=' + (r && r.v!=null ? r.v : '-') + (r && r.manual ? '(manuel)' : ''),
+      ($('conf').innerText || '').replace(/\s+/g,' ').slice(0,110),
+    ].join(' | '));
+    if(journalSuivi.length > 5000) journalSuivi.splice(0, journalSuivi.length - 5000);
+  }catch(_){}
+  return r;
+}
+async function processFrameInterne(interactive, learnUnknown){
+  drawFrame();
+  const thLum=+$('thLum').value, minH=+$('thMinH').value, autoTh=$('autoTh').checked, reconnect=$('reconnect').checked;
+
+  // ZONE ANALYSEE : le suivi si actif et cale, sinon la zone tracee (cf. roiSuivi).
+  const roiLue = roiActive();
+  let img, useRoi, map=null;
+  let scPass = 1;                                  // échelle zone analysée / natif, pour cette image
+  if(roiLue){
+    const SRC = currentSource();                   // image a l'endroit, resolution native
+    // 14/08 : dimensions de la SOURCE, pas de la video brute. A 90 et 270 le
+    // cadre bascule ; lire vid.videoWidth/Height y donnait un facteur d'echelle
+    // faux et une ROI decalee.
+    const SW = SRC.width  || vid.videoWidth;
+    const SH = SRC.height || vid.videoHeight;
+    const sx = SW / frameCv.width;                 // px natifs par px d'affichage
+    const sy = SH / frameCv.height;
+    const nx0=Math.max(0,Math.round(roiLue.x0*sx)), ny0=Math.max(0,Math.round(roiLue.y0*sy));
+    const nx1=Math.min(SW,Math.round(roiLue.x1*sx));
+    const ny1=Math.min(SH,Math.round(roiLue.y1*sy));
+    const nw=Math.max(2,nx1-nx0), nh=Math.max(2,ny1-ny0);
+    let targetW=nw;
+    if(targetW<320)  targetW=320;    // agrandit une ROI minuscule
+    if(targetW>1600) targetW=1600;   // borne une ROI enorme (perf)
+    const sc=targetW/nw;
+    scPass = sc;
+    anaCv.width=Math.round(nw*sc); anaCv.height=Math.round(nh*sc);
+    anaCx.imageSmoothingEnabled=true;
+    anaCx.drawImage(SRC, nx0,ny0,nw,nh, 0,0,anaCv.width,anaCv.height);
+    img=anaCx.getImageData(0,0,anaCv.width,anaCv.height);
+    useRoi={x0:0,y0:0,x1:anaCv.width-1,y1:anaCv.height-1};
+    map={s:sc*sx, ox:roiLue.x0, oy:roiLue.y0};     // analyse -> affichage
+  } else {
+    img=frameCx.getImageData(0,0,frameCv.width,frameCv.height);
+    useRoi=null;
+  }
+
+  // 10/10 — plancher automatique : 0,6 × hauteur de la pastille, en pixels de CETTE analyse.
+  const autoMinH = $('autoMinH') && $('autoMinH').checked && suiviRefNative != null;
+  const minHEff = autoMinH ? Math.max(minH, Math.round(0.6 * suiviRefNative * scPass)) : minH;
+  const {mask, digits, box, refH, thUsed} = findDigits(img, thLum, minHEff, useRoi, autoTh, reconnect);
+  lastGlyphs = digits;   // pour l'apprentissage depuis une vitesse saisie
+
+  // apercu du masque (dans l'espace d'analyse)
+  maskCv.width=img.width; maskCv.height=img.height;
+  const mi = maskCx.createImageData(img.width, img.height);
+  for(let i=0;i<mask.length;i++){ const v=mask[i]?255:0; mi.data[i*4]=v;mi.data[i*4+1]=v;mi.data[i*4+2]=v;mi.data[i*4+3]=255; }
+  maskCx.putImageData(mi,0,0);
+
+  // Zone de reference en orange, zone de suivi en cyan : d'un coup d'oeil on voit
+  // si le suivi est accroche et ou il en est.
+  if(roi){ frameCx.strokeStyle='#fbbf24'; frameCx.lineWidth=2;
+           frameCx.strokeRect(roi.x0,roi.y0,roi.x1-roi.x0,roi.y1-roi.y0);
+           drawPoignees(roi); }
+  if(roiLue && roiLue!==roi){ frameCx.strokeStyle='#22d3ee'; frameCx.lineWidth=2;
+           frameCx.strokeRect(roiLue.x0,roiLue.y0,roiLue.x1-roiLue.x0,roiLue.y1-roiLue.y0); }
+
+  if(!digits.length || !box){
+    // ECHEC : on elargit progressivement avant d'abandonner le suivi. Une image
+    // illisible (tunnel, voile, affichage change) ne doit pas faire perdre
+    // l'accrochage — mais un echec repete signifie qu'on ne regarde plus au bon
+    // endroit, et il faut alors revenir a la zone tracee par l'utilisateur.
+    if(roiSuivi){
+      suiviEchecs++;
+      if(suiviEchecs >= SUIVI_ECHECS_ABANDON){
+        resetSuivi();
+      } else if(suiviEchecs >= SUIVI_ECHECS_ELARGIR){
+        const cx=(roiSuivi.x0+roiSuivi.x1)/2, cy=(roiSuivi.y0+roiSuivi.y1)/2;
+        const hw=(roiSuivi.x1-roiSuivi.x0)/2*1.6, hh=(roiSuivi.y1-roiSuivi.y0)/2*1.6;
+        roiSuivi={ x0:Math.max(0,Math.round(cx-hw)), y0:Math.max(0,Math.round(cy-hh)),
+                   x1:Math.min(frameCv.width-1,Math.round(cx+hw)),
+                   y1:Math.min(frameCv.height-1,Math.round(cy+hh)) };
+      }
+    }
+    $('readOut').textContent='-';
+    $('conf').innerHTML='<span class="err">chiffres non detectes</span>';
+    if(interactive && $('askIllisible').checked){
+      const m = await askManual();
+      if(m && m.manual!=null){
+        $('readOut').textContent = m.manual;
+        $('conf').innerHTML = '<span class="warn">saisie manuelle</span>';
+        return {v:m.manual, conf:1, manual:true};
+      }
+    }
+    return {v:null,conf:0};
+  }
+
+  const pad=6;
+  const bx0=Math.max(0,box.x0-pad), by0=Math.max(0,box.y0-pad);
+  const bx1=Math.min(img.width-1,box.x1+pad), by1=Math.min(img.height-1,box.y1+pad);
+  const bw=bx1-bx0+1, bh=by1-by0+1;
+
+  // cadre rouge sur l'affichage (remap analyse -> affichage si ROI)
+  frameCx.strokeStyle='#f43f5e'; frameCx.lineWidth=3;
+  if(map){ frameCx.strokeRect(map.ox+bx0/map.s, map.oy+by0/map.s, bw/map.s, bh/map.s); }
+  else   { frameCx.strokeRect(bx0,by0,bw,bh); }
+
+  // ---------- RECENTRAGE DE LA ZONE SUR LA PASTILLE ----------
+  // ⚠️ POSITION prise sur le CENTRE de la boite, TAILLE derivee de la hauteur de
+  // chiffre — jamais des extents de la boite. La pastille a une taille CONSTANTE ;
+  // ce sont les chiffres qu'elle contient qui varient. Dimensionner la zone sur eux
+  // la fait retrecir a la largeur d'un chiffre quand la vitesse passe sous 10, et la
+  // pastille deborde a la lecture suivante des qu'on repasse a trois chiffres.
+  // Verifie au banc le 15/08 : sans cette precaution, l'image suivant une vitesse a
+  // un chiffre perdait un chiffre sur trois.
+  //
+  // La taille est exprimee en HAUTEURS DE CHIFFRE : elle suit donc toute derive de
+  // zoom sans reglage. Elle ne peut pas etre trop petite — l'algorithme identifie le
+  // fond comme « le sombre atteignable depuis le BORD de la zone », il faut donc que
+  // ce bord tombe sur le fond cyan AUTOUR de la pastille, jamais sur elle. 3,2 x 2,2
+  // hauteurs de chiffre laissent cette respiration tout en restant tres en deca du
+  // rayon des graduations, qui demeurent hors zone.
+  // 10/10 — tant qu'aucun NOMBRE n'a été reconnu, pas de référence : la hauteur est
+  // adoptée après la reconnaissance (cf. plus bas), jamais sur un objet inconnu. Sur le
+  // téléphone le 10/10, une zone posée sur l'aiguille avait donné une « pastille » de
+  // 95 px (un bout d'aiguille) et tout le reste était rejeté.
+  if($('suivrePastille') && $('suivrePastille').checked && refH > 0 && suiviRefH !== null){
+    // Vraisemblance : la pastille garde une taille a peu pres constante. Un saut
+    // brutal signifie qu'on vient d'accrocher autre chose (graduations, texte) —
+    // on lit quand meme, mais on ne deplace pas la zone sur cette base.
+    const rapport = refH / suiviRefH;
+    if(rapport < SUIVI_RAPPORT_REJET){
+      // 10/10 — objet nettement plus petit que la pastille : ce n'est pas elle (cf. SUIVI_RAPPORT_REJET).
+      suiviHorsBande = [];
+      suiviEchec();
+      $('readOut').textContent='-';
+      $('conf').innerHTML=`<span class="err">objet de ${refH} px lu pour une pastille de ${Math.round(suiviRefH)} px : pas la pastille — recherche élargie (${suiviEchecs}/${SUIVI_ECHECS_ABANDON})</span>`;
+      $('glyphs').innerHTML='';
+      return {v:null, conf:0};
+    }
+    let bougeable = (rapport >= SUIVI_BANDE_MIN && rapport <= SUIVI_BANDE_MAX);
+
+    if(bougeable){
+      suiviHorsBande = [];
+      // 0,8/0,2 et non 0,9/0,1 : la zone se dimensionne DESORMAIS sur cette valeur, donc
+      // son retard compte. Sur une derive de zoom, un lissage a 0,1 traine de dix images
+      // et sous-dimensionne la zone quand la pastille grandit. Le risque d'emballement
+      // qui justifiait un lissage lent a disparu : la bande en rapport interdit deja a
+      // toute mesure hors de ±20-25 % d'entrer ici.
+      suiviRefH = suiviRefH*0.8 + refH*0.2;
+    } else {
+      // Hors bande : on ne bouge PAS la zone sur la foi de cette mesure. Mais on la
+      // retient : si les suivantes disent la meme chose, c'est le cadrage qui a change
+      // pour de bon et il faut bien finir par l'admettre.
+      suiviHorsBande.push(refH);
+      const tri = suiviHorsBande.slice().sort((x,y)=>x-y), med = tri[tri.length>>1];
+      const daccord = suiviHorsBande.every(h => Math.abs(h - med) <= med*0.10);
+      if(suiviHorsBande.length >= SUIVI_RECALIBRE && daccord){
+        suiviRefH = med; suiviHorsBande = []; bougeable = true;
+      } else {
+        // Et si elles ne s'accordent meme pas entre elles, le compteur d'echecs finit
+        // par rendre la main a la zone tracee par l'utilisateur (SUIVI_ECHECS_ABANDON).
+        suiviEchecs++;
+        if(suiviEchecs >= SUIVI_ECHECS_ABANDON) resetSuivi();
+      }
+    }
+
+    if(bougeable){ placerSuivi(box, map); }
+  }
+
+  if(suiviRefH != null) suiviRefNative = suiviRefH / scPass;
+
+  // Mesure de l'aiguille — APRES la mise a jour du suivi, pour que le pivot soit
+  // celui de cette image. Quand les chiffres echouent, `roiSuivi` garde sa derniere
+  // valeur : le pivot reste donc disponible, ce qui est precisement le cas d'usage.
+  const aig = angleAiguille();
+
+  // pastille recadree : depuis le canvas d'analyse haute-res (ou l'image si pas de ROI)
+  badgeCv.width=bw; badgeCv.height=bh;
+  badgeCx.drawImage(roi ? anaCv : frameCv, bx0,by0,bw,bh, 0,0,bw,bh);
+
+  $('glyphs').innerHTML='';
+  let str='', worst=0;
+  for(const gl of digits){
+    const c=document.createElement('canvas'); const cx=c.getContext('2d');
+    drawGlyph(cx, gl.g); $('glyphs').appendChild(c);
+    let {digit,dist,ambiguous}=classify(gl.g);
+    if(digit===null || dist>MATCH_MAX || ambiguous){
+      const isUnknown = (digit===null || dist>MATCH_MAX);   // aucun modele ne matche = NOUVEAU glyphe
+      if(interactive || (learnUnknown && isUnknown)){
+        const d=await askDigit(gl.g);
+        if(d===null) return {v:null,conf:0};
+        if(d && d.manual!=null){                    // vitesse entiere saisie -> on abandonne la lecture chiffre par chiffre
+          learnFromSpeed(d.manual);                 // apprend les chiffres si le compte correspond
+          $('readOut').textContent = d.manual;
+          $('conf').innerHTML = '<span class="warn">saisie manuelle</span>';
+          return {v:d.manual, conf:1, manual:true};
+        }
+        digit=d; dist=0;
+      }
+      else return {v:null,conf:0};
+    }
+    str+=digit; worst=Math.max(worst,dist);
+  }
+  const v = str==='' ? null : parseInt(str,10);
+  // 10/10 — première RÉFÉRENCE de taille de pastille : seulement sur un nombre reconnu.
+  if(v!=null && $('suivrePastille') && $('suivrePastille').checked && refH > 0 && suiviRefH === null && box){
+    suiviRefH = refH; suiviRefNative = refH / scPass; suiviHorsBande = []; suiviEchecs = 0;
+    placerSuivi(box, map);
+  }
+  $('readOut').textContent = v==null?'-':v;
+  const seuilTxt = autoTh ? ' - <span class="ok">seuil local adaptatif</span>' : '';
+  $('conf').innerHTML = (v==null ? (autoTh?'<span class="ok">seuil local adaptatif</span>':'')
+    : digits.length+' chiffre(s) - ecart max '+worst.toFixed(3)+' '
+      + (worst<MATCH_MAX*0.5?'<span class="ok">sur</span>':'<span class="warn">a surveiller</span>')
+      + ' - hauteur chiffre '+refH+' px' + (autoMinH ? ' (mini auto '+minHEff+')' : '') + seuilTxt);
+  return {v, conf:1-Math.min(1,worst/MATCH_MAX), ang:aig?aig.ang:null, angC:aig?aig.contraste:null, angR:aig?aig.rMoyeu:null};
+}
+
+$('btnTest').onclick = async () => { await processFrame(true); };
+
+// ---------- apercu en temps reel des reglages ----------
+// Quand on change le seuil / la hauteur / le mode auto, on re-traite l'image COURANTE
+// immediatement (hors extraction) : on voit le masque se nettoyer en direct.
+let _previewPending=false;
+function livePreview(){
+  // Actif quand l'extraction est arretee, OU quand un prompt est ouvert (la boucle est
+  // alors suspendue en attente de reponse : on peut re-traiter l'image courante sans conflit).
+  if((running && !pendingResolve) || !clips.length || _previewPending) return;
+  _previewPending=true;
+  requestAnimationFrame(async ()=>{ _previewPending=false; try{ await processFrame(false); }catch{} });
+}
+$('thLumRange').oninput = () => { $('thLum').value = $('thLumRange').value; livePreview(); };
+$('thLum').oninput      = () => { $('thLumRange').value = $('thLum').value; livePreview(); };
+$('thMinH').oninput     = () => livePreview();
+$('autoMinH').onchange  = () => livePreview();
+$('autoTh').onchange    = () => {
+  const on=$('autoTh').checked;
+  $('thLum').disabled = on; $('thLumRange').disabled = on;   // seuil manuel inactif en auto
+  livePreview();
+};
+$('reconnect').onchange = () => livePreview();
+
+// ---------- extraction complete ----------
+// Reessai sur une image VOISINE : une frame tombant pile sur un changement de chiffre
+// montre deux chiffres melanges. Une image a +/-0.2 s est presque toujours propre.
+// `accept` (optionnel) filtre la valeur reessayee (ex. rester plausible).
+async function readNeighbor(t, accept){
+  for(const dt of [0.2,-0.2,0.4,-0.4]){
+    if(t+dt < 0 || t+dt > totalDur) continue;
+    await seek(t+dt);
+    const r = await processFrame(false);
+    if(r.v!=null && (!accept || accept(r.v))) return r.v;
+  }
+  return null;
+}
+
+$('btnRun').onclick = async () => {
+  if(running) return;
+  running=true; abortFlag=false; results=[];
+  await prendreVerrouVeille();
+  resetSuivi();   // chaque extraction repart de la zone tracee, pas d'un suivi herite
+  $('review').style.display='none';
+  $('btnRun').disabled=true; $('btnStop').disabled=false; $('btnPause').disabled=false;
+  paused=false; setPauseUi(); $('btnCsv').disabled=true;
+  const defer = $('deferReview').checked;
+  const step=+$('step').value;
+  const t0=+$('tStart').value;
+  const t1=(+$('tEnd').value)>0 ? +$('tEnd').value : totalDur;
+  const total=Math.max(1,Math.floor((t1-t0)/step));
+  let done=0, unread=0, toReview=0;
+  let consecUnread=0;
+  let lastGood=null;   // derniere valeur plausible acceptee {t, v} : base du controle de saut
+  const jumps = (x,t) => lastGood && Math.abs(x-lastGood.v)/Math.max(0.001,t-lastGood.t) > MAX_DKMH_PER_S;
+
+  for(let t=t0; t<t1; t+=step){
+    if(abortFlag) break;
+    while(paused && !abortFlag){ await new Promise(r=>setTimeout(r,150)); }
+    if(abortFlag) break;
+    await seek(t);
+
+    let fv=null, fconf, fflag, sugg=null;
+    // Angle de l'aiguille de CETTE image. On retient celui de la premiere lecture :
+    // les relectures de voisines portent sur d'autres images, leur angle ne decrit
+    // pas l'instant t.
+    let fang=null, fangC=null, fangR=null;
+
+    if(defer){
+      // ---- Mode revision differee ----
+      const r0 = await processFrame(false);          // muet (PAS d'apprentissage tout de suite)
+      fv=r0.v; fconf=r0.conf; fang=r0.ang; fangC=r0.angC; fangR=r0.angR;
+      if(fv==null){
+        // 1) ORDRE CORRECT : d'abord une image VOISINE (les frames de transition, ex. 4->5,
+        //    se lisent proprement a +/-0.2 s) — SANS prompt.
+        fv = await readNeighbor(t); await seek(t);
+        if(fv==null){
+          // 2) Voisines aussi muettes → image mise de côté pour la révision de fin.
+          //    11/10 — plus AUCUN prompt en mode différé : la case promet « ne s'interrompt
+          //    JAMAIS », or l'ancien appel processFrame(false, true) ouvrait le panneau
+          //    « Vitesse à confirmer » sur tout glyphe inconnu (constaté sur le 2e train,
+          //    image 900 : un bout d'aiguille à côté de « 231 »). Les vrais chiffres nouveaux
+          //    se saisissent à la fin, en bloc.
+          fflag='a_revoir'; toReview++;
+        }
+      } else if(jumps(fv,t)){                        // saut invraisemblable -> voisine plausible, sinon a revoir
+        const alt = await readNeighbor(t, x=>!jumps(x,t)); await seek(t);
+        if(alt!=null){ fv=alt; } else { sugg=fv; fv=null; fflag='a_revoir'; toReview++; }
+      }
+    } else {
+      // ---- Mode temps reel : prompts immediats (comportement historique) ----
+      const {v,conf,manual,ang,angC,angR} = await processFrame(true);
+      fv=v; fconf=conf; fflag = manual ? 'manuel' : undefined; fang=ang; fangC=angC; fangR=angR;
+      if($('askIllogical').checked && !manual && fv!=null && jumps(fv,t)){
+        const r=await askImplausible(fv, lastGood.v, fv-lastGood.v, Math.max(0.001,t-lastGood.t));
+        if(r && r.manual!=null){ fv=r.manual; fflag='manuel'; }
+        else if(r && r.keep){ fflag='confirme'; }
+        else { fv=null; fflag=undefined; }
+      }
+    }
+
+    if(fv==null){ unread++; consecUnread++; } else { consecUnread=0; lastGood={t, v:fv}; }
+    if(consecUnread>=AUTO_PAUSE_UNREAD && !paused){
+      if(defer){
+        // Mode revision differee : on n'interrompt JAMAIS. Ces images partiront en
+        // revue. On signale juste une fois par salve (drift de cadrage possible).
+        if(consecUnread===AUTO_PAUSE_UNREAD)
+          $('status').innerHTML = `<span class="warn">${consecUnread} images ratées d'affilée</span> vers t=${t.toFixed(0)}s — si ça persiste, vérifie le cadrage. L'extraction continue, ces images iront en révision.`;
+      } else {
+        paused=true; setPauseUi();
+        $('status').innerHTML = '<b class="warn">Pause automatique</b> a t=' + t.toFixed(0) + ' s : '
+          + consecUnread + " images illisibles de suite. La pastille est probablement sortie de la zone. "
+          + "Retrace le rectangle sur la video, puis clique <b>Reprendre</b>.";
+      }
+    }
+    const row={t:+t.toFixed(2), v:fv, conf:fconf, flag:fflag, ang:fang, angC:fangC, angR:fangR};
+    if(sugg!=null) row.sugg=sugg;
+    results.push(row);
+    done++;
+    $('barIn').style.width = (100*done/total).toFixed(1)+'%';
+    if(done%5===0 || done===total){
+      $('status').innerHTML = `Image ${done}/${total} — t=${t.toFixed(0)} s — non lues : ${unread}`
+        + (defer ? ` — à réviser : ${toReview}` : '') + ` — modèles : ${templates.length}`;
+      drawPlot();
+      await new Promise(r=>setTimeout(r,0));
+    }
+  }
+  running=false; paused=false; setPauseUi();
+  lacherVerrouVeille();
+  $('btnStop').disabled=true; $('btnPause').disabled=true;
+
+  // Désambiguïsation par CONTINUITÉ TEMPORELLE : une image douteuse encadrée de près
+  // par deux bonnes lectures est presque déterminée (85 → ? → 83 ⟹ 84). On la remplit
+  // automatiquement ; seules les images non contraintes (pas de bon voisin proche des
+  // deux côtés) restent à réviser. Réduit fortement la liste de révision.
+  const interpN = defer ? resolveTemporal() : 0;
+
+  const queue = results.map((r,i)=>i).filter(i=>results[i].flag==='a_revoir');
+  if(defer && queue.length && !abortFlag){
+    $('status').innerHTML = `Extraction terminée — `
+      + (interpN ? `<b class="ok">${interpN} résolue(s) par continuité</b>, ` : '')
+      + `<b class="warn">${queue.length} à réviser</b>. Passe-les en revue ci-dessous.`;
+    startReview(queue);
+  } else {
+    if(interpN) $('status').innerHTML = `Extraction terminée — <b class="ok">${interpN} résolue(s) par continuité</b>.`;
+    finalizeRun();
+  }
+};
+
+// Remplissage par continuité : pour chaque image 'a_revoir', si une bonne lecture existe
+// à <= WIN s de chaque côté, on interpole linéairement (par le temps) et on arrondit.
+// N'invente rien à l'arrêt (voisins ~égaux → interp ~égale). Marqué 'interp'.
+const TEMPORAL_WIN_S = 4.0;
+function resolveTemporal(){
+  let resolved = 0;
+  // Fige l'ensemble des "bonnes" lectures AVANT toute interpolation : on n'utilise jamais
+  // une valeur fraîchement interpolée comme ancre (pas de chaînage / dérive).
+  const good = results.map(r => r.v != null && r.flag !== 'a_revoir');
+  for(let k=0; k<results.length; k++){
+    if(results[k].flag !== 'a_revoir') continue;
+    const r = results[k];
+    let a = null, b = null;
+    for(let j=k-1; j>=0; j--){ if(good[j]){ a = results[j]; break; } }
+    for(let j=k+1; j<results.length; j++){ if(good[j]){ b = results[j]; break; } }
+    if(!a || !b) continue;
+    if((r.t - a.t) > TEMPORAL_WIN_S || (b.t - r.t) > TEMPORAL_WIN_S) continue;
+    const span = (b.t - a.t) || 1;
+    r.v = Math.round(a.v + (b.v - a.v) * (r.t - a.t) / span);
+    r.flag = 'interp';
+    delete r.sugg;
+    resolved++;
+  }
+  return resolved;
+}
+
+function finalizeRun(){
+  flagOutliers();
+  drawPlot(); summarize();
+  $('btnRun').disabled=false; $('btnCsv').disabled=false;
+  $('status').innerHTML += ' — <b class="ok">terminé</b>';
+}
+
+// ---------- revision groupee (mode differe) ----------
+let reviewQueue=[], reviewPos=0;
+async function startReview(queue){
+  reviewQueue=queue; reviewPos=0;
+  $('review').style.display='block';
+  await showReviewItem();
+}
+async function showReviewItem(){
+  if(reviewPos>=reviewQueue.length){ endReview(); return; }
+  const r=results[reviewQueue[reviewPos]];
+  $('revProg').textContent = `image ${reviewPos+1}/${reviewQueue.length} — t = ${r.t} s`;
+  await seek(r.t);
+  await processFrame(false);            // affiche la frame + la pastille recadree
+  const sugg = (r.sugg!=null) ? r.sugg : '';
+  $('revMsg').innerHTML = sugg!==''
+    ? `Valeur détectée jugée invraisemblable : <b>${sugg}</b> km/h. Corrige-la, ou valide si elle est juste.`
+    : `Aucune lecture fiable ici. Saisis la vitesse lue à l'écran, ou laisse vide.`;
+  $('revV').value = sugg;
+  setTimeout(()=>{ $('revV').focus(); if($('revV').select) $('revV').select(); }, 0);
+}
+function applyReview(v){
+  const r=results[reviewQueue[reviewPos]];
+  if(v==null){ r.v=null; r.flag='non_lu'; } else { r.v=v; r.flag='manuel'; learnFromSpeed(v); }
+  delete r.sugg;
+  reviewPos++; showReviewItem();
+}
+$('revOk').onclick=()=>{
+  const raw=$('revV').value.trim();
+  if(raw===''){ applyReview(null); return; }
+  const v=parseInt(raw,10);
+  if(!isFinite(v)||v<0||v>400){ $('revV').focus(); return; }
+  applyReview(v);
+};
+$('revEmpty').onclick=()=> applyReview(null);
+$('revPrev').onclick=()=>{ if(reviewPos>0){ reviewPos--; showReviewItem(); } };
+$('revDone').onclick=()=> endReview();
+$('revV').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); $('revOk').click(); } });
+function endReview(){ $('review').style.display='none'; finalizeRun(); }
+function setPauseUi(){
+  $('btnPause').textContent = paused ? 'Reprendre' : 'Pause';
+  $('btnPause').className = paused ? 'primary' : '';
+}
+$('btnPause').onclick = ()=>{
+  if(!running) return;
+  paused = !paused; setPauseUi();
+  if(!paused) $('status').innerHTML += ' — <b class="ok">reprise</b>';
+};
+$('btnStop').onclick = ()=>{ abortFlag=true; paused=false; setPauseUi(); };
+
+function flagOutliers(){
+  for(let i=1;i<results.length;i++){
+    const a=results[i-1], b=results[i];
+    if(b.flag==='manuel' || b.flag==='confirme' || b.flag==='interp') continue;   // humain ou continuité = fiable
+    if(a.v==null||b.v==null){ b.flag=b.v==null?'non_lu':b.flag; continue; }
+    const dt=Math.max(0.001,b.t-a.t);
+    if(Math.abs(b.v-a.v)/dt > MAX_DKMH_PER_S) b.flag='saut';
+  }
+}
+
+function drawPlot(){
+  const w=plot.clientWidth||800, h=plot.height=130; plot.width=w;
+  plotCx.clearRect(0,0,w,h);
+  const pts=results.filter(r=>r.v!=null);
+  if(pts.length<2) return;
+  const tMin=results[0].t, tMax=results[results.length-1].t;
+  // 22/08 — AXE PLAFONNE. Il se calait sur la valeur maximale observee : une
+  // seule lecture aberrante (9865 km/h vue le 22/08) ecrasait toute la courbe a
+  // plat et privait d'un controle visuel pendant l'extraction. On plafonne donc
+  // a une vitesse plausible pour la ligne (max 300) : les rares points au-dessus
+  // sortent du cadre, ce qui les SIGNALE au lieu de tout aplatir.
+  const V_PLAFOND = 310;
+  const vMax=Math.min(V_PLAFOND, Math.max(60,...pts.map(p=>p.v)));
+  plotCx.strokeStyle='#2c323b'; plotCx.beginPath();
+  for(let g=0;g<=4;g++){ const y=h-1-(g/4)*(h-14); plotCx.moveTo(0,y); plotCx.lineTo(w,y); }
+  plotCx.stroke();
+  plotCx.strokeStyle='#4ade80'; plotCx.lineWidth=1.4; plotCx.beginPath();
+  let started=false;
+  for(const r of results){
+    if(r.v==null){ started=false; continue; }
+    const x=(r.t-tMin)/(tMax-tMin||1)*(w-2)+1;
+    const y=h-1-(Math.min(r.v, V_PLAFOND)/vMax)*(h-14);   // borne le trace, pas la donnee
+    started ? plotCx.lineTo(x,y) : plotCx.moveTo(x,y);
+    started=true;
+  }
+  plotCx.stroke();
+  plotCx.fillStyle='#9aa3ad'; plotCx.font='11px sans-serif';
+  const horsCadre = pts.filter(p=>p.v>V_PLAFOND).length;
+  plotCx.fillText(vMax+' km/h' + (horsCadre? '  ('+horsCadre+' au-dessus de '+V_PLAFOND+')' : ''), 4, 12);
+}
+
+function summarize(){
+  const ok=results.filter(r=>r.v!=null);
+  const bad=results.length-ok.length;
+  const sauts=results.filter(r=>r.flag==='saut').length;
+  // distance parcourue = integrale de v dt
+  let dist=0;
+  for(let i=1;i<ok.length;i++){
+    const dt=ok[i].t-ok[i-1].t;
+    if(dt>0 && dt<=10) dist += ((ok[i].v+ok[i-1].v)/2)/3600*dt; // km
+  }
+  $('summary').innerHTML =
+    `<b>${results.length}</b> images · lues <b class="ok">${ok.length}</b> · non lues <b class="${bad?'err':'ok'}">${bad}</b> · sauts suspects <b class="${sauts?'warn':'ok'}">${sauts}</b><br>` +
+    `Vitesse max <b>${Math.max(...ok.map(r=>r.v))}</b> km/h · <b>distance intégrée ≈ ${dist.toFixed(2)} km</b> ` +
+    `<span class="muted">(à comparer à la distance réelle du parcours : bon indicateur de fiabilité)</span>`;
+}
+
+// ---------- exports ----------
+function dl(name, text, type){
+  const b=new Blob([text],{type}); const a=document.createElement('a');
+  a.href=URL.createObjectURL(b); a.download=name; a.click();
+}
+$('btnJrn').onclick = ()=>{
+  const head = `# journal de suivi — ${new Date().toISOString()} — video ${clips[0] ? clips[0].w+'x'+clips[0].h : '?'} — zone tracee ${jrnZone(roi)} — modeles ${templates.length}`;
+  dl('journal_suivi.txt', [head, ...journalSuivi].join(String.fromCharCode(10)), 'text/plain');
+};
+$('btnCsv').onclick = ()=>{
+  // 22/08 — deux colonnes de plus : l'angle de l'aiguille et son contraste.
+  // Elles sont pour l'instant DESCRIPTIVES : aucune vitesse n'en depend. Elles
+  // servent a etalonner angle -> vitesse sur les images ou les chiffres sont surs,
+  // avant de decider si l'aiguille peut suppleer les chiffres.
+  const lines=['t_s,vitesse_kmh,confiance,flag,angle_aiguille,contraste_aiguille,rayon_moyeu'];
+  for(const r of results) lines.push(
+    `${r.t},${r.v==null?'':r.v},${r.conf!=null?r.conf.toFixed(3):''},${r.flag||''}`
+    + `,${r.ang!=null?r.ang.toFixed(2):''},${r.angC!=null?r.angC.toFixed(3):''},${r.angR!=null?r.angR.toFixed(1):''}`);
+  dl('courbe_vitesse.csv', lines.join('\n'), 'text/csv');
+};
+$('btnTpl').onclick = ()=> dl('modeles_chiffres.json', JSON.stringify(templates.map(t=>({digit:t.digit,data:Array.from(t.data)}))), 'application/json');
+$('btnRoi').onclick=()=>{ roi=null; saveRoi(); roiText(); resetSuivi(); drawFrame(); };
+$('suivrePastille').onchange=()=>{ resetSuivi(); if(!running||paused) processFrame(false); };
+roiText();
+$('btnReset').onclick = ()=>{
+  if(!confirm('Effacer tous les modèles de chiffres appris ?')) return;
+  templates=TEMPLATES_EMBARQUES.map(toTemplate); saveTemplates();
+  $('status').textContent='Modèles appris effacés — retour aux '+templates.length+' modèles embarqués.';
+};
+$('tplIn').onchange = e => {
+  const f=e.target.files[0]; if(!f) return;
+  const fr=new FileReader();
+  fr.onload=()=>{ try{ templates=JSON.parse(fr.result).map(t=>({digit:t.digit,data:Float32Array.from(t.data)})); saveTemplates(); $('status').textContent='Modèles importés : '+templates.length; }catch(err){ alert('Fichier de modèles illisible'); } };
+  fr.readAsText(f);
+};
+</script>
