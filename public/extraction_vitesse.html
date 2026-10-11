@@ -208,6 +208,21 @@ const MAX_DKMH_PER_S = 8;     // saut de vitesse juge invraisemblable
 
 let templates = [];           // {digit:'0'..'9', data:Float32Array}
 let results = [];             // {t, v, conf, flag}
+// ---------- SAUVEGARDE AU FIL DE L'EAU (11/10) ----------
+// Les résultats sont écrits dans le stockage du navigateur toutes les 20 images et à la
+// fin. Si la page est rechargée (onglet déchargé, blocage), recharger la MÊME vidéo propose
+// de reprendre à la dernière image faite, et « Exporter CSV » est disponible tout de suite
+// avec ce qui a été lu. Le 11/10, 5170 images lues sur 6241 avaient été perdues.
+const CLE_REPRISE = 'lim-vit-reprise';
+let repriseResultats = null;   // résultats à reprendre, posés par le bouton « Reprendre »
+let runParams = {step:1, t0:0, t1:0};   // paramètres de l'extraction en cours (pour la sauvegarde finale)
+function cleVideo(){ return clips.map(c=>c.name).join('|') + '#' + Math.round(totalDur); }
+function sauverReprise(step, t0, t1, lastT){
+  try{ localStorage.setItem(CLE_REPRISE, JSON.stringify({video: cleVideo(), step, t0, t1, lastT, quand: Date.now(), results})); }catch(_){}
+}
+function lireReprise(){
+  try{ const r = JSON.parse(localStorage.getItem(CLE_REPRISE)||'null'); return (r && r.video===cleVideo() && Array.isArray(r.results) && r.results.length) ? r : null; }catch(_){ return null; }
+}
 let running = false, abortFlag = false, paused = false;
 // ---------- VERROU DE VEILLE (11/10) ----------
 // Sur Android, l'extinction automatique de l'ecran gele l'onglet et arrete l'analyse
@@ -622,6 +637,18 @@ $('file').onchange = async e => {
   if(clips.length>1){
     $('clipsInfo').innerHTML = 'Timeline : ' + clips.map((c,i)=>`${i+1}. ${c.name} (${c.duration.toFixed(0)}s → départ à ${c.startT.toFixed(0)}s)`).join(' · ');
   } else $('clipsInfo').textContent='';
+  // 11/10 — reprise : une extraction de CETTE vidéo a été sauvegardée au fil de l'eau.
+  const rep = lireReprise();
+  if(rep){
+    results = rep.results; $('btnCsv').disabled=false;
+    const suite = rep.lastT + rep.step, fin = rep.t1 || totalDur;
+    const complete = suite >= fin - 0.01;
+    $('status').innerHTML += ` <span class="warn">Extraction sauvegardée pour cette vidéo : <b>${rep.results.length}</b> images jusqu'à t=${rep.lastT.toFixed(0)} s` +
+      ` (${new Date(rep.quand).toLocaleString()}). « Exporter CSV » est disponible.</span>` +
+      (complete ? '' : ` <button id="btnReprendre" style="margin-left:6px">↩ Reprendre à t=${suite.toFixed(0)} s</button>`);
+    const b = $('btnReprendre');
+    if(b) b.onclick = ()=>{ repriseResultats = rep.results; $('tStart').value = suite; $('tEnd').value = rep.t1 || 0; $('step').value = rep.step; $('btnRun').onclick(); };
+  }
 };
 
 // Seek sur la TIMELINE GLOBALE : charge le bon clip si besoin, puis se positionne.
@@ -633,11 +660,23 @@ async function seek(T){
   const local = Math.min(Math.max(0, T-clips[i].startT), Math.max(0, clips[i].duration-0.05));
   curGlobalT = T;
   await new Promise(res => {
-    const on = () => { vid.removeEventListener('seeked', on); res(); };
+    let chien = null;
+    const fini = () => { vid.removeEventListener('seeked', on); if(chien) clearInterval(chien); seekEnCours=null; res(); };
+    const on = () => fini();
     vid.addEventListener('seeked', on);
+    // 11/10 — CHIEN DE GARDE. Quand Android éteint l'écran, Chrome relâche le décodeur et le
+    // « seeked » attendu n'arrive jamais : extraction figée à 5170/6241 le 11/10, « Arrêter »
+    // inopérant (lu seulement entre deux images). Toutes les 3 s on redemande le
+    // positionnement (valeur décalée d'1 ms pour forcer un nouveau seek) ; et si l'arrêt a
+    // été demandé, on rend la main pour que la boucle sorte et que l'export reste possible.
+    let nudge = 0;
+    seekEnCours = () => { nudge = (nudge+1)%2; try{ vid.currentTime = local + 0.001*nudge; }catch(_){} };
+    chien = setInterval(()=>{ if(abortFlag){ fini(); return; } seekEnCours && seekEnCours(); }, 3000);
     vid.currentTime = local;
   });
 }
+let seekEnCours = null;   // relance du positionnement en attente (chien de garde / retour au premier plan)
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && seekEnCours) seekEnCours(); });
 // 14/08 : le canevas d'affichage suit l'orientation. A 90 et 270 l'image devient
 // portrait ; garder le format paysage l'ecraserait, et le facteur d'echelle des
 // zones (sx/sy) cesserait d'etre uniforme.
@@ -1332,7 +1371,7 @@ async function readNeighbor(t, accept){
 
 $('btnRun').onclick = async () => {
   if(running) return;
-  running=true; abortFlag=false; results=[];
+  running=true; abortFlag=false; results = repriseResultats || []; repriseResultats = null;
   await prendreVerrouVeille();
   resetSuivi();   // chaque extraction repart de la zone tracee, pas d'un suivi herite
   $('review').style.display='none';
@@ -1347,6 +1386,7 @@ $('btnRun').onclick = async () => {
   const hms = ms => { const t=Math.max(0,Math.round(ms/1000)), h=Math.floor(t/3600), m=Math.floor(t%3600/60), sec=t%60;
     return (h ? h+':'+String(m).padStart(2,'0') : String(m)) + ':' + String(sec).padStart(2,'0'); };
   const t1=(+$('tEnd').value)>0 ? +$('tEnd').value : totalDur;
+  runParams = {step, t0, t1};
   const total=Math.max(1,Math.floor((t1-t0)/step));
   let done=0, unread=0, toReview=0;
   let consecUnread=0;
@@ -1416,6 +1456,7 @@ $('btnRun').onclick = async () => {
     if(sugg!=null) row.sugg=sugg;
     results.push(row);
     done++;
+    if(done%20===0) sauverReprise(step, t0, t1, t);
     $('barIn').style.width = (100*done/total).toFixed(1)+'%';
     if(done%5===0 || done===total){
       const ecouleMs = performance.now() - chrono0 - pauseMs;
@@ -1479,6 +1520,7 @@ function finalizeRun(){
   flagOutliers();
   drawPlot(); summarize();
   $('btnRun').disabled=false; $('btnCsv').disabled=false;
+  sauverReprise(runParams.step, runParams.t0, runParams.t1, results.length ? results[results.length-1].t : runParams.t0);
   $('status').innerHTML += ' — <b class="ok">terminé</b>';
 }
 
