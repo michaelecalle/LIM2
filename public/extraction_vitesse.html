@@ -1341,6 +1341,11 @@ $('btnRun').onclick = async () => {
   const defer = $('deferReview').checked;
   const step=+$('step').value;
   const t0=+$('tStart').value;
+  // 11/10 — temps écoulé et estimation du restant (idée de l'utilisateur). Le chrono ne
+  // compte pas les pauses ; l'estimation = cadence moyenne depuis le début.
+  const chrono0 = performance.now(); let pauseMs = 0;
+  const hms = ms => { const t=Math.max(0,Math.round(ms/1000)), h=Math.floor(t/3600), m=Math.floor(t%3600/60), sec=t%60;
+    return (h ? h+':'+String(m).padStart(2,'0') : String(m)) + ':' + String(sec).padStart(2,'0'); };
   const t1=(+$('tEnd').value)>0 ? +$('tEnd').value : totalDur;
   const total=Math.max(1,Math.floor((t1-t0)/step));
   let done=0, unread=0, toReview=0;
@@ -1350,7 +1355,7 @@ $('btnRun').onclick = async () => {
 
   for(let t=t0; t<t1; t+=step){
     if(abortFlag) break;
-    while(paused && !abortFlag){ await new Promise(r=>setTimeout(r,150)); }
+    if(paused){ const p0=performance.now(); while(paused && !abortFlag){ await new Promise(r=>setTimeout(r,150)); } pauseMs += performance.now()-p0; }
     if(abortFlag) break;
     await seek(t);
 
@@ -1413,8 +1418,11 @@ $('btnRun').onclick = async () => {
     done++;
     $('barIn').style.width = (100*done/total).toFixed(1)+'%';
     if(done%5===0 || done===total){
+      const ecouleMs = performance.now() - chrono0 - pauseMs;
+      const resteMs = ecouleMs / done * (total - done);
       $('status').innerHTML = `Image ${done}/${total} — t=${t.toFixed(0)} s — non lues : ${unread}`
-        + (defer ? ` — à réviser : ${toReview}` : '') + ` — modèles : ${templates.length}`;
+        + (defer ? ` — à réviser : ${toReview}` : '') + ` — modèles : ${templates.length}`
+        + ` — <b>écoulé ${hms(ecouleMs)}</b>, reste ~<b>${hms(resteMs)}</b>`;
       drawPlot();
       await new Promise(r=>setTimeout(r,0));
     }
