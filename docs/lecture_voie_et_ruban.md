@@ -68,6 +68,18 @@ Conclusions :
   d'aiguillage entre Figueres nord et la limite ADIF). Question en attente.
 - **Côté RFN et saut de mouton → Tresserres** : peu de fixes, ruban imprécis, lecture non concluante.
 
+### 2c. Premier journal avec la tuile VOIE : 9707 du 18/10 (SN, lim-logs `9707 du 2026-10-18 - 16h06.zip`)
+
+- Trois clics enregistrés (`ui:voie:set`), chaque fix porte `voie`. L'utilisateur signale qu'il n'a PAS cliqué pour la
+  traversée de Figueres (passée côté voie 2) : lecture à quai à confronter au journal.
+- **Règle apprise (utilisateur)** : le passage voie 1 → voie 2 à la sortie de Figueres côté France ne sera **jamais**
+  détectable par le GPS, l'aiguille est dans le tunnel (T31, 750,47 → 752,22). À poser par règle ou par lecture après
+  la sortie du tunnel, comme à Gérone.
+- La courbe empirique de Figueres dépend de la voie (entrée à 30 km/h voies 4/6, 80 km/h voie 3 : +110 s sur le
+  segment NS avec la médiane de 3 runs) : c'est l'un des intérêts de connaître la voie. Objectif fixé par
+  l'utilisateur : détection **semi-automatique** (le plus automatique possible, mais toujours corrigible à la main
+  via la tuile VOIE, même quand la détection existera).
+
 ## 3. Les règles qui simplifient tout (utilisateur, 11/10)
 
 1. **On ne change de voie qu'aux aiguillages.** Entre deux zones d'aiguillages, la voie lue en sortie de zone est
@@ -135,6 +147,11 @@ Journaux (dépôt privé `michaelecalle/lim-logs`) : `9710 du 2026-10-11 - 11h58
 `9712 du 2026-10-18 - 13h01.zip` (voie connue sur tout le parcours, voir §2b).
 Voie connue : 9710 = récit du §2 ; 9705 = voie 1 sauf Figueres (voie 2) et Tresserres → saut de mouton (voie 2).
 Depuis le build du 11/10 17:24, chaque journal porte `# build=` dans son en-tête.
+**Depuis le build du 18/10 16:01 (commit 3263acf)** : tuile **VOIE** dans le bloc info (après MOT. ISOLÉS), voie 1 par
+défaut, un clic bascule 1 ↔ 2, remise à 1 à chaque nouveau train. Chaque clic écrit `ui:voie:set {prev, voie}` et chaque
+fix `gps:position` porte `voie` : la voie déclarée est connue à chaque fix, plus besoin du récit après coup. À Figueres,
+« voie 2 » = côté voie 2 (voie 4 ou 6 à quai). Pas de code couleur pour l'instant (étape 2, quand la signature par zone
+sera validée) : l'idée de l'utilisateur = vert si la voie déclarée = celle estimée, rouge sinon, orange si pas de données.
 
 ## 6. Plan proposé (à valider étape par étape, rien n'est acquis)
 

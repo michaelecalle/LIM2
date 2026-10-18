@@ -460,7 +460,12 @@ export default function FTHorizontal() {
       const spd = parseFloat(String(row.speed ?? ""));
       if (!Number.isFinite(pkA) || !Number.isFinite(pkB) || !Number.isFinite(spd)) continue;
       const dA = Math.abs(pkA - pk0), dB = Math.abs(pkB - pk0);
-      raw.push({ distStart: Math.min(dA, dB), distEnd: Math.max(dA, dB), speed: spd, pkA, pkB });
+      // 18/10 — pkA/pkB doivent suivre l'ordre de distStart/distEnd. Les colonnes Km.Ini/Km.Fin
+      // du document LTV suivent le sens de la VOIE (ex. voie II : 654,046 → 640,459), pas celui du
+      // train : sans ce tri, les étiquettes PK des repères étaient inversées en sens PK croissant
+      // (constaté par l'utilisateur sur le 9707 du 18/10, LTV 160 Llinars → La Sagrera).
+      const [pkLo, pkHi] = dA <= dB ? [pkA, pkB] : [pkB, pkA];
+      raw.push({ distStart: Math.min(dA, dB), distEnd: Math.max(dA, dB), speed: spd, pkA: pkLo, pkB: pkHi });
     }
     // Dédupliquer par plage : deux LTV identiques (voies différentes) → une seule entrée.
     // En cas de vitesses différentes sur la même plage, on retient la plus restrictive.
