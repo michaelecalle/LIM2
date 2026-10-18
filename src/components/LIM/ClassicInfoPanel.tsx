@@ -14,6 +14,8 @@ export type InfoData = {
   composicion?: string
   /** Nombre de moteurs isolés (0, 1 ou 2) — voir la tuile MOT. ISOLÉS. */
   moteursIsoles?: number
+  /** Voie déclarée par le conducteur (1 ou 2) — tuile VOIE, 18/10. */
+  voie?: number
   material?: string
   linea?: string
   longitud?: string | number
@@ -178,6 +180,7 @@ export default function ClassicInfoPanel({
   onCompositionLongPress,
   onMaterialLongPress,
   onMoteursIsolesLongPress,
+  onVoieClick,
 }: {
   data: InfoData
   onTrenClick?: () => void
@@ -186,6 +189,7 @@ export default function ClassicInfoPanel({
   onCompositionLongPress?: () => void
   onMaterialLongPress?: () => void
   onMoteursIsolesLongPress?: () => void
+  onVoieClick?: () => void
 }) {
   const D = data || {}
   const trainDisplay = D.tren ? String(D.tren) : ""
@@ -287,6 +291,8 @@ export default function ClassicInfoPanel({
   // Nombre de moteurs isolés : 0 → pictogramme et afficheur en gris « éteint ».
   const moteursIsoles = Number(D.moteursIsoles ?? 0)
   const moteursIsolesActifs = moteursIsoles > 0
+  // Voie déclarée (18/10) : 1 par défaut, un clic bascule 1 ↔ 2.
+  const voie = Number(D.voie ?? 1) === 2 ? 2 : 1
 
   return (
     <div className="select-none">
@@ -447,6 +453,20 @@ export default function ClassicInfoPanel({
               <MoteurIsoleIcon active={moteursIsolesActifs} />
               <SevenSegmentDigit value={moteursIsoles} active={moteursIsolesActifs} />
             </div>
+          </div>
+
+          {/* VOIE — 18/10 : voie de circulation déclarée par le conducteur, saisie
+              manuelle (un clic = bascule 1 ↔ 2), remise à 1 à chaque nouveau train.
+              Sert UNIQUEMENT au journal (lecture de la voie a posteriori, voir
+              docs/lecture_voie_et_ruban.md) : aucune conséquence sur l'affichage. */}
+          <div
+            className={`border-r-2 border-black px-2 py-1 grid place-items-center text-center ${onVoieClick ? 'cursor-pointer' : ''}`}
+            style={{ flex: '0 0 auto' }}
+            onClick={onVoieClick}
+            onContextMenu={(e) => e.preventDefault()}
+            title={onVoieClick ? 'Voie de circulation (clic : bascule 1 / 2)' : undefined}
+          >
+            <div className="text-[18px] font-extrabold tracking-tight whitespace-nowrap">VOIE {voie}</div>
           </div>
 
           <div

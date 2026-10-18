@@ -2,6 +2,7 @@ import React from "react"
 import ClassicInfoPanel from "./ClassicInfoPanel"
 import type { CategoriesByNetwork, MaterielCatalogEntry } from "./titleBarTrainUtils"
 import { getMaterielMetrics } from "./titleBarTrainUtils"
+import { logTestEvent } from "../../lib/testLogger"
 type LIMData = {
 
   train?: string
@@ -159,12 +160,19 @@ export default function Infos() {
   // la localisation horaire → la valeur est DIFFUSÉE, pas gardée en interne.
   const [moteursIsoles, setMoteursIsoles] = React.useState(0)
 
+  // VOIE (18/10) : voie de circulation déclarée par le conducteur, 1 ou 2. Saisie
+  // manuelle (clic sur la tuile VOIE), 1 par défaut, remise à 1 à chaque nouveau
+  // train. Diffusée via window.__limVoie, recopiée dans chaque fix gps:position du
+  // journal : sert à lire la voie a posteriori (docs/lecture_voie_et_ruban.md).
+  const [voie, setVoie] = React.useState<1 | 2>(1)
+
   React.useEffect(() => {
     const onNewTrain = () => {
       ;(window as any).__limCurrentNetwork = null
       setCurrentNetwork(null)
       setMaterielOverride(null) // nouveau train → on repart de SON matériel
       setMoteursIsoles(0)       // et d'aucun moteur isolé
+      setVoie(1)                // et voie 1 déclarée (18/10)
     }
     window.addEventListener('lim:parsed', onNewTrain as EventListener)
     return () => window.removeEventListener('lim:parsed', onNewTrain as EventListener)
@@ -222,6 +230,19 @@ export default function Infos() {
     )
   }, [moteursIsoles])
 
+  React.useEffect(() => {
+    ;(window as any).__limVoie = voie
+  }, [voie])
+
+  // Clic sur VOIE → bascule 1 ↔ 2, tracée dans le journal.
+  const handleVoieClick = React.useCallback(() => {
+    setVoie((v) => {
+      const next: 1 | 2 = v === 1 ? 2 : 1
+      logTestEvent('ui:voie:set', { prev: v, voie: next, source: 'infos_tile' })
+      return next
+    })
+  }, [])
+
   // Appui long sur MOT. ISOLÉS → valeur suivante (0 → 1 → … → max → 0).
   const handleMoteursIsolesLongPress = React.useCallback(() => {
     setMoteursIsoles((v) => (v >= maxMoteursIsoles ? 0 : v + 1))
@@ -261,6 +282,7 @@ export default function Infos() {
     origenDestino: panelBaseData.origenDestino,
     composicion: displayedComposition,
     moteursIsoles,
+    voie,
     // Matériel : celui du normalisé 2026, ou celui choisi manuellement (cycle appui
     // long). « LINEA » n'est plus affichée (décision 07/08 : ligne supprimée du
     // normalisé et de l'affichage).
@@ -354,6 +376,7 @@ export default function Infos() {
         onCompositionLongPress={handleCompositionLongPress}
         onMaterialLongPress={handleMaterialLongPress}
         onMoteursIsolesLongPress={handleMoteursIsolesLongPress}
+        onVoieClick={handleVoieClick}
       />
     </section>
   )

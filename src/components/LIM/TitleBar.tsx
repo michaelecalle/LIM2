@@ -4101,6 +4101,9 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
           pkCandidate:
             typeof pkCandidate === 'number' && Number.isFinite(pkCandidate) ? pkCandidate : null,
           pkDecision: pkDecision ?? null,
+          // 18/10 — voie déclarée par le conducteur (tuile VOIE du bloc info, 1 ou 2),
+          // recopiée dans chaque fix pour la lecture de la voie a posteriori.
+          voie: (window as any).__limVoie ?? 1,
         })
 
         window.dispatchEvent(
