@@ -3394,6 +3394,9 @@ ${coords}
       activeMode: StartupMode
       keepPdf: boolean
       closeManualImport: boolean
+      // 18/10 — false uniquement pour le redémarrage à chaud, qui a déjà fait sa propre
+      // remise à zéro (avec conservation du delta). Défaut : true.
+      resetPosition?: boolean
     }
   ) => {
     const trainNumber = train.trainNumber
@@ -3434,6 +3437,22 @@ ${coords}
         ligne: train.ligne ?? null,
         testModeEnabled,
       })
+    }
+
+    // 18/10 — NOUVEAU TRAIN = ÉTAT DE POSITION À ZÉRO. Constaté sur le 38510 du 18/10 :
+    // importé dans la même page que le 9714 (sans rechargement), la fiche gardait la ligne
+    // active 42 (arrivée à Sants du 9714), le stand-by initial « déjà consommé » et le moteur
+    // horizontal sa position de fin (184,5 km). Base de recalage vide au Play, aucun tick
+    // horaire depuis Sants jusqu'au premier fix GPS à Can Tunis. Jusque-là, seuls un
+    // rechargement de la page ou le redémarrage à chaud remettaient cet état à zéro.
+    // Même remise à zéro que le redémarrage à chaud (lim:soft-reset), delta effacé.
+    if (options.resetPosition !== false) {
+      setScheduleDelta(null)
+      setScheduleDeltaIsLarge(false)
+      setScheduleDeltaSec(null)
+      window.dispatchEvent(
+        new CustomEvent('lim:soft-reset', { detail: { source: 'train-change', trainNumber } })
+      )
     }
 
     startupLaunchModeRef.current = options.activeMode
@@ -4214,6 +4233,7 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
       activeMode: '2026',
       keepPdf: true,
       closeManualImport: false,
+      resetPosition: false, // déjà fait juste au-dessus, avec conservation du delta
     })
 
     window.setTimeout(() => {

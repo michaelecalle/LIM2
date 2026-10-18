@@ -2627,8 +2627,11 @@ detail: { enabled: true, standby: true, origine: "auto" },
   // zéro, comme après un STOP, mais le journal continue et le train est rechargé derrière.
   // Le Play virtuel qui suit repasse par le stand-by initial (initialStandbyDoneRef remis à
   // false), que la détection GPS verte saute aussitôt.
+  // 18/10 — Aussi déclenché au choix d'un NOUVEAU train (TitleBar, source 'train-change') :
+  // là, le delta de l'ancien train n'a aucun sens, on ne le conserve pas.
   useEffect(() => {
-    const handler = () => {
+    const handler = (e: Event) => {
+      const source = String((e as CustomEvent<any>)?.detail?.source ?? "");
       if (filetStandbyTimerRef.current != null) {
         window.clearTimeout(filetStandbyTimerRef.current);
         filetStandbyTimerRef.current = null;
@@ -2653,12 +2656,17 @@ detail: { enabled: true, standby: true, origine: "auto" },
       lastEmpiricalVertRef.current = null;
       // Le delta d'avant est conservé (autoScrollBaseRef n'est pas remis à zéro) : le premier
       // ancrage GPS le resynchronise vers useTrainDist au lieu de le recalculer.
-      keepDeltaAfterResetRef.current = autoScrollBaseRef.current != null;
+      keepDeltaAfterResetRef.current =
+        source !== "train-change" && autoScrollBaseRef.current != null;
+      if (source === "train-change") {
+        autoScrollBaseRef.current = null;
+        setActiveRowIndex(0); // comme sur page fraîche ; le Play repose la 1ʳᵉ ligne utile
+      }
       setSelectedRowIndex(null);
       window.dispatchEvent(
         new CustomEvent("lim:station-arret", { detail: { active: false, source: "soft-reset" } })
       );
-      logTestEvent("ft:soft-reset", { keepDelta: keepDeltaAfterResetRef.current });
+      logTestEvent("ft:soft-reset", { source, keepDelta: keepDeltaAfterResetRef.current });
     };
     window.addEventListener("lim:soft-reset", handler);
     return () => window.removeEventListener("lim:soft-reset", handler);
