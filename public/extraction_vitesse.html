@@ -48,6 +48,10 @@
     #scrub{min-width:0!important;width:100%}
     .row>.card{flex:1 1 100%}
     .big{font-size:28px}
+    /* 19/10 — revision groupee sur smartphone : seule l'image de l'ecran compte, le bloc de
+       saisie est deplace juste sous elle (voir startReview) ; masque, pastille et aide caches */
+    body.reviewing #maskCard, body.reviewing #badgeCard, body.reviewing #learn, body.reviewing #revHelp{display:none}
+    body.reviewing #review{margin-top:0}
   }
 </style>
 
@@ -121,15 +125,15 @@
 </div>
 
 <div class="row">
-  <div class="card">
+  <div class="card" id="frameCard">
     <div class="muted">Image courante + pastille détectée</div>
     <canvas id="frameCv"></canvas>
   </div>
-  <div class="card">
+  <div class="card" id="maskCard">
     <div class="muted">Masque de détection</div>
     <canvas id="maskCv"></canvas>
   </div>
-  <div class="card">
+  <div class="card" id="badgeCard">
     <div class="muted">Pastille recadrée</div>
     <canvas id="badgeCv"></canvas>
     <div class="big" id="readOut">—</div>
@@ -164,7 +168,7 @@
     <button id="revPrev">← Précédent</button>
     <button id="revDone">Terminer la révision</button>
   </div>
-  <div class="muted" style="margin-top:6px">La pastille de l'image en cours est affichée plus haut (« Pastille recadrée »). Tape le nombre puis <b>Entrée</b> pour enchaîner. Champ vide = Entrée laisse l'image vide.</div>
+  <div class="muted" id="revHelp" style="margin-top:6px">La pastille de l'image en cours est affichée plus haut (« Pastille recadrée »). Tape le nombre puis <b>Entrée</b> pour enchaîner. Champ vide = Entrée laisse l'image vide.</div>
 </div>
 
 <div class="card">
@@ -1526,9 +1530,15 @@ function finalizeRun(){
 
 // ---------- revision groupee (mode differe) ----------
 let reviewQueue=[], reviewPos=0;
+const mobileReview = ()=> window.matchMedia && window.matchMedia('(max-width:700px)').matches;
 async function startReview(queue){
   reviewQueue=queue; reviewPos=0;
   $('review').style.display='block';
+  if(mobileReview()){
+    // smartphone : saisie directement sous l'image de l'ecran, sans defilement entre les deux
+    document.body.classList.add('reviewing');
+    $('frameCard').after($('review'));
+  }
   await showReviewItem();
 }
 async function showReviewItem(){
@@ -1542,7 +1552,10 @@ async function showReviewItem(){
     ? `Valeur détectée jugée invraisemblable : <b>${sugg}</b> km/h. Corrige-la, ou valide si elle est juste.`
     : `Aucune lecture fiable ici. Saisis la vitesse lue à l'écran, ou laisse vide.`;
   $('revV').value = sugg;
-  setTimeout(()=>{ $('revV').focus(); if($('revV').select) $('revV').select(); }, 0);
+  setTimeout(()=>{
+    if(document.body.classList.contains('reviewing')) $('frameCard').scrollIntoView({block:'start'});
+    $('revV').focus(); if($('revV').select) $('revV').select();
+  }, 0);
 }
 function applyReview(v){
   const r=results[reviewQueue[reviewPos]];
@@ -1561,7 +1574,14 @@ $('revEmpty').onclick=()=> applyReview(null);
 $('revPrev').onclick=()=>{ if(reviewPos>0){ reviewPos--; showReviewItem(); } };
 $('revDone').onclick=()=> endReview();
 $('revV').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); $('revOk').click(); } });
-function endReview(){ $('review').style.display='none'; finalizeRun(); }
+function endReview(){
+  $('review').style.display='none';
+  if(document.body.classList.contains('reviewing')){
+    document.body.classList.remove('reviewing');
+    $('learn').after($('review'));   // remise a sa place d'origine
+  }
+  finalizeRun();
+}
 function setPauseUi(){
   $('btnPause').textContent = paused ? 'Reprendre' : 'Pause';
   $('btnPause').className = paused ? 'primary' : '';
