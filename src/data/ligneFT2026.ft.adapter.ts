@@ -24,6 +24,8 @@ import ligneFt2026Published from "./normalized/ligneFT2026.normalized.json";
 
 type Direction = "sudNord" | "nordSud";
 
+const PUBLISHED_DOC = ligneFt2026Published as unknown as LigneFt2026Doc;
+
 type LigneRow2026 = {
   type?: "note";
   texte?: string;
@@ -295,6 +297,12 @@ function resolveLigneRows(
 ): { rows: LigneRow2026[]; horaires: Record<string, Horaire2026> } {
   const versions = doc?.ligneVersions ?? {};
   const key = String(trainNumber ?? "").trim();
+  // 23/10 — train créé : lignes de la 1re version, heures saisies.
+  const sdm = doc === PUBLISHED_DOC ? sdmFor(trainNumber) : null;
+  if (sdm) {
+    const vid = Object.keys(versions)[0] ?? "";
+    return { rows: versions[vid]?.[direction] ?? [], horaires: sdm.horaires };
+  }
   const variant = key ? doc?.trains?.[key]?.variants?.[0] : undefined;
 
   const versionId =
@@ -331,7 +339,126 @@ export function getFtLigneImpair2026(
 // adaptateur, pour que les composants n'aient qu'une ligne d'import à changer.
 // ---------------------------------------------------------------------------
 
-const PUBLISHED_DOC = ligneFt2026Published as unknown as LigneFt2026Doc;
+// ---------------------------------------------------------------------------
+// 23/10 — TRAIN CRÉÉ (« Créer un train », SDM) côté 2026.
+// Jusqu'ici le train créé n'existait que dans l'ANCIEN adaptateur
+// (`ligneFT.normalized.adapter.ts`, `setSdmSessionTrain`) : le bloc fiche train
+// (FT, FTHorizontal, FTHorizontalSchedule) lit TOUT ici, dans le 2026 publié, où
+// ce numéro est inconnu → aucune heure, pas d'origine/destination (horizontal
+// affichant toute la ligne), sens par parité. Constaté en ligne le 23/10.
+// Ici : une session « train créé » consultée par resolveLigneRows (horaires) et
+// trainMeta (origine/destination/direction).
+// ---------------------------------------------------------------------------
+export type SdmStation2026 = { name: string; pk: string; key: string };
+
+const sdmKey2026 = (n: string | number): string =>
+  String(n ?? "").trim().replace(/^0+(?=\d)/, "");
+
+const normStationName = (v: string): string =>
+  (v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+function firstVersionRows(direction: Direction): LigneRow2026[] {
+  const versions = PUBLISHED_DOC.ligneVersions ?? {};
+  const first = versions[Object.keys(versions)[0] ?? ""];
+  return first?.[direction] ?? [];
+}
+
+/**
+ * Établissements de la ligne dans l'ORDRE DE PARCOURS, depuis le 2026 publié
+ * (noms EXACTS du fichier, donc jointure sûre avec les lignes affichées).
+ * `key` = clé composite des PK (`horaireKey`), la même que celle des horaires.
+ */
+export function getStationsInTravelOrder2026(sudNord: boolean): SdmStation2026[] {
+  const direction: Direction = sudNord ? "sudNord" : "nordSud";
+  const seen = new Set<string>();
+  const out: SdmStation2026[] = [];
+  for (const row of firstVersionRows(direction)) {
+    if (row.type === "note") continue;
+    const name = str(row.etablissement);
+    if (!name) continue;
+    const key = horaireKey(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const present = pkFieldsPresent(row, direction);
+    const pk = present.length ? str(row[present[0] as keyof LigneRow2026]) ?? "" : "";
+    out.push({ name, pk, key });
+  }
+  return out;
+}
+
+export type SdmSession2026Input = {
+  trainNumber: string;
+  sudNord: boolean;
+  origine: string;
+  destination: string;
+  type?: string;
+  // Heures saisies "HH:MM" ou "" ; `key` = clé PK 2026 si connue (trains créés
+  // depuis le 23/10), sinon jointure par le NOM (trains créés avant).
+  stations: { name: string; key?: string; arr: string; dep: string }[];
+};
+
+let sdmSession2026: {
+  key: string;
+  direction: Direction;
+  origine: string;
+  destination: string;
+  type?: string;
+  horaires: Record<string, Horaire2026>;
+} | null = null;
+
+function sdmFor(trainNumber: number | string | null | undefined) {
+  if (!sdmSession2026) return null;
+  const k = sdmKey2026(String(trainNumber ?? ""));
+  return k && k === sdmSession2026.key ? sdmSession2026 : null;
+}
+
+/**
+ * Active (ou désactive avec `null`) le train créé pour le bloc fiche train.
+ * Règle des heures (même que l'ancien adaptateur) : origine = départ seul ;
+ * destination = arrivée seule ; gare intermédiaire avec arrivée ET départ
+ * différents = arrêt (les deux) ; une seule heure = passage.
+ */
+export function setSdmSessionTrain2026(input: SdmSession2026Input | null): void {
+  if (!input) { sdmSession2026 = null; return; }
+  const direction: Direction = input.sudNord ? "sudNord" : "nordSud";
+  const rows = firstVersionRows(direction).filter((r) => r.type !== "note" && str(r.etablissement));
+  const byKey = new Map<string, LigneRow2026>();
+  const byName = new Map<string, LigneRow2026>();
+  for (const r of rows) {
+    const k = horaireKey(r);
+    if (!byKey.has(k)) byKey.set(k, r);
+    const n = normStationName(r.etablissement ?? "");
+    if (n && !byName.has(n)) byName.set(n, r);
+  }
+  const horaires: Record<string, Horaire2026> = {};
+  const n = input.stations.length;
+  input.stations.forEach((st, i) => {
+    const row =
+      (st.key && byKey.get(st.key)) || byName.get(normStationName(st.name)) || undefined;
+    if (!row) return;
+    const arr = str(st.arr) ?? "";
+    const dep = str(st.dep) ?? "";
+    let h: Horaire2026 | null = null;
+    if (i === 0) {
+      const v = dep || arr; if (v) h = { depart: v };
+    } else if (i === n - 1) {
+      const v = arr || dep; if (v) h = { arrivee: v };
+    } else if (arr && dep && arr !== dep) {
+      h = { arrivee: arr, depart: dep };
+    } else {
+      const v = dep || arr; if (v) h = { passage: v };
+    }
+    if (h) horaires[horaireKey(row)] = h;
+  });
+  sdmSession2026 = {
+    key: sdmKey2026(input.trainNumber),
+    direction,
+    origine: input.origine,
+    destination: input.destination,
+    type: str(input.type),
+    horaires,
+  };
+}
 
 export function getFtLignePair(
   trainNumber: number | string | null | undefined
@@ -349,6 +476,11 @@ export function getFtLigneImpair(
 function trainMeta(trainNumber: number | string | null | undefined) {
   const key = String(trainNumber ?? "").trim();
   if (!key) return undefined;
+  // 23/10 — train créé : ses métadonnées priment sur le publié (même numéro).
+  const sdm = sdmFor(trainNumber);
+  if (sdm) {
+    return { origine: sdm.origine, destination: sdm.destination, direction: sdm.direction };
+  }
   return PUBLISHED_DOC.trains?.[key]?.variants?.[0]?.meta as
     | {
         origine?: string;

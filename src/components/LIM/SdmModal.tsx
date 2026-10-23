@@ -10,11 +10,13 @@
 //
 // Pensee iPad : cibles tactiles larges (h-12, text-base), gros boutons.
 
-import { useEffect, useMemo, useState } from 'react'
-import { getStationsInTravelOrder } from '../../data/ligneFT.normalized.adapter'
-import { isTrainSudNord } from '../../data/ligneFT2026.ft.adapter'
+import { useEffect, useMemo, useRef, useState } from 'react'
+// 23/10 — établissements et clés PK du normalisé 2026 (celui que le bloc fiche train affiche),
+// plus de l'ancien normalisé dont les noms différaient (ex. « LA SAGRERA » vs « LA SAGRERA-AV »).
+import { getStationsInTravelOrder2026, isTrainSudNord } from '../../data/ligneFT2026.ft.adapter'
 
-export type SdmDraftStation = { name: string; pk: string; arr: string; dep: string }
+// `key` = clé PK composite du 2026 (jointure sûre des heures) ; absente sur les trains créés avant le 23/10.
+export type SdmDraftStation = { name: string; pk: string; key?: string; arr: string; dep: string }
 export type SdmDraft = {
   trainNumber: string
   type: string
@@ -30,6 +32,8 @@ type Props = {
   onClose: () => void
   // Valider = creer le train de session et revenir a la modale de demarrage (pre-selectionne).
   onConfirm: (draft: SdmDraft) => void
+  // 23/10 — « Modifier ce train » : brouillon existant à pré-remplir (valider = remplace).
+  initial?: SdmDraft | null
 }
 
 // Saisie "1234" -> "12:34", "234" -> "02:34". Renvoie "" si vide ou invalide (min>59 / h>23).
@@ -45,15 +49,22 @@ function toHHMM(raw: string): string {
 
 type TimeEntry = { arr: string; dep: string }
 
-export default function SdmModal({ dark, onClose, onConfirm }: Props) {
+export default function SdmModal({ dark, onClose, onConfirm, initial = null }: Props) {
   const [step, setStep] = useState<1 | 2>(1)
-  const [trainNumber, setTrainNumber] = useState('')
-  const [trainType, setTrainType] = useState('')
-  const [origine, setOrigine] = useState('')
-  const [destination, setDestination] = useState('')
+  const [trainNumber, setTrainNumber] = useState(initial?.trainNumber ?? '')
+  const [trainType, setTrainType] = useState(initial?.type ?? '')
+  const [origine, setOrigine] = useState(initial?.origine ?? '')
+  const [destination, setDestination] = useState(initial?.destination ?? '')
   // Heures par gare (nom -> { arr, dep }). Tout optionnel. Stocke le texte en cours de saisie,
   // formate en HH:MM au blur.
-  const [times, setTimes] = useState<Record<string, TimeEntry>>({})
+  const [times, setTimes] = useState<Record<string, TimeEntry>>(() => {
+    const t: Record<string, TimeEntry> = {}
+    for (const st of initial?.stations ?? []) t[st.name] = { arr: st.arr ?? '', dep: st.dep ?? '' }
+    return t
+  })
+  // En modification, le 1er passage de l'effet de remise à zéro (montage) ne doit pas vider
+  // l'origine/destination pré-remplies.
+  const skipResetRef = useRef(initial != null)
 
   const setField = (name: string, field: keyof TimeEntry, val: string) =>
     setTimes(prev => ({
@@ -70,12 +81,13 @@ export default function SdmModal({ dark, onClose, onConfirm }: Props) {
 
   // Etablissements dans l'ordre du sens de circulation (depend de la parite).
   const stations = useMemo(
-    () => (num != null ? getStationsInTravelOrder(isPair) : []),
+    () => (num != null ? getStationsInTravelOrder2026(!isPair) : []),
     [num, isPair]
   )
 
   // Le sens change (parite) -> on reinitialise origine/destination (l'ordre s'inverse).
   useEffect(() => {
+    if (skipResetRef.current) { skipResetRef.current = false; return }
     setOrigine('')
     setDestination('')
   }, [isPair, num == null])
@@ -123,6 +135,7 @@ export default function SdmModal({ dark, onClose, onConfirm }: Props) {
       stations: stationsRange.map(s => ({
         name: s.name,
         pk: s.pk,
+        key: s.key,
         arr: times[s.name]?.arr ?? '',
         dep: times[s.name]?.dep ?? '',
       })),
@@ -143,9 +156,9 @@ export default function SdmModal({ dark, onClose, onConfirm }: Props) {
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-base font-semibold">Créer un train</div>
+            <div className="text-base font-semibold">{initial ? 'Modifier le train' : 'Créer un train'}</div>
             <div className="text-[11px] opacity-60 mt-0.5">
-              Train hors fiche — session courante uniquement · étape {step} / 2
+              Train hors fiche — conservé sur cet appareil jusqu’à suppression · étape {step} / 2
             </div>
           </div>
           <button type="button" onClick={onClose}
@@ -285,7 +298,7 @@ export default function SdmModal({ dark, onClose, onConfirm }: Props) {
                 className="flex-1 h-12 rounded-xl text-base font-bold"
                 style={{ backgroundColor: '#2563eb', color: '#ffffff' }}
               >
-                Valider — créer le train
+                {initial ? 'Valider — enregistrer les modifications' : 'Valider — créer le train'}
               </button>
             </div>
           </>

@@ -42,6 +42,7 @@ type Props = {
   // 23/10 : numéros des trains créés (liste persistante) → mention « (créé) » + bouton Supprimer.
   sdmTrainNumbers?: string[]
   onDeleteSdm?: (trainNumber: string) => void
+  onEditSdm?: (trainNumber: string) => void
   // Mode « LTV seul » : n'affiche QUE l'import du PDF LTV (pas de train ni fiche train),
   // et confirme via onConfirmLtvOnly. Défaut false → comportement mode 2026 inchangé.
   ltvOnly?: boolean
@@ -51,7 +52,7 @@ type Props = {
 export default function Mode2026Modal({
   dark, trainOptions, onClose, onConfirm,
   lockedTrainNumber = null, demoPdfFiles, onSelectSdm, preselectTrainNumber = null,
-  sdmTrainNumbers = [], onDeleteSdm,
+  sdmTrainNumbers = [], onDeleteSdm, onEditSdm,
   ltvOnly = false, onConfirmLtvOnly,
 }: Props) {
   const isDemo = Array.isArray(demoPdfFiles) && demoPdfFiles.length > 0
@@ -183,13 +184,22 @@ export default function Mode2026Modal({
             {!isDemo && <option value="SDM">Créer un train</option>}
           </select>
           {selectedIsSdm && onDeleteSdm && (
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
               {!deleteArmed ? (
-                <button type="button" onClick={() => setDeleteArmed(true)}
-                  className="h-9 px-3 text-xs rounded-md border font-semibold"
-                  style={{ borderColor: border, color: fg }}>
-                  Supprimer ce train créé
-                </button>
+                <>
+                  {onEditSdm && (
+                    <button type="button" onClick={() => onEditSdm(selectedTrainNumber)}
+                      className="h-9 px-3 text-xs rounded-md border font-semibold"
+                      style={{ borderColor: border, color: fg }}>
+                      Modifier ce train
+                    </button>
+                  )}
+                  <button type="button" onClick={() => setDeleteArmed(true)}
+                    className="h-9 px-3 text-xs rounded-md border font-semibold"
+                    style={{ borderColor: border, color: fg }}>
+                    Supprimer ce train créé
+                  </button>
+                </>
               ) : (
                 <>
                   <button type="button"

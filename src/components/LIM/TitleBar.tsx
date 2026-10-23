@@ -88,6 +88,7 @@ import {
   // qu'on ne réveille pas ici. Migration complète des 7 fonctions = dette notée,
   // à traiter à froid.
   getTrainNumeroFrance as getTrainNumeroFrance2026,
+  setSdmSessionTrain2026,
 } from '../../data/ligneFT2026.ft.adapter'
 
 // ⚠️ FT France = fonctionnalité ABANDONNÉE (on a fusionné FR+ES). Neutralisée le 2026-06-08 :
@@ -252,6 +253,8 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   }, [sdmTrains])
   // Dernier train cree : pre-selectionne au retour dans la modale de demarrage.
   const [lastSdmCreated, setLastSdmCreated] = useState<string | null>(null)
+  // « Modifier ce train » : brouillon en cours d'edition (null = creation).
+  const [sdmEditing, setSdmEditing] = useState<SdmDraft | null>(null)
 
   const manualImportTrainOptions = useMemo<ManualTrainOption[]>(() => {
     const trains = (LIGNE_FT_NORMALIZED as any)?.trains ?? {}
@@ -3430,6 +3433,19 @@ ${coords}
           }
         : null
     )
+    // 23/10 — et côté 2026 (celui que le bloc fiche train lit : heures, origine/destination, sens).
+    setSdmSessionTrain2026(
+      sdm
+        ? {
+            trainNumber: sdm.trainNumber,
+            sudNord: !sdm.isPair,
+            origine: sdm.origine,
+            destination: sdm.destination,
+            type: sdm.type,
+            stations: sdm.stations.map((st) => ({ name: st.name, key: st.key, arr: st.arr, dep: st.dep })),
+          }
+        : null
+    )
     lastStartedTrainRef.current = train
     const parsedFields = {
       ...buildManualParsedFields(train),
@@ -5989,21 +6005,38 @@ setAutoScrollStartedOnce(next)
               onConfirmLtvOnly={handleLtvOnlyConfirm}
               lockedTrainNumber={mode2026LockedTrain}
               demoPdfFiles={mode2026DemoPdfs.length > 0 ? mode2026DemoPdfs : undefined}
-              onSelectSdm={() => setSdmOpen(true)}
+              onSelectSdm={() => { setSdmEditing(null); setSdmOpen(true) }}
+              onEditSdm={(n) => {
+                const d = sdmTrains.find((t) => t.trainNumber === n) ?? null
+                if (!d) return
+                setSdmEditing(d)
+                setSdmOpen(true)
+              }}
             />
           )}
 
           {sdmOpen && createPortal(
             <SdmModal
               dark={dark}
-              onClose={() => setSdmOpen(false)}
+              initial={sdmEditing}
+              onClose={() => { setSdmOpen(false); setSdmEditing(null) }}
               onConfirm={(draft) => {
-                // Meme numero deja cree -> remplace. Le normalise provisoire est active au
-                // demarrage du train (startNormalizedJourneyFromTrain), pas ici.
-                setSdmTrains((prev) => [...prev.filter((t) => t.trainNumber !== draft.trainNumber), draft])
+                // Meme numero deja cree -> remplace (et, en modification, l'ancien numero aussi
+                // s'il a change). Le normalise provisoire est active au demarrage du train
+                // (startNormalizedJourneyFromTrain), pas ici.
+                const oldNumber = sdmEditing?.trainNumber ?? null
+                setSdmTrains((prev) => [
+                  ...prev.filter((t) => t.trainNumber !== draft.trainNumber && t.trainNumber !== oldNumber),
+                  draft,
+                ])
                 setLastSdmCreated(draft.trainNumber)
-                logTestEvent('ui:sdm:create', { trainNumber: draft.trainNumber, origine: draft.origine, destination: draft.destination })
+                logTestEvent(oldNumber ? 'ui:sdm:edit' : 'ui:sdm:create', {
+                  trainNumber: draft.trainNumber, previous: oldNumber,
+                  origine: draft.origine, destination: draft.destination,
+                  nbHeures: draft.stations.filter((st) => st.arr || st.dep).length,
+                })
                 setSdmOpen(false)
+                setSdmEditing(null)
               }}
             />,
             document.body
