@@ -639,10 +639,24 @@ export default function FTHorizontal() {
     if (trainDist.standbyPointIndex === nearestIdx) {
       // Sortie : ft:auto-scroll-change notifie useTrainDist + FT.tsx + TitleBar
       window.dispatchEvent(new CustomEvent("ft:auto-scroll-change", {
-        detail: { enabled: true, standby: false },
+        detail: { enabled: true, standby: false, source: "fth:marker-tap-exit" },
       }));
     } else {
-      trainDist.setStandbyByIndex(nearestIdx); // entrée / changement de point
+      trainDist.setStandbyByIndex(nearestIdx); // entrée / changement de point (ruban)
+      // 23/10 — La fiche train (FT.tsx) doit verrouiller la MÊME ligne : à la reprise, le
+      // recalage se fait sur la ligne choisie, pas sur la dernière ligne GPS. Constaté sur le
+      // 97051 du 23/10 : stand-by posé ici sur Girona, reprise recalée par FT.tsx sur le
+      // Bif. Girona-Mercaderies (09:34 au lieu de 09:36, retard figé 73 min au lieu de 71).
+      // L'horizontal n'est qu'un AFFICHAGE : même règle que le clic sur une ligne en vertical.
+      const p = points[nearestIdx];
+      window.dispatchEvent(new CustomEvent("lim:standby-manual-horizontal", {
+        detail: {
+          pkInternal: p.pkInternal,
+          dist: p.dist,
+          hora: p.hora || null,
+          change: trainDist.standbyPointIndex !== null,
+        },
+      }));
     }
   }, [trainDist, effPxPerKm, points]);
 

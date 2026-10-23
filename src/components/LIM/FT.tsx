@@ -1168,6 +1168,9 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
   const recalibrateFromRowRef = React.useRef<number | null>(null);
   // ✅ Verrou dédié : ligne qui a réellement déclenché l'entrée en standby
   const standbyLockedRowRef = React.useRef<number | null>(null);
+  // 23/10 — copie « vivante » de rawEntries pour les handlers enregistrés une seule fois
+  // (closure figée au 1er rendu). Alimentée à chaque rendu, juste avant handleBodyClick.
+  const rawEntriesRef = React.useRef<any[]>([]);
 
   /**
    * STAND-BY : la position verticale est-elle gelée ?
@@ -2602,6 +2605,75 @@ detail: { enabled: true, standby: true, origine: "auto" },
         handlerAutoScroll as EventListener
       );
     };
+  }, []);
+
+  // 23/10 — STAND-BY MANUEL DEPUIS LA VUE HORIZONTALE (tap sur un repère du ruban).
+  // Même règle que le clic sur une ligne en vertical (handleBodyClick) : la ligne choisie est
+  // VERROUILLÉE ici (standbyLockedRowRef / recalibrateFromRowRef) et c'est elle qui sert de
+  // base au recalage à la reprise. Avant, seul le ruban (useTrainDist) connaissait ce
+  // stand-by : la reprise recalait sur la dernière ligne GPS. Constaté sur le 97051 du
+  // 23/10 à Girona (Bif. Girona-Mercaderies 09:34 pris au lieu de Girona 09:36 → retard
+  // figé 73 min au lieu de 71). Règle du 21/08 conservée : rien sous GPS.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent).detail ?? {};
+      const u =
+        typeof d.pkInternal === "number" && Number.isFinite(d.pkInternal)
+          ? (d.pkInternal as number)
+          : null;
+      if (u == null) return;
+      if (referenceModeRef.current === "GPS") {
+        logTestEvent("ui:standby:ignored-gps", { source: "fth:marker-tap", pkInternal: u });
+        return;
+      }
+      if (!autoScrollEnabledRef.current) return;
+      const entries = rawEntriesRef.current || [];
+      let rowIndex: number | null = null;
+      let best = Infinity;
+      for (let i = 0; i < entries.length; i++) {
+        if (entries[i]?.isNoteOnly) continue;
+        const ru = getRowU(entries[i]);
+        if (ru == null) continue;
+        const delta = Math.abs(ru - u);
+        if (delta < best) {
+          best = delta;
+          rowIndex = i;
+        }
+      }
+      if (rowIndex == null || best > 0.3) {
+        logTestEvent("ui:standby:horizontal-row-not-found", {
+          pkInternal: u,
+          bestDeltaKm: Number.isFinite(best) ? best : null,
+        });
+        return;
+      }
+      const wasStandby = standbyLockedRowRef.current !== null;
+      setSelectedRowIndex(rowIndex);
+      setActiveRowIndex(rowIndex);
+      recalibrateFromRowRef.current = rowIndex;
+      standbyLockedRowRef.current = rowIndex;
+      logTestEvent(wasStandby ? "ui:standby:move-selection" : "ui:standby:enter", {
+        rowIndex,
+        hora: d.hora ?? null,
+        pk: entries[rowIndex]?.pk ?? null,
+        dependencia: entries[rowIndex]?.dependencia ?? null,
+        deltaKm: Math.round(best * 1000) / 1000,
+        source: "fth:marker-tap",
+      });
+      if (!wasStandby) {
+        inStandbyRef.current = true; // stand-by manuel : position gelée sur place
+        window.dispatchEvent(
+          new CustomEvent("lim:hourly-mode", {
+            // Entrée MANUELLE : le bouton de la TitleBar affiche « Recaler ».
+            detail: { enabled: true, standby: true, origine: "manuel" },
+          })
+        );
+      }
+    };
+    window.addEventListener("lim:standby-manual-horizontal", handler as EventListener);
+    return () =>
+      window.removeEventListener("lim:standby-manual-horizontal", handler as EventListener);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ✅ Sortie manuelle du mode ARRÊT GPS (tap sur l'icône ARRÊT dans TitleBar)
@@ -7963,6 +8035,7 @@ if (hasFranceFtLocal) {
   // - en mode horaire actif : sélection de la ligne la plus proche => Standby
   // - en standby : même mécanique, clic près d'une autre ligne => changement de sélection
   // - la sortie du standby se fait uniquement via le bouton Play
+  rawEntriesRef.current = rawEntries;
   const handleBodyClick = (e: React.MouseEvent<HTMLDivElement>) => {
     // En mode GPS, le clic sur la fiche train ne doit jamais déclencher Standby / recalage
     if (referenceModeRef.current === "GPS") {
