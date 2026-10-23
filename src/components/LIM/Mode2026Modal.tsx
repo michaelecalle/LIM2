@@ -39,6 +39,9 @@ type Props = {
   onSelectSdm?: () => void
   // SDM (#27) : train de session fraîchement créé → à pré-sélectionner au retour.
   preselectTrainNumber?: string | null
+  // 23/10 : numéros des trains créés (liste persistante) → mention « (créé) » + bouton Supprimer.
+  sdmTrainNumbers?: string[]
+  onDeleteSdm?: (trainNumber: string) => void
   // Mode « LTV seul » : n'affiche QUE l'import du PDF LTV (pas de train ni fiche train),
   // et confirme via onConfirmLtvOnly. Défaut false → comportement mode 2026 inchangé.
   ltvOnly?: boolean
@@ -48,11 +51,16 @@ type Props = {
 export default function Mode2026Modal({
   dark, trainOptions, onClose, onConfirm,
   lockedTrainNumber = null, demoPdfFiles, onSelectSdm, preselectTrainNumber = null,
+  sdmTrainNumbers = [], onDeleteSdm,
   ltvOnly = false, onConfirmLtvOnly,
 }: Props) {
   const isDemo = Array.isArray(demoPdfFiles) && demoPdfFiles.length > 0
 
   const [selectedTrainNumber, setSelectedTrainNumber] = useState(lockedTrainNumber ?? '')
+  // Suppression d'un train créé : premier appui = demande de confirmation, second = suppression.
+  const [deleteArmed, setDeleteArmed] = useState(false)
+  useEffect(() => { setDeleteArmed(false) }, [selectedTrainNumber])
+  const selectedIsSdm = !isDemo && selectedTrainNumber !== '' && sdmTrainNumbers.includes(selectedTrainNumber)
   const [pdfFile, setPdfFile] = useState<File | null>(null)
   const [ltvData, setLtvData] = useState<NormalizedLtvFile | null>(null)
   const [parsing, setParsing] = useState(false)
@@ -169,10 +177,36 @@ export default function Mode2026Modal({
                 {t.trainNumber}
                 {t.numeroFrance ? ` / ${t.numeroFrance}` : ''}
                 {t.relation ? ` — ${t.relation}` : ''}
+                {sdmTrainNumbers.includes(t.trainNumber) ? ' (créé)' : ''}
               </option>
             ))}
             {!isDemo && <option value="SDM">Créer un train</option>}
           </select>
+          {selectedIsSdm && onDeleteSdm && (
+            <div className="mt-2 flex items-center gap-2">
+              {!deleteArmed ? (
+                <button type="button" onClick={() => setDeleteArmed(true)}
+                  className="h-9 px-3 text-xs rounded-md border font-semibold"
+                  style={{ borderColor: border, color: fg }}>
+                  Supprimer ce train créé
+                </button>
+              ) : (
+                <>
+                  <button type="button"
+                    onClick={() => { onDeleteSdm(selectedTrainNumber); setSelectedTrainNumber(''); setDeleteArmed(false) }}
+                    className="h-9 px-3 text-xs rounded-md font-bold"
+                    style={{ backgroundColor: '#dc2626', color: '#ffffff' }}>
+                    Confirmer la suppression du {selectedTrainNumber}
+                  </button>
+                  <button type="button" onClick={() => setDeleteArmed(false)}
+                    className="h-9 px-3 text-xs rounded-md border font-semibold"
+                    style={{ borderColor: border, color: fg }}>
+                    Annuler
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
         )}
 

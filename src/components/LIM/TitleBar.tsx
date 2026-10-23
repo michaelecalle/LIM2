@@ -157,6 +157,9 @@ type DisplayedCompositionState = {
 /**
  * TitleBar — LIMGPT α2.1 (+ keep-awake video trigger)
  */
+// 23/10 — cle localStorage des trains crees via « Creer un train » (liste persistante).
+const SDM_TRAINS_STORAGE_KEY = 'lim:sdm-trains'
+
 export default function TitleBar() {
   // ----- HORLOGE -----
   const formatTime = (d: Date) => {
@@ -235,8 +238,20 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
 
   // SDM (#27) : modale de creation d'un sillon de derniere minute (par-dessus la modale de demarrage).
   const [sdmOpen, setSdmOpen] = useState(false)
-  // Train de session cree via « Creer un train » (brouillon). Non persiste.
-  const [sdmTrain, setSdmTrain] = useState<SdmDraft | null>(null)
+  // 23/10 — Trains crees via « Creer un train » : liste PERSISTANTE (localStorage), gardee
+  // tant que l'utilisateur ne supprime pas le train (bouton dans la modale de demarrage).
+  const [sdmTrains, setSdmTrains] = useState<SdmDraft[]>(() => {
+    try {
+      const raw = localStorage.getItem(SDM_TRAINS_STORAGE_KEY)
+      const arr = raw ? JSON.parse(raw) : []
+      return Array.isArray(arr) ? arr.filter((t) => t && typeof t.trainNumber === 'string') : []
+    } catch { return [] }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(SDM_TRAINS_STORAGE_KEY, JSON.stringify(sdmTrains)) } catch {}
+  }, [sdmTrains])
+  // Dernier train cree : pre-selectionne au retour dans la modale de demarrage.
+  const [lastSdmCreated, setLastSdmCreated] = useState<string | null>(null)
 
   const manualImportTrainOptions = useMemo<ManualTrainOption[]>(() => {
     const trains = (LIGNE_FT_NORMALIZED as any)?.trains ?? {}
@@ -275,22 +290,22 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   // redémarrage à chaud, le bloc info avait perdu « matériel » et « longueur — masse ».
   const lastStartedTrainRef = useRef<ManualTrainOption | null>(null)
 
-  const effective2026TrainOptions = useMemo<ManualTrainOption[]>(
-    () =>
-      sdmTrain
-        ? [
-            ...ligneFt2026.options,
-            {
-              trainNumber: sdmTrain.trainNumber,
-              relation: `${sdmTrain.origine} - ${sdmTrain.destination}`,
-              categorieEspagne: sdmTrain.type || undefined,
-              composition: 'US',
-              materiel: 'TGV 2N2',
-            },
-          ]
-        : ligneFt2026.options,
-    [ligneFt2026.options, sdmTrain]
-  )
+  const effective2026TrainOptions = useMemo<ManualTrainOption[]>(() => {
+    if (sdmTrains.length === 0) return ligneFt2026.options
+    // Un train cree prime sur un train de la fiche portant le meme numero.
+    const created = new Set(sdmTrains.map((t) => t.trainNumber))
+    return [
+      ...ligneFt2026.options.filter((t) => !created.has(t.trainNumber)),
+      ...sdmTrains.map((t) => ({
+        trainNumber: t.trainNumber,
+        relation: `${t.origine} - ${t.destination}`,
+        categorieEspagne: t.type || undefined,
+        composition: 'US',
+        materiel: 'TGV 2N2',
+      })),
+    ]
+  }, [ligneFt2026.options, sdmTrains])
+  const sdmTrainNumbers = useMemo(() => sdmTrains.map((t) => t.trainNumber), [sdmTrains])
 
   // ----- FT VIEW MODE (ES / FR / AUTO) -----
   // Option A : pas de persistance (ce n’est pas une préférence, c’est un état de travail)
@@ -3400,6 +3415,21 @@ ${coords}
     }
   ) => {
     const trainNumber = train.trainNumber
+    // 23/10 — Train cree (« Creer un train ») : activer son normalise provisoire au DEMARRAGE,
+    // sinon desactiver celui d'un eventuel train cree precedent.
+    const sdm = sdmTrains.find((t) => t.trainNumber === trainNumber) ?? null
+    setSdmSessionTrain(
+      sdm
+        ? {
+            trainNumber: sdm.trainNumber,
+            isPair: sdm.isPair,
+            origine: sdm.origine,
+            destination: sdm.destination,
+            type: sdm.type,
+            stations: sdm.stations.map((st) => ({ name: st.name, arr: st.arr, dep: st.dep })),
+          }
+        : null
+    )
     lastStartedTrainRef.current = train
     const parsedFields = {
       ...buildManualParsedFields(train),
@@ -5938,7 +5968,13 @@ setAutoScrollStartedOnce(next)
             <Mode2026Modal
               dark={dark}
               trainOptions={effective2026TrainOptions}
-              preselectTrainNumber={sdmTrain?.trainNumber ?? null}
+              preselectTrainNumber={lastSdmCreated}
+              sdmTrainNumbers={sdmTrainNumbers}
+              onDeleteSdm={(n) => {
+                setSdmTrains((prev) => prev.filter((t) => t.trainNumber !== n))
+                setLastSdmCreated((cur) => (cur === n ? null : cur))
+                logTestEvent('ui:sdm:delete', { trainNumber: n })
+              }}
               onClose={() => {
                 setMode2026Open(false)
                 setMode2026LtvOnly(false)
@@ -5962,16 +5998,11 @@ setAutoScrollStartedOnce(next)
               dark={dark}
               onClose={() => setSdmOpen(false)}
               onConfirm={(draft) => {
-                setSdmTrain(draft)
-                // Active le train de session : l'app lira ce "normalise provisoire" pour ce numero.
-                setSdmSessionTrain({
-                  trainNumber: draft.trainNumber,
-                  isPair: draft.isPair,
-                  origine: draft.origine,
-                  destination: draft.destination,
-                  type: draft.type,
-                  stations: draft.stations.map(s => ({ name: s.name, arr: s.arr, dep: s.dep })),
-                })
+                // Meme numero deja cree -> remplace. Le normalise provisoire est active au
+                // demarrage du train (startNormalizedJourneyFromTrain), pas ici.
+                setSdmTrains((prev) => [...prev.filter((t) => t.trainNumber !== draft.trainNumber), draft])
+                setLastSdmCreated(draft.trainNumber)
+                logTestEvent('ui:sdm:create', { trainNumber: draft.trainNumber, origine: draft.origine, destination: draft.destination })
                 setSdmOpen(false)
               }}
             />,
