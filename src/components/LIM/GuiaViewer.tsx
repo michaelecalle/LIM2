@@ -2,10 +2,12 @@
 // Visionneuse PDF pour le Guia BSN (livret d'aide a la conduite Barcelone-Figueres).
 
 import { useEffect, useMemo, useState } from 'react'
-import ManualPdfCanvasViewer from './ManualPdfCanvasViewer'
+import ManualPdfCanvasViewer, { type BlinkConfig } from './ManualPdfCanvasViewer'
 import { fetchManagedDocBlobUrl } from '../../lib/managedDocs'
 
 const GUIA_PDF_URL = '/guia-bsn.pdf?guiaBsn=1'
+// Feux à faire clignoter (positions mesurées sur le PDF V04 du 15/10/2025).
+const GUIA_BLINK_URL = '/guia-bsn.blink.json'
 
 type GuiaTocItem = { id: string; level: 0 | 1; title: string; page: number }
 
@@ -45,6 +47,17 @@ export default function GuiaViewer({ open, dark, onClose }: Props) {
   const [page, setPage] = useState(1)
   const [activeTocId, setActiveTocId] = useState('cover')
   const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null)
+  const [blink, setBlink] = useState<BlinkConfig | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    fetch(GUIA_BLINK_URL, { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((cfg) => { if (!cancelled && cfg && Array.isArray(cfg.zones)) setBlink(cfg as BlinkConfig) })
+      .catch((err) => console.warn('[GuiaViewer] feux clignotants indisponibles', err))
+    return () => { cancelled = true }
+  }, [open])
 
   useEffect(() => {
     if (!open) { setPdfObjectUrl(null); return }
@@ -163,6 +176,7 @@ export default function GuiaViewer({ open, dark, onClose }: Props) {
               page={page}
               onPageChange={handlePageChange}
               applyDarkInvert={false}
+              blink={blink}
             />
           </div>
         </div>

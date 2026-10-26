@@ -18,6 +18,39 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import { logTestEvent } from '../../lib/testLogger'
 
+// Feux clignotants (Guia BSN, 26/10) : sur papier, un feu clignotant et un feu
+// fixe se confondent (incident réel). Chaque zone est un ovale couleur du fond
+// posé sur le feu, qui apparaît/disparaît → le feu « s'éteint ». Positions et
+// tailles en FRACTIONS de la page (x, rx / largeur ; y, ry / hauteur) : restent
+// justes quelle que soit la largeur d'affichage, et l'ovale vit DANS le cadre de
+// sa page, donc suit le défilement sans calcul.
+export type BlinkZone = {
+  page: number
+  x: number
+  y: number
+  rx: number
+  ry: number
+  fond: string
+}
+export type BlinkConfig = {
+  // Mention de version imprimée dans le PDF mesuré : si le PDF chargé ne la porte
+  // pas (document remplacé), les zones sont ignorées plutôt que mal placées.
+  versionPdf: string
+  rythmeMs: number
+  zones: BlinkZone[]
+}
+
+const BLINK_STYLE_ID = 'lim-pdf-blink-style'
+function ensureBlinkStyle() {
+  if (document.getElementById(BLINK_STYLE_ID)) return
+  const style = document.createElement('style')
+  style.id = BLINK_STYLE_ID
+  // Première moitié : cache transparent (feu allumé) ; seconde : cache opaque (feu éteint).
+  style.textContent =
+    '@keyframes limPdfBlink { 0%, 49.999% { opacity: 0 } 50%, 100% { opacity: 1 } }'
+  document.head.appendChild(style)
+}
+
 type ManualPdfCanvasViewerProps = {
   pdfUrl: string
   page: number
@@ -25,6 +58,8 @@ type ManualPdfCanvasViewerProps = {
   /** Appliquer l'inversion couleurs en mode nuit (true par défaut).
    *  Passer false pour les documents où les couleurs doivent être fidèles (ex. Guia BSN). */
   applyDarkInvert?: boolean
+  /** Feux à faire clignoter (Guia BSN uniquement). */
+  blink?: BlinkConfig | null
 }
 
 export default function ManualPdfCanvasViewer({
@@ -32,6 +67,7 @@ export default function ManualPdfCanvasViewer({
   page,
   onPageChange,
   applyDarkInvert = true,
+  blink = null,
 }: ManualPdfCanvasViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const pageRefs = useRef<Array<HTMLDivElement | null>>([])
@@ -88,7 +124,27 @@ export default function ManualPdfCanvasViewer({
             ? loadedDoc.numPages
             : 1
         setPageCount(total)
-        pageRefs.current = new Array(total).fill(null)
+        // Ne PAS remettre les emplacements à null lors d'un nouveau rendu du même
+        // document (redimensionnement, arrivée de la config des feux) : React ne
+        // les re-remplit qu'au prochain rendu, et la page 1, traitée tout de suite,
+        // était sautée (restait à l'ancienne taille / sans ses feux).
+        if (pageRefs.current.length !== total) pageRefs.current = new Array(total).fill(null)
+
+        let blinkZones: BlinkZone[] = []
+        if (blink && blink.zones.length > 0) {
+          const first = await loadedDoc.getPage(1)
+          const content = await first.getTextContent()
+          const text = content.items.map((it: any) => ('str' in it ? it.str : '')).join(' ')
+          if (text.replace(/\s+/g, ' ').includes(blink.versionPdf)) {
+            blinkZones = blink.zones
+            ensureBlinkStyle()
+          } else {
+            console.warn(
+              `[ManualPdfCanvasViewer] Feux clignotants désactivés : le PDF chargé ne porte pas la mention « ${blink.versionPdf} » (document mis à jour ? positions à remesurer).`
+            )
+          }
+          if (cancelled) return
+        }
 
         const availableWidth = Math.max(260, viewerWidth - 24)
         const outputScale = Math.min(window.devicePixelRatio || 1, 2)
@@ -124,7 +180,41 @@ export default function ManualPdfCanvasViewer({
           if (cancelled) return
 
           const host = pageRefs.current[p - 1]
-          if (host) host.replaceChildren(canvas)
+          const zonesPage = blinkZones.filter((z) => z.page === p)
+          if (host && zonesPage.length === 0) {
+            host.replaceChildren(canvas)
+          } else if (host) {
+            // Cadre aux dimensions exactes du canvas : les pourcentages des
+            // ovales se rapportent à la page, pas à la colonne d'affichage.
+            const frame = document.createElement('div')
+            frame.className = 'mx-auto shadow-sm'
+            frame.style.position = 'relative'
+            frame.style.width = canvas.style.width
+            frame.style.height = canvas.style.height
+            canvas.className = 'block'
+            frame.appendChild(canvas)
+            const period = blink?.rythmeMs ?? 2000
+            for (const z of zonesPage) {
+              const cover = document.createElement('div')
+              cover.style.position = 'absolute'
+              cover.style.left = `${z.x * 100}%`
+              cover.style.top = `${z.y * 100}%`
+              cover.style.width = `${z.rx * 200}%`
+              cover.style.height = `${z.ry * 200}%`
+              cover.style.transform = 'translate(-50%, -50%)'
+              cover.style.borderRadius = '50%'
+              cover.style.backgroundColor = z.fond
+              cover.style.pointerEvents = 'none'
+              cover.style.filter = canvas.style.filter
+              cover.style.opacity = '0'
+              cover.style.animation = `limPdfBlink ${period}ms linear infinite`
+              // Calé sur l'horloge : tous les feux clignotent en phase, même
+              // rendus à des instants différents (rendu page par page).
+              cover.style.animationDelay = `-${Date.now() % period}ms`
+              frame.appendChild(cover)
+            }
+            host.replaceChildren(frame)
+          }
           setRenderedCount(p)
         }
       } catch (err: any) {
@@ -145,7 +235,7 @@ export default function ManualPdfCanvasViewer({
       try { loadedDoc?.destroy?.() } catch {}
       try { loadingTask?.destroy?.() } catch {}
     }
-  }, [pdfUrl, viewerWidth, applyDarkInvert])
+  }, [pdfUrl, viewerWidth, applyDarkInvert, blink])
 
   // ── Aller à la page demandée par le parent (sommaire, index du livret) ────
   useEffect(() => {

@@ -17,7 +17,8 @@ import type { FTEntry, CsvSens } from "../../data/ligneFT";
 import { logTestEvent } from "../../lib/testLogger";
 import { onLtvZoneClick } from "../../lib/ltvFold";
 import { getFtFranceHhmm } from "../../data/ftFranceTimes"
-import { tunnelZoneAt, tunnelZoneAtStrict } from "../../data/tunnelZones"
+import { tunnelZoneAt, tunnelZoneAtStrict, TUNNEL_ZONES_PKINTERNAL } from "../../data/tunnelZones"
+import { ltvVoies } from "../../lib/ltvVoie"
 import { empiricalPkAtElapsed, isInEmpiricalZone } from "../../data/empiricalCurve"
 import { networkFromSkm, sKmFromNetworkPk } from "../../lib/gpsPkEngine"
 
@@ -137,6 +138,9 @@ type StationArretState = {
   // ligne au delta au redemarrage.
   stoppedAtMs?: number | null;
 };
+
+// Couleurs des LTV (inscription + traits) : cf. classes .ft-ltv-c0 à c5.
+const LTV_COLOR_COUNT = 6;
 
 type FtLtvRowForFtDisplay = {
   code?: string;
@@ -258,10 +262,11 @@ export default function FT({ variant = "classic" }: FTProps) {
   // c'est plus compact, au-dessus plus étalé.
   // ⚠️ Aucune lecture de localStorage ici : la préférence appartient à TitleBar,
   // qui mémorise l'ÉCART AU SEUIL d'exactitude et non une valeur absolue. FT ne
-  // fait que recevoir la valeur courante. `enabled` démarre toujours à false —
+  // fait que recevoir la valeur courante. `enabled` démarre à true (activée par
+  // défaut depuis le 26/10), aligné sur l'état initial de la case dans TitleBar :
   // la case et l'état réel doivent concorder au chargement (correctif 14/08).
   const [ftScale, setFtScale] = useState<{ enabled: boolean; multiplier: number }>({
-    enabled: false,
+    enabled: true,
     multiplier: 1,
   });
   useEffect(() => {
@@ -1277,6 +1282,19 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
    * peinture → teinte uniforme (décision 12/08).
    */
   const [ltvBands, setLtvBands] = useState<NoteBand[]>([]);
+  // Colonne LTV (prototype 26/10) : inscriptions « vitesse voie » et séparateurs.
+  const [ltvLabels, setLtvLabels] = useState<Array<{ top: number; left: number; text: string; color: number }>>([]);
+  const [ltvSep, setLtvSep] = useState<{ left: number; mid: number; height: number } | null>(null);
+  const [ltvEdges, setLtvEdges] = useState<Array<{ top: number; left: number; width: number; color: number }>>([]);
+
+  /**
+   * Bandes de TUNNEL (gris clair) dans la seule colonne KM — 26/10, demande
+   * utilisateur, équivalent vertical des bandes de la vue horizontale. Mêmes
+   * bornes exactes (`TUNNEL_ZONES_PKINTERNAL`, sans la marge GPS de 150 m).
+   * UNIQUEMENT en mise à l'échelle : hors échelle l'espacement des lignes ne
+   * traduit aucune distance et la bande deviendrait illisible (choix utilisateur).
+   */
+  const [tunnelBands, setTunnelBands] = useState<NoteBand[]>([]);
 
   /**
    * Graduations kilométriques de la colonne KM (mode mise à l'échelle seulement).
@@ -1284,7 +1302,8 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
    * affichés, eux, changent de repère selon le réseau (RFN, LFP, ADIF) et
    * repartent à zéro, ce qui rendrait la graduation incohérente aux transitions.
    */
-  const [kmTicks, setKmTicks] = useState<Array<{ top: number; left: number; width: number }>>([]);
+  // `tunnel` : graduation tombant dans un tunnel → dessinée en blanc sur le gris.
+  const [kmTicks, setKmTicks] = useState<Array<{ top: number; left: number; width: number; tunnel: boolean }>>([]);
 
   // --- Continuité ORANGE -> RED (ancrage visuel) + anti-retour arrière en RED ---
   const lastTrainPosYpxRef = React.useRef<number | null>(null);
@@ -4022,7 +4041,19 @@ useEffect(() => {
 
       const bands: NoteBand[] = [];
       const overlays: NoteOverlay[] = [];
-      const ticks: Array<{ top: number; left: number; width: number }> = [];
+      const ticks: Array<{ top: number; left: number; width: number; tunnel: boolean }> = [];
+      const tunnels: NoteBand[] = [];
+      const dansTunnel = (km: number) =>
+        TUNNEL_ZONES_PKINTERNAL.some((z) => km >= z.pkIntMin && km <= z.pkIntMax);
+      // ⚠️ PROTOTYPE 26/10 — Colonne LTV DESSINÉE dans la partie gauche de la
+      // cellule KM (élargie aux dépens d'Établissements), et NON insérée dans le
+      // tableau : la position des colonnes est codée en dur à plusieurs endroits
+      // dont la logique de marche (heure lue en `td:nth-child(6)`). Largeur =
+      // fraction `--ltv-ratio` de la cellule KM (même variable que l'en-tête).
+      const ltvStripPx = (kmCell: HTMLElement): number => {
+        const r = parseFloat(getComputedStyle(table).getPropertyValue("--ltv-ratio"));
+        return Math.round(kmCell.offsetWidth * (Number.isFinite(r) && r > 0 ? r : 0.3));
+      };
       if (post.length >= 2) {
         const firstMain = table.querySelector<HTMLTableRowElement>("tr.ft-row-main");
         const cells = firstMain?.querySelectorAll<HTMLTableCellElement>("td");
@@ -4030,10 +4061,14 @@ useEffect(() => {
         const etabCell = cells?.[3];
 
         if (kmCell && etabCell) {
-          // Emprise de la BANDE : KM + Établissements (Vmax exclue).
-          const left = kmCell.offsetLeft;
+          // Emprise de la BANDE : KM + Établissements (Vmax exclue), à droite de
+          // la colonne LTV dessinée.
+          const strip = ltvStripPx(kmCell);
+          const kmLeft = kmCell.offsetLeft + strip;
+          const kmWidth = kmCell.offsetWidth - strip;
+          const left = kmLeft;
           const width =
-            etabCell.offsetLeft + etabCell.offsetWidth - kmCell.offsetLeft;
+            etabCell.offsetLeft + etabCell.offsetWidth - kmLeft;
 
           // Graduations kilométriques : UNIQUEMENT quand la mise à l'échelle est
           // réellement active. Hors échelle, l'espacement des lignes ne traduit
@@ -4046,18 +4081,31 @@ useEffect(() => {
               .map((p) => p.pk)
               .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
             if (pks.length >= 2) {
-              const tickLeft = kmCell.offsetLeft + 2;
+              const tickLeft = kmLeft + 2;
               // 20 % de la colonne : moitié de la longueur d'origine (choix de
               // l'utilisateur après essai à l'écran, 14/08). Assez court pour
               // qu'aucune confusion avec une séparation de ligne ne soit possible.
-              const tickWidth = Math.max(4, Math.round(kmCell.offsetWidth * 0.2));
+              const tickWidth = Math.max(4, Math.round(kmWidth * 0.2));
               const premier = Math.ceil(Math.min(...pks));
               const dernier = Math.floor(Math.max(...pks));
               for (let km = premier; km <= dernier; km++) {
                 const y = yAt(km);
                 if (y === null) continue;
-                ticks.push({ top: Math.round(y), left: tickLeft, width: tickWidth });
+                ticks.push({ top: Math.round(y), left: tickLeft, width: tickWidth, tunnel: dansTunnel(km) });
               }
+            }
+
+            // Bandes de tunnel : colonne KM seule. `yAt` plaque un PK hors du
+            // parcours affiché sur l'extrémité → hauteur nulle, écartée ; un
+            // tunnel à cheval sur une extrémité est naturellement tronqué.
+            for (const z of TUNNEL_ZONES_PKINTERNAL) {
+              const y1 = yAt(z.pkIntMin);
+              const y2 = yAt(z.pkIntMax);
+              if (y1 === null || y2 === null) continue;
+              const haut = Math.min(y1, y2);
+              const h = Math.round(Math.abs(y2 - y1));
+              if (h <= 0) continue;
+              tunnels.push({ top: Math.round(haut), height: h, left: kmLeft, width: kmWidth });
             }
           }
 
@@ -4101,70 +4149,114 @@ useEffect(() => {
         }
       }
 
-      // ── 6) BANDES LTV (orange très pâle), fusionnées ────────────────────────
-      // Mêmes colonnes que les bandes de notes. Les bornes viennent directement
-      // de `ftLtvRows` (kmIni/kmFin) : aucune extraction depuis du texte.
+      // ── 6) COLONNE LTV (prototype 26/10) ────────────────────────────────────
+      // Colonne dessinée dans la partie gauche de la cellule KM (cf.
+      // `ltvStripPx`), coupée en deux demi-colonnes VOIES PAIRES / IMPAIRES.
+      // Sens PK croissants (Barcelone → Perpignan) : paire à GAUCHE, impaire à
+      // droite ; sens inverse : l'inverse (géographie réelle vue du conducteur).
+      // Chevauchements sur une même demi-colonne : fusionnés en une teinte
+      // uniforme (pas d'échelle de gravité involontaire) ; chaque LTV garde son
+      // inscription « vitesse voie » à son entrée. Affichée avec ou sans mise à
+      // l'échelle, comme les anciennes bandes LTV.
       const ltv: NoteBand[] = [];
-      if (post.length >= 2 && ftLtvRows.length > 0) {
+      const ltvLbl: Array<{ top: number; left: number; text: string; color: number }> = [];
+      const ltvEdg: Array<{ top: number; left: number; width: number; color: number }> = [];
+      let sep: { left: number; mid: number; height: number } | null = null;
+      if (post.length >= 2) {
         const firstMain = table.querySelector<HTMLTableRowElement>("tr.ft-row-main");
         const cells = firstMain?.querySelectorAll<HTMLTableCellElement>("td");
         const kmCell = cells?.[2];
-        const etabCell = cells?.[3];
 
-        if (kmCell && etabCell) {
-          // ⚠️ Emprise VOLONTAIREMENT réduite à la seule colonne KM, contrairement
-          // à la bande des notes (décision 12/08). Les lignes de texte orange des
-          // LTV restent, elles, dans la colonne Établissements et débordent de la
-          // zone : une bande qui les traverserait à moitié serait incohérente.
-          const left = kmCell.offsetLeft;
-          const width = kmCell.offsetWidth;
+        if (kmCell) {
+          const strip = ltvStripPx(kmCell);
+          const half = strip / 2;
+          const x0 = kmCell.offsetLeft;
+          sep = { left: x0 + strip, mid: Math.round(x0 + half), height: table.offsetHeight };
+
+          const croissant = post[post.length - 1].pk >= post[0].pk;
+          const gauche: "pair" | "impair" = croissant ? "pair" : "impair";
 
           const num = (v: unknown): number | null => {
             const n = parseFloat(String(v ?? "").trim().replace(",", "."));
             return Number.isFinite(n) ? n : null;
           };
 
-          // 1) Un rectangle brut par LTV.
-          const raw: Array<{ top: number; bottom: number }> = [];
+          // Voie(s) concernée(s) : règle commune aux deux vues (src/lib/ltvVoie.ts).
+          const voies = ltvVoies;
+
+          const raw: Record<"pair" | "impair", Array<{ top: number; bottom: number }>> = { pair: [], impair: [] };
+          const zones: Array<{ row: FtLtvRowForFtDisplay; haut: number; bas: number }> = [];
           for (const row of ftLtvRows) {
-            const a = num((row as any).kmIni);
-            const b = num((row as any).kmFin);
+            const a = num(row.kmIni);
+            const b = num(row.kmFin);
             if (a === null || b === null) continue;
             const y1 = yAt(Math.min(a, b));
             const y2 = yAt(Math.max(a, b));
             if (y1 === null || y2 === null) continue;
-            // Même précaution que pour les notes : en sens décroissant, le PK le
-            // plus petit est plus BAS à l'écran.
+            // En sens décroissant, le PK le plus petit est plus BAS à l'écran.
             const haut = Math.min(y1, y2);
             const bas = Math.max(y1, y2);
             if (bas - haut <= 0) continue; // hors du parcours affiché
-            raw.push({ top: haut, bottom: bas });
+            zones.push({ row, haut, bas });
+          }
+          // Une COULEUR par LTV (26/10) pour son inscription ET ses traits de
+          // début/fin, le surlignage restant orange : on suit chaque LTV de bout
+          // en bout même imbriquée. Attribuées dans l'ordre de lecture → deux
+          // LTV voisines ou imbriquées n'ont jamais la même.
+          zones.sort((x, y) => x.haut - y.haut || x.bas - y.bas);
+          zones.forEach(({ row, haut, bas }, idx) => {
+            const color = idx % LTV_COLOR_COUNT;
+            const v = voies(row);
+            for (const c of v.cotes) {
+              raw[c].push({ top: haut, bottom: bas });
+              // Traits de DÉBUT et de FIN propres à chaque LTV, posés avant la
+              // fusion : une LTV imbriquée garde ses limites visibles même
+              // fondue dans la teinte d'une autre.
+              const l = Math.round(c === gauche ? x0 : x0 + half);
+              ltvEdg.push({ top: Math.round(haut), left: l, width: Math.round(half), color });
+              ltvEdg.push({ top: Math.round(bas), left: l, width: Math.round(half), color });
+            }
+            // L'entrée de zone est en HAUT : la fiche se lit dans le sens de la marche.
+            ltvLbl.push({ top: Math.round(haut), left: x0, text: `${String(row.speed ?? "").trim()} ${v.label}`.trim(), color });
+          });
+
+          // Fusion par demi-colonne. Seuil en PIXELS : s'adapte à l'échelle.
+          const MERGE_GAP_PX = 2;
+          for (const cote of ["pair", "impair"] as const) {
+            const left = Math.round(cote === gauche ? x0 : x0 + half);
+            const width = Math.round(half);
+            const fusion: NoteBand[] = [];
+            raw[cote].sort((x, y) => x.top - y.top);
+            for (const r of raw[cote]) {
+              const last = fusion[fusion.length - 1];
+              if (last && r.top - (last.top + last.height) < MERGE_GAP_PX) {
+                last.height = Math.round(Math.max(last.top + last.height, r.bottom) - last.top);
+              } else {
+                fusion.push({ top: Math.round(r.top), height: Math.round(r.bottom - r.top), left, width });
+              }
+            }
+            ltv.push(...fusion);
           }
 
-          // 2) Fusion. Le seuil est exprimé en PIXELS et non en kilomètres : il
-          //    s'adapte donc tout seul à la mise à l'échelle, et évite qu'un
-          //    interstice d'un cheveu ne laisse deux bandes distinctes.
-          const MERGE_GAP_PX = 2;
-          raw.sort((x, y) => x.top - y.top);
-          for (const r of raw) {
-            const last = ltv[ltv.length - 1];
-            if (last && r.top - (last.top + last.height) < MERGE_GAP_PX) {
-              const bottom = Math.max(last.top + last.height, r.bottom);
-              last.height = Math.round(bottom - last.top);
-            } else {
-              ltv.push({
-                top: Math.round(r.top),
-                height: Math.round(r.bottom - r.top),
-                left,
-                width,
-              });
-            }
+          // Inscriptions qui démarrent au même endroit : empilées, jamais superposées.
+          ltvLbl.sort((x, y) => x.top - y.top);
+          for (let k = 1; k < ltvLbl.length; k++) {
+            if (ltvLbl[k].top < ltvLbl[k - 1].top + 12) ltvLbl[k].top = ltvLbl[k - 1].top + 12;
           }
         }
       }
 
       setLtvBands((prev) =>
         JSON.stringify(prev) === JSON.stringify(ltv) ? prev : ltv
+      );
+      setLtvLabels((prev) =>
+        JSON.stringify(prev) === JSON.stringify(ltvLbl) ? prev : ltvLbl
+      );
+      setLtvSep((prev) =>
+        JSON.stringify(prev) === JSON.stringify(sep) ? prev : sep
+      );
+      setLtvEdges((prev) =>
+        JSON.stringify(prev) === JSON.stringify(ltvEdg) ? prev : ltvEdg
       );
       setNoteBands((prev) =>
         JSON.stringify(prev) === JSON.stringify(bands) ? prev : bands
@@ -4174,6 +4266,9 @@ useEffect(() => {
       );
       setKmTicks((prev) =>
         JSON.stringify(prev) === JSON.stringify(ticks) ? prev : ticks
+      );
+      setTunnelBands((prev) =>
+        JSON.stringify(prev) === JSON.stringify(tunnels) ? prev : tunnels
       );
 
       // ⚠️ Les espacements viennent de déplacer les lignes : toute la géométrie
@@ -9118,11 +9213,30 @@ const vmaxClassForLtv =
         .ft-table th:nth-child(2),
         .ft-table td:nth-child(2) { width: 9%; }
 
+        /* ⚠️ 26/10 — prototype colonne LTV : +4 % à KM pris sur Établissements.
+           La partie gauche de la cellule KM (fraction --ltv-ratio = 4 / 13,4)
+           porte la colonne LTV dessinée ; les PK passent à droite. */
+        .ft-table { --ltv-ratio: 0.2985; }
+
         .ft-table th:nth-child(3),
-        .ft-table td:nth-child(3) { width: 9.4%; }
+        .ft-table td:nth-child(3) { width: 13.4%; }
+        .ft-table td:nth-child(3) { text-align: right; }
 
         .ft-table th:nth-child(4),
-        .ft-table td:nth-child(4) { width: 36.6%; }
+        .ft-table td:nth-child(4) { width: 32.6%; }
+
+        .ft-th-km { padding: 0 !important; }
+        .ft-th-km-inner { display: flex; align-items: stretch; }
+        .ft-th-ltv {
+          flex: 0 0 calc(var(--ltv-ratio) * 100%);
+          border-right: 1px solid #000;
+          font-size: 0.65rem;
+          padding: 4px 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .ft-th-km-label { flex: 1; padding: 4px 6px; text-align: right; }
 
         .ft-table th:nth-child(5),
         .ft-table td:nth-child(5) { width: 6%; }
@@ -9159,9 +9273,10 @@ const vmaxClassForLtv =
           :root:not([data-portrait-fige]) .ft-table th:nth-child(2),
           :root:not([data-portrait-fige]) .ft-table td:nth-child(2)  { width: 6%; }     /* Vmax    47 px, besoin 38 */
           :root:not([data-portrait-fige]) .ft-table th:nth-child(3),
-          :root:not([data-portrait-fige]) .ft-table td:nth-child(3)  { width: 7.5%; }   /* KM      59 px, besoin 56 */
+          :root:not([data-portrait-fige]) .ft-table td:nth-child(3)  { width: 11.5%; }  /* KM 59 px + colonne LTV 4 % (prototype 26/10) */
           :root:not([data-portrait-fige]) .ft-table th:nth-child(4),
-          :root:not([data-portrait-fige]) .ft-table td:nth-child(4)  { width: 38.5%; }  /* Etabl. 302 px, besoin 244 */
+          :root:not([data-portrait-fige]) .ft-table td:nth-child(4)  { width: 34.5%; }  /* Etabl. 271 px, besoin 244 */
+          :root:not([data-portrait-fige]) .ft-table { --ltv-ratio: 0.3478; }            /* 4 / 11,5 */
           :root:not([data-portrait-fige]) .ft-table th:nth-child(5),
           :root:not([data-portrait-fige]) .ft-table td:nth-child(5)  { width: 8.5%; }   /* Arr     67 px, besoin 58 */
           :root:not([data-portrait-fige]) .ft-table th:nth-child(6),
@@ -9394,17 +9509,75 @@ const vmaxClassForLtv =
            texte orange des LTV debordent de la zone et sont dans Etablissements).
            z-index 1, donc sous le peche des notes. Les zones sont fusionnees a la
            mesure : jamais deux bandes LTV superposees, la teinte reste uniforme. */
+        /* ⚠️ 26/10 — prototype : les bandes LTV ont quitté la colonne KM pour
+           la colonne LTV dessinée (demi-colonnes paire/impaire). Orange franc. */
         .ft-ltv-band {
           position: absolute;
-          background-color: #fff8ec;
-          mix-blend-mode: multiply;
+          background-color: rgba(245, 158, 11, 0.6);
           pointer-events: none;
           z-index: 1;
         }
 
         .dark .ft-ltv-band {
-          background-color: rgba(255, 200, 120, 0.09);
-          mix-blend-mode: normal;
+          background-color: rgba(245, 158, 11, 0.55);
+        }
+
+        /* Colonne LTV dessinée : bordure avec KM + séparation paire/impaire. */
+        .ft-ltv-sep {
+          position: absolute;
+          width: 1px;
+          background-color: #000;
+          pointer-events: none;
+          z-index: 1;
+        }
+        .dark .ft-ltv-sep { background-color: #fff; }
+        .ft-ltv-mid {
+          position: absolute;
+          width: 0;
+          border-left: 1px dashed rgba(0, 0, 0, 0.3);
+          pointer-events: none;
+          z-index: 1;
+        }
+        .dark .ft-ltv-mid { border-left-color: rgba(255, 255, 255, 0.3); }
+        /* Début / fin de chaque LTV : trait en travers de sa demi-colonne. */
+        .ft-ltv-edge {
+          position: absolute;
+          height: 0;
+          border-top: 2px solid var(--ltv-c, #7c2d12);
+          margin-top: -1px;
+          pointer-events: none;
+          z-index: 2;
+        }
+        .dark .ft-ltv-edge { border-top-color: var(--ltv-c, #fdba74); }
+        /* Une couleur par LTV (26/10) : inscription + traits de début/fin.
+           Pas de rouge (confusion avec les vitesses SR en rouge). */
+        .ft-ltv-c0 { --ltv-c: #1d4ed8; }  /* bleu */
+        .ft-ltv-c1 { --ltv-c: #15803d; }  /* vert */
+        .ft-ltv-c2 { --ltv-c: #7e22ce; }  /* violet */
+        .ft-ltv-c3 { --ltv-c: #be185d; }  /* rose foncé */
+        .ft-ltv-c4 { --ltv-c: #0e7490; }  /* bleu-vert */
+        .ft-ltv-c5 { --ltv-c: #78350f; }  /* brun */
+        .dark .ft-ltv-c0 { --ltv-c: #93c5fd; }
+        .dark .ft-ltv-c1 { --ltv-c: #86efac; }
+        .dark .ft-ltv-c2 { --ltv-c: #d8b4fe; }
+        .dark .ft-ltv-c3 { --ltv-c: #f9a8d4; }
+        .dark .ft-ltv-c4 { --ltv-c: #67e8f9; }
+        .dark .ft-ltv-c5 { --ltv-c: #e2b98f; }
+        .ft-ltv-label {
+          position: absolute;
+          z-index: 3;
+          font-size: 10px;
+          line-height: 11px;
+          font-weight: 700;
+          white-space: nowrap;
+          padding: 0 2px;
+          color: var(--ltv-c, #7c2d12);
+          background: rgba(255, 255, 255, 0.85);
+          pointer-events: none;
+        }
+        .dark .ft-ltv-label {
+          color: var(--ltv-c, #fdba74);
+          background: rgba(0, 0, 0, 0.8);
         }
 
         /* Graduations kilométriques (mode mise à l'échelle uniquement) — 14/08.
@@ -9425,6 +9598,26 @@ const vmaxClassForLtv =
           pointer-events: none;
         }
         .dark .ft-km-tick { background-color: rgba(255, 255, 255, 0.34); }
+
+        /* Tunnels (26/10) : gris clair dans la colonne KM. En clair, multiply
+           garde les PK lisibles par-dessus ; en sombre, un gris plein rendrait
+           illisibles les PK blancs → gris clair semi-transparent. z-index 0 :
+           sous les LTV (z 1), et sous les graduations (même niveau, posées
+           après dans le DOM). Teintes à ajuster à l'œil par l'utilisateur. */
+        .ft-tunnel-band {
+          position: absolute;
+          background-color: #d9d9d9;
+          mix-blend-mode: multiply;
+          pointer-events: none;
+          z-index: 0;
+        }
+        .dark .ft-tunnel-band {
+          background-color: rgba(210, 210, 210, 0.22);
+          mix-blend-mode: normal;
+        }
+        /* Graduation dans un tunnel : blanche, jour comme nuit. */
+        .ft-km-tick-tunnel,
+        .dark .ft-km-tick-tunnel { background-color: #ffffff; }
 
         /* Texte d'une note a zone : pose en haut de sa zone, au-dessus de la
            bande. Volontairement SANS hauteur ni overflow : le texte deborde
@@ -9864,7 +10057,12 @@ const vmaxClassForLtv =
                   oblique montante, ETCS toujours sans libellé. */}
               <th className="ft-th">Bloc</th>
               <th className="ft-th">Vmax</th>
-              <th className="ft-th">KM</th>
+              <th className="ft-th ft-th-km">
+                <div className="ft-th-km-inner">
+                  <span className="ft-th-ltv">LTV</span>
+                  <span className="ft-th-km-label">KM</span>
+                </div>
+              </th>
               <th className="ft-th">Établissements</th>
               <th className="ft-th">Arr</th>
               <th className="ft-th">Pass</th>
@@ -10017,6 +10215,16 @@ const vmaxClassForLtv =
             {/* Bandes LTV (orange très pâle), sous les bandes de notes.
                 Déjà fusionnées à la mesure : une LTV imbriquée dans une autre ne
                 produit pas de surcouche, donc pas d'assombrissement parasite. */}
+            {/* Bandes de tunnel (gris clair, colonne KM, mise à l'échelle seule) —
+                sous les bandes LTV et sous les graduations. */}
+            {tunnelBands.map((b, k) => (
+              <div
+                key={`tunnel-band-${k}`}
+                className="ft-tunnel-band"
+                style={{ top: b.top, height: b.height, left: b.left, width: b.width }}
+              />
+            ))}
+
             {ltvBands.map((b, k) => (
               <div
                 key={`ltv-band-${k}`}
@@ -10030,12 +10238,29 @@ const vmaxClassForLtv =
               />
             ))}
 
+            {/* Colonne LTV (prototype 26/10) : bordure droite + séparation des
+                demi-colonnes paire/impaire, puis inscriptions « vitesse voie ». */}
+            {ltvSep && (
+              <>
+                <div className="ft-ltv-sep" style={{ top: 0, height: ltvSep.height, left: ltvSep.left }} />
+                <div className="ft-ltv-mid" style={{ top: 0, height: ltvSep.height, left: ltvSep.mid }} />
+              </>
+            )}
+            {ltvEdges.map((e, k) => (
+              <div key={`ltv-edge-${k}`} className={`ft-ltv-edge ft-ltv-c${e.color}`} style={{ top: e.top, left: e.left, width: e.width }} />
+            ))}
+            {ltvLabels.map((l, k) => (
+              <div key={`ltv-lbl-${k}`} className={`ft-ltv-label ft-ltv-c${l.color}`} style={{ top: l.top, left: l.left }}>
+                {l.text}
+              </div>
+            ))}
+
             {/* Graduations kilométriques — sous les bandes de notes, dans la
                 seule colonne KM (cf. `.ft-km-tick`). */}
             {kmTicks.map((t, k) => (
               <div
                 key={`km-tick-${k}`}
-                className="ft-km-tick"
+                className={t.tunnel ? "ft-km-tick ft-km-tick-tunnel" : "ft-km-tick"}
                 style={{ top: t.top, left: t.left, width: t.width }}
               />
             ))}

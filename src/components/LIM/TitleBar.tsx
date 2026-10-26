@@ -734,7 +734,11 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   // manœuvre absurde « décocher puis recocher » pour l'activer réellement.
   // L'application ouvre maintenant toujours désactivée, case décochée : les deux
   // concordent. Seul le multiplicateur reste mémorisé (c'est une préférence).
-  const [ftScaleEnabled, setFtScaleEnabled] = useState(false)
+  // ⚠️ 26/10 — ACTIVÉE PAR DÉFAUT (demande utilisateur). Le motif du 14/08 a
+  // disparu le 15/08 (plus de suspension quand INFOS/LTV sont dépliés), donc case
+  // et écran concordent dès le départ. Toujours pas mémorisée : chaque lancement
+  // repart activé ; doit rester aligné sur l'état initial de FT.tsx.
+  const [ftScaleEnabled, setFtScaleEnabled] = useState(true)
   /**
    * ⚠️ 15/08 — Curseur RÉTABLI (retiré le 14/08). Il avait été retiré parce que
    * sa course utile s'écrasait à 0,2-0,3 : la densité était alors PLAFONNÉE pour

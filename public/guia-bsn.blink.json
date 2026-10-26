@@ -1,0 +1,287 @@
+{
+  "document": "guia-bsn",
+  "versionPdf": "V04 du 15/10/2025",
+  "rythmeMs": 2000,
+  "zones": [
+    {
+      "page": 1,
+      "x": 0.11111,
+      "y": 0.12792,
+      "rx": 0.00853,
+      "ry": 0.00598,
+      "fond": "#000000",
+      "couleur": "bleu",
+      "libelle": "PCA La Roca"
+    },
+    {
+      "page": 1,
+      "x": 0.11111,
+      "y": 0.24547,
+      "rx": 0.00861,
+      "ry": 0.00604,
+      "fond": "#000000",
+      "couleur": "bleu",
+      "libelle": "PCA St Celoni"
+    },
+    {
+      "page": 1,
+      "x": 0.11111,
+      "y": 0.35181,
+      "rx": 0.00853,
+      "ry": 0.00598,
+      "fond": "#000000",
+      "couleur": "bleu",
+      "libelle": "PCA Riudarenes"
+    },
+    {
+      "page": 1,
+      "x": 0.11111,
+      "y": 0.73505,
+      "rx": 0.00853,
+      "ry": 0.00598,
+      "fond": "#000000",
+      "couleur": "bleu",
+      "libelle": "PCA Vilademuls"
+    },
+    {
+      "page": 1,
+      "x": 0.11111,
+      "y": 0.79163,
+      "rx": 0.00843,
+      "ry": 0.00591,
+      "fond": "#000000",
+      "couleur": "bleu",
+      "libelle": "PCA Pontos"
+    },
+    {
+      "page": 4,
+      "x": 0.61944,
+      "y": 0.09187,
+      "rx": 0.00973,
+      "ry": 0.00674,
+      "fond": "#000000",
+      "couleur": "bleu",
+      "libelle": "CLI bleu - feu"
+    },
+    {
+      "page": 4,
+      "x": 0.68219,
+      "y": 0.08754,
+      "rx": 0.02731,
+      "ry": 0.01899,
+      "fond": "#bebfbe",
+      "couleur": "bleu",
+      "libelle": "CLI bleu - soleil"
+    },
+    {
+      "page": 4,
+      "x": 0.81667,
+      "y": 0.54526,
+      "rx": 0.00986,
+      "ry": 0.00683,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "CLI blanc - feu"
+    },
+    {
+      "page": 4,
+      "x": 0.87981,
+      "y": 0.54051,
+      "rx": 0.02747,
+      "ry": 0.0191,
+      "fond": "#bebfbe",
+      "couleur": "blanc",
+      "libelle": "CLI blanc - soleil"
+    },
+    {
+      "page": 7,
+      "x": 0.29259,
+      "y": 0.78838,
+      "rx": 0.0315,
+      "ry": 0.02108,
+      "fond": "#ffffff",
+      "couleur": "jaune",
+      "libelle": "FF6 jaune a destellos"
+    },
+    {
+      "page": 8,
+      "x": 0.28467,
+      "y": 0.10192,
+      "rx": 0.00717,
+      "ry": 0.00632,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "FI2B cadre HG"
+    },
+    {
+      "page": 8,
+      "x": 0.30763,
+      "y": 0.10192,
+      "rx": 0.00838,
+      "ry": 0.00569,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "FI2B cadre HD"
+    },
+    {
+      "page": 8,
+      "x": 0.28496,
+      "y": 0.12945,
+      "rx": 0.00772,
+      "ry": 0.00668,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "FI2B cadre BG"
+    },
+    {
+      "page": 8,
+      "x": 0.30763,
+      "y": 0.12964,
+      "rx": 0.00657,
+      "ry": 0.00489,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "FI2B cadre BD"
+    },
+    {
+      "page": 8,
+      "x": 0.41626,
+      "y": 0.22047,
+      "rx": 0.00592,
+      "ry": 0.0041,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "FI2B texte HG"
+    },
+    {
+      "page": 8,
+      "x": 0.432,
+      "y": 0.22047,
+      "rx": 0.00601,
+      "ry": 0.00237,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "FI2B texte HD"
+    },
+    {
+      "page": 8,
+      "x": 0.41626,
+      "y": 0.23971,
+      "rx": 0.00592,
+      "ry": 0.0041,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "FI2B texte BG"
+    },
+    {
+      "page": 8,
+      "x": 0.432,
+      "y": 0.23971,
+      "rx": 0.00602,
+      "ry": 0.00268,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "FI2B texte BD"
+    },
+    {
+      "page": 20,
+      "x": 0.12337,
+      "y": 0.23249,
+      "rx": 0.00993,
+      "ry": 0.00687,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "E2 voie"
+    },
+    {
+      "page": 20,
+      "x": 0.58687,
+      "y": 0.37212,
+      "rx": 0.0099,
+      "ry": 0.00677,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "icone texte 1"
+    },
+    {
+      "page": 20,
+      "x": 0.45746,
+      "y": 0.65653,
+      "rx": 0.00733,
+      "ry": 0.00507,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "signal schema BSN"
+    },
+    {
+      "page": 20,
+      "x": 0.57159,
+      "y": 0.7829,
+      "rx": 0.00991,
+      "ry": 0.00678,
+      "fond": "#000000",
+      "couleur": "blanc",
+      "libelle": "icone texte 2"
+    },
+    {
+      "page": 36,
+      "x": 0.58363,
+      "y": 0.21318,
+      "rx": 0.00867,
+      "ry": 0.006,
+      "fond": "#000000",
+      "couleur": "bleu",
+      "libelle": "PCA Pontos"
+    },
+    {
+      "page": 36,
+      "x": 0.58363,
+      "y": 0.253,
+      "rx": 0.00854,
+      "ry": 0.00591,
+      "fond": "#000000",
+      "couleur": "bleu",
+      "libelle": "PCA Vilademuls"
+    },
+    {
+      "page": 36,
+      "x": 0.58317,
+      "y": 0.68097,
+      "rx": 0.00709,
+      "ry": 0.00491,
+      "fond": "#000000",
+      "couleur": "bleu",
+      "libelle": "PCA Riudarenes"
+    },
+    {
+      "page": 36,
+      "x": 0.58298,
+      "y": 0.78514,
+      "rx": 0.00717,
+      "ry": 0.00496,
+      "fond": "#000000",
+      "couleur": "bleu",
+      "libelle": "PCA St Celoni"
+    },
+    {
+      "page": 36,
+      "x": 0.58456,
+      "y": 0.88633,
+      "rx": 0.00689,
+      "ry": 0.00484,
+      "fond": "#000000",
+      "couleur": "bleu",
+      "libelle": "PCA La Roca"
+    },
+    {
+      "page": 36,
+      "x": 0.08756,
+      "y": 0.90901,
+      "rx": 0.00867,
+      "ry": 0.006,
+      "fond": "#000000",
+      "couleur": "bleu",
+      "libelle": "Can Tunis"
+    }
+  ]
+}

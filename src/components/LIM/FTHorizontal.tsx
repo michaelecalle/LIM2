@@ -6,6 +6,7 @@ import type { FTEntry } from "../../data/ligneFT";
 import { useTrainDist } from "../../hooks/useTrainDist";
 import type { TDPoint } from "../../hooks/useTrainDist";
 import { onLtvZoneClick } from "../../lib/ltvFold";
+import { ltvVoies, regrouperVoies } from "../../lib/ltvVoie";
 import { TUNNEL_ZONES_PKINTERNAL } from "../../data/tunnelZones";
 import { LINE_PROFILE } from "../../data/lineProfile";
 
@@ -439,7 +440,7 @@ export default function FTHorizontal() {
   const ltvZoneFocusRef = useRef<{ a: number; b: number } | null>(null);
 
   // ── LTV (Limitations Temporaires de Vitesse) ─────────────────────────────
-  const [ltvRows, setLtvRows] = useState<Array<{ kmIni?: string; kmFin?: string; speed?: string }>>([]);
+  const [ltvRows, setLtvRows] = useState<Array<{ kmIni?: string; kmFin?: string; speed?: string; via?: string; observaciones?: string }>>([]);
   useEffect(() => {
     const h = (e: Event) => {
       const rows = (e as CustomEvent).detail?.rows;
@@ -450,10 +451,11 @@ export default function FTHorizontal() {
   }, []);
 
   const ltvSegments = useMemo(() => {
-    if (points.length === 0 || ltvRows.length === 0) return [] as Array<{ distStart: number; distEnd: number; speed: number; pkA: number; pkB: number }>;
+    type Seg = { distStart: number; distEnd: number; speed: number; pkA: number; pkB: number; voie: string };
+    if (points.length === 0 || ltvRows.length === 0) return [] as Seg[];
     const pk0 = points[0].pkInternal;
-    if (pk0 == null) return [] as Array<{ distStart: number; distEnd: number; speed: number; pkA: number; pkB: number }>;
-    const raw: Array<{ distStart: number; distEnd: number; speed: number; pkA: number; pkB: number }> = [];
+    if (pk0 == null) return [] as Seg[];
+    const raw: Seg[] = [];
     for (const row of ltvRows) {
       const pkA = parseFloat(String(row.kmIni ?? "").replace(",", "."));
       const pkB = parseFloat(String(row.kmFin ?? "").replace(",", "."));
@@ -465,17 +467,20 @@ export default function FTHorizontal() {
       // train : sans ce tri, les étiquettes PK des repères étaient inversées en sens PK croissant
       // (constaté par l'utilisateur sur le 9707 du 18/10, LTV 160 Llinars → La Sagrera).
       const [pkLo, pkHi] = dA <= dB ? [pkA, pkB] : [pkB, pkA];
-      raw.push({ distStart: Math.min(dA, dB), distEnd: Math.max(dA, dB), speed: spd, pkA: pkLo, pkB: pkHi });
+      raw.push({ distStart: Math.min(dA, dB), distEnd: Math.max(dA, dB), speed: spd, pkA: pkLo, pkB: pkHi, voie: ltvVoies(row).label });
     }
-    // Dédupliquer par plage : deux LTV identiques (voies différentes) → une seule entrée.
-    // En cas de vitesses différentes sur la même plage, on retient la plus restrictive.
-    const dedup = new Map<string, typeof raw[0]>();
+    // ⚠️ 26/10 — Même plage ET même vitesse (voies différentes) → UNE entrée, voies
+    // regroupées (« 80 v I-II »). Vitesses différentes sur la même plage → une entrée
+    // PAR vitesse (avant : seule la plus restrictive était gardée, l'autre voie
+    // disparaissait). La courbe prend toujours le minimum des LTV actives : inchangée.
+    const groupes = new Map<string, { seg: Seg; voies: string[] }>();
     for (const seg of raw) {
-      const key = `${seg.distStart.toFixed(3)}|${seg.distEnd.toFixed(3)}`;
-      const ex = dedup.get(key);
-      if (!ex || seg.speed < ex.speed) dedup.set(key, seg);
+      const key = `${seg.distStart.toFixed(3)}|${seg.distEnd.toFixed(3)}|${seg.speed}`;
+      const ex = groupes.get(key);
+      if (ex) ex.voies.push(seg.voie);
+      else groupes.set(key, { seg: { ...seg }, voies: [seg.voie] });
     }
-    return [...dedup.values()];
+    return [...groupes.values()].map(({ seg, voies }) => ({ ...seg, voie: regrouperVoies(voies) }));
   }, [ltvRows, points]);
 
   // ── Clignotement stand-by ────────────────────────────────────────────────
@@ -745,7 +750,7 @@ export default function FTHorizontal() {
   // Calcule aussi les polygones de fond LTV (suivent la courbe effective → nesting correct)
   // et les rappels de vitesse aux fins de LTV.
   let speedPath = "";
-  const ltvStartLabels:   Array<{ xPx: number; yPx: number; speed: number; pkA: number; pkB: number }> = [];
+  const ltvStartLabels:   Array<{ xPx: number; yPx: number; speed: number; pkA: number; pkB: number; voie: string }> = [];
   const ltvRestoreLabels: Array<{ xPx: number; yPx: number; speed: number; isLtv: boolean }> = [];
   const ltvFillPaths: string[] = [];
   {
@@ -787,9 +792,13 @@ export default function FTHorizontal() {
       const px = x(evt.dist);
       const wasLtvActive = prevLtvSize > 0;
       const nowLtvActive = activeLtv.size > 0;
-      // Étiquette de début : seulement si la vitesse effective change vraiment
-      if (evt.isLtv && !evt.isEnd && newV != null && newV !== effectVBefore)
-        ltvStartLabels.push({ xPx: px + 2, yPx: y(newV), speed: newV, pkA: ltvSegments[evt.ltvId!].pkA, pkB: ltvSegments[evt.ltvId!].pkB });
+      // Étiquette de début : à CHAQUE début de LTV, même si la vitesse effective ne
+      // change pas (26/10 — ex. une 160 voie II qui démarre dans une 160 voie I),
+      // avec la voie, à la hauteur de SA propre vitesse.
+      if (evt.isLtv && !evt.isEnd) {
+        const seg = ltvSegments[evt.ltvId!];
+        ltvStartLabels.push({ xPx: px + 2, yPx: y(seg.speed), speed: seg.speed, pkA: seg.pkA, pkB: seg.pkB, voie: seg.voie });
+      }
       // Étiquette de restauration : idem
       if (evt.isLtv && evt.isEnd && newV != null && newV !== effectVBefore)
         ltvRestoreLabels.push({ xPx: px + 2, yPx: y(newV), speed: newV, isLtv: nowLtvActive });
@@ -856,7 +865,13 @@ export default function FTHorizontal() {
           if (points[j].csv) { csv = true; break; }
         }
       }
-      speedLabels.push({ x: x(p.dist), y: y(p.v), v: p.v, csv });
+      // 26/10 — Vitesse de ligne masquée si, à son point de départ, une LTV plus
+      // restrictive s'applique (elle n'est pas la vitesse en vigueur). À la fin de
+      // la LTV, l'étiquette de restauration indique déjà la vitesse qui reprend.
+      const sousLtv = ltvSegments.some(
+        (s) => p.dist >= s.distStart && p.dist < s.distEnd && s.speed < p.v!
+      );
+      if (!sousLtv) speedLabels.push({ x: x(p.dist), y: y(p.v), v: p.v, csv });
       lastLabelV = p.v;
       isFirstSpeedZone = false;
     }
@@ -1051,7 +1066,7 @@ export default function FTHorizontal() {
           })}
           {/* Étiquettes de vitesse LTV (début + restauration) */}
           {ltvStartLabels.map((lbl, i) => {
-            const txt = String(lbl.speed);
+            const txt = lbl.voie ? `${lbl.speed} v ${lbl.voie}` : String(lbl.speed);
             const lw = txt.length * 8 + 10, lh = 16;
             return (
               <g

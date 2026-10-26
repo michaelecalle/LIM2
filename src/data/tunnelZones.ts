@@ -21,7 +21,7 @@ export const TUNNEL_ZONE_MARGIN_KM = 0.15
 
 // [sKmMin, sKmMax] log-dérivés (T1 = pk−616 car GPS perdu dès le départ Barcelone).
 export const TUNNEL_ZONES: TunnelZone[] = [
-  { id: "T1",  sKmMin: 0.624,   sKmMax: 10.750 },
+  { id: "T1",  sKmMin: 0.624,   sKmMax: 10.750 }, // 2 tunnels réels (coupure Sants 621) : volontairement d'un seul tenant ici, cf. TUNNEL_ZONES_PKINTERNAL
   { id: "T2",  sKmMin: 12.375,  sKmMax: 14.026 },
   { id: "T3",  sKmMin: 15.152,  sKmMax: 15.570 },
   { id: "T4",  sKmMin: 16.173,  sKmMax: 20.137 },
@@ -64,7 +64,13 @@ export const TUNNEL_ZONES: TunnelZone[] = [
 // Plus précis que la conversion s_km (offset variable). Usage : bandes tunnel sur la FT horizontale.
 export type TunnelZonePk = { id: string; pkIntMin: number; pkIntMax: number }
 export const TUNNEL_ZONES_PKINTERNAL: TunnelZonePk[] = [
-  { id: "T1",  pkIntMin: 616.624, pkIntMax: 626.750 },
+  // 26/10 — T1 est en réalité DEUX tunnels, de part et d'autre de Barcelona Sants
+  // (PK 621), confirmé par l'utilisateur. Coupé ICI seulement (affichage) : la
+  // liste s_km du garde-fou GPS garde T1 d'un seul tenant, sinon la marge de 150 m
+  // de fin de T1a tomberait DANS T1b et y ouvrirait l'exception « dans la marge »
+  // du veto d'arrêt (cf. FT.tsx, inTunnelMargin). Pour le GPS, c'est continu.
+  { id: "T1a", pkIntMin: 616.624, pkIntMax: 621.000 },
+  { id: "T1b", pkIntMin: 621.000, pkIntMax: 626.750 },
   { id: "T2",  pkIntMin: 628.376, pkIntMax: 629.852 },
   { id: "T3",  pkIntMin: 630.996, pkIntMax: 631.398 },
   { id: "T4",  pkIntMin: 632.032, pkIntMax: 636.002 },
