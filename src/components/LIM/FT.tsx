@@ -1,6 +1,6 @@
 // src/components/LIM/FT.tsx
 import FTScrolling from "./FTScrolling"; // Ajouter cette ligne juste après les autres imports
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 // Bloc fiche train : les LIGNES viennent désormais du normalisé 2026 publié par
 // l'éditeur (fichier embarqué), avec les mêmes signatures qu'avant.
 import {
@@ -18,6 +18,7 @@ import { logTestEvent } from "../../lib/testLogger";
 import { onLtvZoneClick } from "../../lib/ltvFold";
 import { getFtFranceHhmm } from "../../data/ftFranceTimes"
 import { tunnelZoneAt, tunnelZoneAtStrict, TUNNEL_ZONES_PKINTERNAL } from "../../data/tunnelZones"
+import { useTunnelLongPress } from "../../lib/tunnelLongPress"
 import { ltvVoies } from "../../lib/ltvVoie"
 import { empiricalPkAtElapsed, isInEmpiricalZone } from "../../data/empiricalCurve"
 import { networkFromSkm, sKmFromNetworkPk } from "../../lib/gpsPkEngine"
@@ -1294,7 +1295,25 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
    * UNIQUEMENT en mise à l'échelle : hors échelle l'espacement des lignes ne
    * traduit aucune distance et la bande deviendrait illisible (choix utilisateur).
    */
-  const [tunnelBands, setTunnelBands] = useState<NoteBand[]>([]);
+  const [tunnelBands, setTunnelBands] = useState<Array<NoteBand & { id: string }>>([]);
+
+  // 27/10 — Appui long sur une bande de tunnel → fiche du document Tuneles
+  // (cf. lib/tunnelLongPress, TunelesViewer). Test dans le repère de la fiche.
+  const ftBodyScrollRef = useRef<HTMLDivElement | null>(null);
+  const tunnelBandsRef = useRef(tunnelBands);
+  tunnelBandsRef.current = tunnelBands;
+  const tunnelHitTest = useCallback((clientX: number, clientY: number) => {
+    const box = ftBodyScrollRef.current;
+    if (!box) return null;
+    const r = box.getBoundingClientRect();
+    const x = clientX - r.left - box.clientLeft + box.scrollLeft;
+    const y = clientY - r.top - box.clientTop + box.scrollTop;
+    const b = tunnelBandsRef.current.find(
+      (t) => x >= t.left && x <= t.left + t.width && y >= t.top && y <= t.top + t.height
+    );
+    return b ? b.id : null;
+  }, []);
+  const tunnelLongPress = useTunnelLongPress(tunnelHitTest);
 
   /**
    * Graduations kilométriques de la colonne KM (mode mise à l'échelle seulement).
@@ -4042,7 +4061,7 @@ useEffect(() => {
       const bands: NoteBand[] = [];
       const overlays: NoteOverlay[] = [];
       const ticks: Array<{ top: number; left: number; width: number; tunnel: boolean }> = [];
-      const tunnels: NoteBand[] = [];
+      const tunnels: Array<NoteBand & { id: string }> = [];
       const dansTunnel = (km: number) =>
         TUNNEL_ZONES_PKINTERNAL.some((z) => km >= z.pkIntMin && km <= z.pkIntMax);
       // ⚠️ PROTOTYPE 26/10 — Colonne LTV DESSINÉE dans la partie gauche de la
@@ -4105,7 +4124,7 @@ useEffect(() => {
               const haut = Math.min(y1, y2);
               const h = Math.round(Math.abs(y2 - y1));
               if (h <= 0) continue;
-              tunnels.push({ top: Math.round(haut), height: h, left: kmLeft, width: kmWidth });
+              tunnels.push({ id: z.id, top: Math.round(haut), height: h, left: kmLeft, width: kmWidth });
             }
           }
 
@@ -10203,7 +10222,7 @@ const vmaxClassForLtv =
             })()
           }
         >
-          <div className="ft-body-scroll" onClick={handleBodyClick}>
+          <div className="ft-body-scroll" ref={ftBodyScrollRef} onClick={handleBodyClick} {...tunnelLongPress}>
             <table className="ft-table">
               <tbody>{rows}</tbody>
             </table>

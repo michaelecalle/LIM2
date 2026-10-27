@@ -69,9 +69,15 @@ export const TUNNEL_ZONES_PKINTERNAL: TunnelZonePk[] = [
   // liste s_km du garde-fou GPS garde T1 d'un seul tenant, sinon la marge de 150 m
   // de fin de T1a tomberait DANS T1b et y ouvrirait l'exception « dans la marge »
   // du veto d'arrêt (cf. FT.tsx, inTunnelMargin). Pour le GPS, c'est continu.
-  { id: "T1a", pkIntMin: 616.624, pkIntMax: 621.000 },
-  { id: "T1b", pkIntMin: 621.000, pkIntMax: 626.750 },
-  { id: "T2",  pkIntMin: 628.376, pkIntMax: 629.852 },
+  // 27/10 — T1a, T1b, SAGRERA et T2 recalés sur le document ADIF « Túneles de
+  // longitud sup. 1000 metros » (V05 du 01/10/2026), bornes des schémas des
+  // fiches 1 à 4 (validé par l'utilisateur). SAGRERA manquait : la liste d'origine
+  // datait d'avant la gare de La Sagrera. SAGRERA et T2 se chevauchent de 165 m
+  // dans le document lui-même (628.225 < 628.390) : laissé tel quel.
+  { id: "T1a", pkIntMin: 616.124, pkIntMax: 620.273 }, // TORRASSA
+  { id: "T1b", pkIntMin: 621.215, pkIntMax: 626.859 }, // SANTS
+  { id: "SAGRERA", pkIntMin: 626.859, pkIntMax: 628.390 },
+  { id: "T2",  pkIntMin: 628.225, pkIntMax: 629.827 }, // SANT ANDREU
   { id: "T3",  pkIntMin: 630.996, pkIntMax: 631.398 },
   { id: "T4",  pkIntMin: 632.032, pkIntMax: 636.002 },
   { id: "T5",  pkIntMin: 639.692, pkIntMax: 639.942 },

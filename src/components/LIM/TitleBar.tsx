@@ -28,6 +28,7 @@ import { parseLtvPdf2026 } from '../../lib/ltvPdfParser'
 import ManualPdfCanvasViewer from './ManualPdfCanvasViewer'
 import ManualViewer from './ManualViewer'
 import GuiaViewer from './GuiaViewer'
+import TunelesViewer from './TunelesViewer'
 import DemoLoader, { type DemoData } from './DemoLoader'
 import DemoRunner from './DemoRunner'
 import DemoTouchIndicator from './DemoTouchIndicator'
@@ -5983,6 +5984,7 @@ setAutoScrollStartedOnce(next)
           <ManualViewer open={manualOpen} dark={dark} onClose={() => setManualOpen(false)} initialPage={manualInitialPage} initialTocId={manualInitialTocId} />
 
                     <GuiaViewer open={guiaOpen} dark={dark} onClose={() => setGuiaOpen(false)} />
+          <TunelesViewer dark={dark} />
 
           {mode2026Open && (
             <Mode2026Modal

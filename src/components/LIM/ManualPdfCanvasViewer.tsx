@@ -60,6 +60,9 @@ type ManualPdfCanvasViewerProps = {
   applyDarkInvert?: boolean
   /** Feux à faire clignoter (Guia BSN uniquement). */
   blink?: BlinkConfig | null
+  /** Hauteur dans la page visée (fraction de sa hauteur, 0 = haut) où placer le
+   *  haut de l'écran — ex. une fiche au milieu d'une page (document Tuneles). */
+  pageY?: number
 }
 
 export default function ManualPdfCanvasViewer({
@@ -68,6 +71,7 @@ export default function ManualPdfCanvasViewer({
   onPageChange,
   applyDarkInvert = true,
   blink = null,
+  pageY = 0,
 }: ManualPdfCanvasViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const pageRefs = useRef<Array<HTMLDivElement | null>>([])
@@ -241,7 +245,7 @@ export default function ManualPdfCanvasViewer({
   useEffect(() => {
     if (!Number.isFinite(page) || page < 1) return
     pendingScrollRef.current = page
-  }, [page])
+  }, [page, pageY])
 
   useEffect(() => {
     const wanted = pendingScrollRef.current
@@ -253,8 +257,10 @@ export default function ManualPdfCanvasViewer({
     const box = containerRef.current
     if (!host || !box) return
     pendingScrollRef.current = null
-    box.scrollTop = Math.max(0, host.offsetTop - 8)
-  }, [page, pageCount, renderedCount])
+    const canvas = host.querySelector('canvas')
+    const dy = pageY > 0 && canvas ? pageY * canvas.offsetHeight : 0
+    box.scrollTop = Math.max(0, host.offsetTop + dy - 8)
+  }, [page, pageY, pageCount, renderedCount])
 
   // ── Page visible → remontée au parent ─────────────────────────────────────
   const handleScroll = useCallback(() => {

@@ -8,6 +8,8 @@ const DOC_LOGS_PATH: Record<string, string> = {
   // Livret FT complet (tous les trains à la suite), pour le mode secours.
   // Déposé par l'éditeur, accompagné de son index de pages (cf. plus bas).
   livretFt: 'documents/livret-ft.pdf',
+  // Túneles de longitud sup. 1000 metros (ADIF), ouvert par appui long sur un tunnel.
+  tuneles: 'documents/tuneles.pdf',
 }
 
 /** Index du livret FT : numéro de train (n° espagnol) → 1re page (1-indexée). */
