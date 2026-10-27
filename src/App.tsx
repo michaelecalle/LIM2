@@ -65,6 +65,8 @@ import {
   fetchLtvSourcePdfBytes,
   fetchManagedDocBlobUrl,
   fetchLivretFtPageIndex,
+  storeSessionLtvPdf,
+  syncManagedDocs,
 } from "./lib/managedDocs"
 import ManualPdfCanvasViewer from "./components/LIM/ManualPdfCanvasViewer"
 // Mentions de la version de ligne (affichées dans le cadre « prochain arrêt »).
@@ -554,6 +556,9 @@ export default function App() {
     const handler = (e: Event) => {
       const file = (e as CustomEvent).detail?.file as File | undefined
       if (!file) return
+      // 27/10 — conservé sur l'appareil : le mode secours le retrouve après un
+      // rechargement de l'app hors ligne (cf. fetchLtvSourcePdfBytes).
+      void storeSessionLtvPdf(file)
       file.arrayBuffer()
         .then(async (buf) => {
           // ⚠️ L'ancre doit être cherchée AVANT le rendu : pdf.js consomme
@@ -573,6 +578,17 @@ export default function App() {
     }
     window.addEventListener("lim:ltv-pdf-raw", handler as EventListener)
     return () => window.removeEventListener("lim:ltv-pdf-raw", handler as EventListener)
+  }, [])
+
+  // 27/10 — SYNCHRONISATION DES DOCUMENTS EN ARRIÈRE-PLAN (manuel, Guia, tunnels,
+  // livret FT + index, DHLTV publié). Lancée après le premier rendu, jamais bloquante :
+  // un listing par dossier de lim-logs, téléchargement des seuls fichiers dont le SHA
+  // diffère de la copie locale (IndexedDB). Sans réseau : silence, l'app démarre.
+  React.useEffect(() => {
+    const t = window.setTimeout(() => {
+      void syncManagedDocs({ reason: "startup" })
+    }, 4000)
+    return () => window.clearTimeout(t)
   }, [])
 
   // Mode secours — à l'entrée en mode rouge, si aucun LTV de session, récupérer le

@@ -50,8 +50,18 @@ export default defineConfig({
         // sous réseau faible, puis `rowsCount: 8` à 09h24 sous bon réseau, avec
         // le MÊME document. L'extraction est pourtant 100 % locale : c'est son
         // moteur qui manquait. Le limite par défaut (2 Mio) exclurait ce fichier.
-        globPatterns: ['**/*.{js,css,html,svg,mjs}'],
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        // 27/10 — HORS LIGNE : les PDF livrés avec l'app (manuel, Guia, tunnels), les JSON
+        // (feux clignotants, correspondance tunnels) et les PNG (profil TGV du mode
+        // horizontal, logo INOUI) n'étaient PAS précachés : au démarrage sans couverture,
+        // l'image du train manquait et les documents restaient vides. Le service worker
+        // les télécharge à l'installation de la version et ne les retélécharge que si
+        // leur empreinte change. Plafond relevé pour le Guia (5 Mo).
+        globPatterns: ['**/*.{js,css,html,svg,mjs,png,pdf,json}'],
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        // Les visualiseurs ajoutent un paramètre d'URL au PDF (?guiaBsn=1, ?limManual=1) :
+        // il doit être ignoré pour retrouver l'entrée précachée.
+        ignoreURLParametersMatching: [/^utm_/, /^fbclid$/, /^guiaBsn$/, /^limManual$/, /^v$/],
+        // (/^v$/ : index.html référence manifest.webmanifest?v=3, sinon absent hors ligne.)
         // 11/10 — l'extracteur vidéo (public/extraction_vitesse.html) est une page autonome
         // hébergée ici pour avoir une vraie origine https (sur le téléphone, ouvert depuis
         // Téléchargements, Chrome refusait le verrou de veille : « Wake Lock permission
