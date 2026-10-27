@@ -8,7 +8,7 @@ import type { TDPoint } from "../../hooks/useTrainDist";
 import { onLtvZoneClick } from "../../lib/ltvFold";
 import { ltvVoies, regrouperVoies } from "../../lib/ltvVoie";
 import { TUNNEL_ZONES_PKINTERNAL } from "../../data/tunnelZones";
-import { useTunnelLongPress } from "../../lib/tunnelLongPress";
+import { registerTrainPkProvider } from "../../lib/trainPosition";
 import { LINE_PROFILE } from "../../data/lineProfile";
 
 // ============================================================================
@@ -238,23 +238,6 @@ export default function FTHorizontal() {
     });
   }, [points]);
 
-  // 27/10 — Appui long sur une bande de tunnel → fiche du document Tuneles.
-  // Test sur les rectangles réellement affichés (data-tunnel-id) : aucun calcul
-  // de repère à refaire (défilement, viewBox). Bande de 26 px → 8 px de tolérance
-  // verticale pour le doigt.
-  const tunnelHitTest = useCallback((clientX: number, clientY: number) => {
-    const box = scrollDivRef.current;
-    if (!box) return null;
-    for (const el of Array.from(box.querySelectorAll<SVGRectElement>("rect[data-tunnel-id]"))) {
-      const r = el.getBoundingClientRect();
-      if (clientX >= r.left && clientX <= r.right && clientY >= r.top - 8 && clientY <= r.bottom + 8) {
-        return el.dataset.tunnelId ?? null;
-      }
-    }
-    return null;
-  }, []);
-  const tunnelLongPress = useTunnelLongPress(tunnelHitTest);
-
   // ── Tableau TDPoint pour le hook ─────────────────────────────────────────
   const tdPoints = useMemo<TDPoint[]>(() => points.map(p => ({
     dist:      p.dist,
@@ -266,6 +249,22 @@ export default function FTHorizontal() {
 
   // ── Moteur de position (hook partagé) ─────────────────────────────────────
   const trainDist = useTrainDist(tdPoints, active);
+
+  // 27/10 — Position du train pour le menu Paramètres → Tunnels (lib/trainPosition) :
+  // dist (km depuis l'origine) reconvertie en pk_internal, inverse de tunnelBands.
+  const trainPkStateRef = useRef({ dist: trainDist.dist, auto: trainDist.autoScrollEnabled, points });
+  trainPkStateRef.current = { dist: trainDist.dist, auto: trainDist.autoScrollEnabled, points };
+  useEffect(() => registerTrainPkProvider({
+    isVisible: () => scrollDivRef.current?.offsetParent != null,
+    getPkInternal: () => {
+      const { dist, auto, points: pts } = trainPkStateRef.current;
+      if (!auto || dist == null || pts.length < 2) return null;
+      const pk0 = pts[0].pkInternal;
+      const pkLast = pts[pts.length - 1].pkInternal;
+      if (pk0 == null || pkLast == null) return null;
+      return pkLast > pk0 ? pk0 + dist : pk0 - dist;
+    },
+  }), []);
 
   // ── Mesure de la boîte ───────────────────────────────────────────────────
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -1012,7 +1011,6 @@ export default function FTHorizontal() {
         style={{ flex: 1, overflowX: "auto", overflowY: "hidden", position: "relative", zIndex: 1 }}
         onScroll={handleScroll}
         onClick={handleChartClick}
-        {...tunnelLongPress}
       >
         <svg
           className="ft-h-svg"
@@ -1054,7 +1052,7 @@ export default function FTHorizontal() {
             const xa = x(Math.max(0, b.lo));
             const xb = x(Math.min(maxDist, b.hi));
             return (
-              <rect key={`tun-${b.id}`} data-tunnel-id={b.id}
+              <rect key={`tun-${b.id}`}
                 x={xa} y={baseY - 22}
                 width={Math.max(1, xb - xa)} height={26}
                 fill="rgba(154,140,106,0.22)" pointerEvents="none" />

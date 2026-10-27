@@ -1,39 +1,58 @@
 // src/components/LIM/TunelesViewer.tsx
-// 27/10 — Appui long sur un tunnel (vues verticale et horizontale) → document ADIF
-// « Túneles de longitud sup. 1000 metros », ouvert directement à la fiche du tunnel.
+// 27/10 — Document ADIF « Túneles de longitud sup. 1000 metros » (évacuation des
+// voyageurs en cas d'arrêt inopiné en tunnel), ouvert depuis le menu Paramètres.
 //
-// Les vues n'ouvrent rien elles-mêmes : elles émettent `lim:tunnel-long-press`
-// ({ id } = id de TUNNEL_ZONES_PKINTERNAL). La correspondance tunnel → fiche → page
-// et hauteur dans la page vit dans public/tuneles.map.json (modifiable sans toucher
-// au code). Tunnel sans fiche → petite fenêtre d'information.
+// Si la position du train est déterminée (GPS ou estimation horaire, cf.
+// lib/trainPosition) et tombe dans un tunnel qui a une fiche → ouverture sur cette
+// fiche. Sinon (position inconnue, hors tunnel, tunnel sans fiche) → document
+// complet, page 1 (schéma). Correspondance tunnel → fiche → page/hauteur dans
+// public/tuneles.map.json (modifiable sans toucher au code).
+//
+// L'appui long sur les bandes de tunnel (essayé le 27/10) a été abandonné au
+// profit de ce menu : accès rare, pas besoin qu'il soit sur la fiche train.
 
 import { useEffect, useState } from 'react'
 import ManualPdfCanvasViewer from './ManualPdfCanvasViewer'
 import { fetchManagedDocBlobUrl } from '../../lib/managedDocs'
 import { TUNNEL_ZONES_PKINTERNAL } from '../../data/tunnelZones'
-import { TUNNEL_LONG_PRESS_EVENT } from '../../lib/tunnelLongPress'
+import { getCurrentTrainPkInternal } from '../../lib/trainPosition'
 
 const TUNELES_PDF_URL = '/tuneles.pdf'
 const TUNELES_MAP_URL = '/tuneles.map.json'
 
+/** Événement d'ouverture (menu Paramètres). */
+export const TUNELES_OPEN_EVENT = 'lim:tuneles-open'
+
+// L'estimation horaire est approximative en tunnel : un train arrêté près d'une
+// tête peut être estimé juste dehors → on prend le tunnel le plus proche dans
+// cette marge (validé par l'utilisateur, 27/10).
+const MARGE_TUNNEL_KM = 0.3
 
 type Fiche = { nom: string; page: number; y: number }
 type TunelesMap = { fiches: Record<string, Fiche>; tunnels: Record<string, number> }
+type Ouverture = { page: number; y: number; titre: string; detail: string }
 
 type Props = { dark: boolean }
 
+/** Tunnel contenant le PK, sinon le plus proche à moins de la marge, ou null. */
+function tunnelProche(pk: number) {
+  let best: { id: string; ecart: number } | null = null
+  for (const z of TUNNEL_ZONES_PKINTERNAL) {
+    const ecart = pk < z.pkIntMin ? z.pkIntMin - pk : pk > z.pkIntMax ? pk - z.pkIntMax : 0
+    if (ecart <= MARGE_TUNNEL_KM && (best == null || ecart < best.ecart)) best = { id: z.id, ecart }
+  }
+  return best?.id ?? null
+}
+
 export default function TunelesViewer({ dark }: Props) {
-  const [fiche, setFiche] = useState<Fiche | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
+  const [ouverture, setOuverture] = useState<Ouverture | null>(null)
   // null tant qu'on ne sait pas quelle source utiliser : le visualiseur n'est monté
   // qu'une fois la source connue, sinon un changement de source après coup le
   // rechargerait et perdrait le placement sur la fiche.
   const [pdfSrc, setPdfSrc] = useState<string | null>(null)
 
   useEffect(() => {
-    const h = (e: Event) => {
-      const id = (e as CustomEvent<{ id?: string }>).detail?.id
-      if (!id) return
+    const h = () => {
       void (async () => {
         let map: TunelesMap | null = null
         try {
@@ -42,26 +61,24 @@ export default function TunelesViewer({ dark }: Props) {
         } catch (err) {
           console.warn('[TunelesViewer] correspondance indisponible', err)
         }
+        const complet = (detail: string) =>
+          setOuverture({ page: 1, y: 0, titre: 'Túneles de longitud sup. 1000 metros', detail })
+
+        const pk = getCurrentTrainPkInternal()
+        if (pk == null) return complet('Position du train non déterminée : document complet')
+        const id = tunnelProche(pk)
+        if (id == null) return complet('Train hors tunnel : document complet')
         const n = map?.tunnels?.[id]
         const f = n != null ? map?.fiches?.[String(n)] : undefined
-        if (f) {
-          setFiche(f)
-          return
-        }
-        // Sans fiche : le document ne couvre que les tunnels ADIF de plus de 1000 m.
-        // Perthus (LFP) dépasse 1000 m mais n'y figure pas → message distinct.
-        const z = TUNNEL_ZONES_PKINTERNAL.find((t) => t.id === id)
-        const longueurKm = z ? z.pkIntMax - z.pkIntMin : 0
-        setInfo(longueurKm >= 1
-          ? "Ce tunnel n'a pas de fiche dans le document des tunnels (hors zone ADIF)."
-          : 'Ce tunnel fait moins de 1000 m.')
+        if (!f) return complet('Tunnel sans fiche (moins de 1000 m ou hors zone ADIF) : document complet')
+        setOuverture({ page: f.page, y: f.y, titre: f.nom, detail: 'Tunnel actuel — Túneles de longitud sup. 1000 metros' })
       })()
     }
-    window.addEventListener(TUNNEL_LONG_PRESS_EVENT, h as EventListener)
-    return () => window.removeEventListener(TUNNEL_LONG_PRESS_EVENT, h as EventListener)
+    window.addEventListener(TUNELES_OPEN_EVENT, h)
+    return () => window.removeEventListener(TUNELES_OPEN_EVENT, h)
   }, [])
 
-  const open = fiche != null
+  const open = ouverture != null
 
   useEffect(() => {
     if (!open) { setPdfSrc(null); return }
@@ -81,24 +98,7 @@ export default function TunelesViewer({ dark }: Props) {
   const fg = dark ? '#f4f4f5' : '#18181b'
   const cardBg = dark ? '#18181b' : '#ffffff'
 
-  if (info) {
-    return (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40"
-        onClick={() => setInfo(null)}>
-        <div className="rounded-xl border shadow-lg px-5 py-4 max-w-xs text-center"
-          style={{ backgroundColor: cardBg, borderColor: border, color: fg }}
-          onClick={(e) => e.stopPropagation()}>
-          <div className="text-sm font-semibold mb-3">{info}</div>
-          <button type="button" onClick={() => setInfo(null)}
-            className="h-8 px-4 text-xs rounded-md bg-blue-600 text-white font-semibold">
-            OK
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  if (!fiche) return null
+  if (!ouverture) return null
 
   const bg = dark ? 'rgba(9,9,11,0.96)' : 'rgba(244,244,245,0.95)'
 
@@ -111,10 +111,10 @@ export default function TunelesViewer({ dark }: Props) {
         <div className="shrink-0 flex items-center justify-between gap-3 rounded-xl border shadow-sm px-3 py-2"
           style={{ backgroundColor: cardBg, borderColor: border, color: fg }}>
           <div className="min-w-0">
-            <div className="text-sm font-semibold truncate">{fiche.nom}</div>
-            <div className="text-[11px] opacity-70 truncate">Túneles de longitud sup. 1000 metros</div>
+            <div className="text-sm font-semibold truncate">{ouverture.titre}</div>
+            <div className="text-[11px] opacity-70 truncate">{ouverture.detail}</div>
           </div>
-          <button type="button" onClick={() => setFiche(null)}
+          <button type="button" onClick={() => setOuverture(null)}
             className="h-8 px-3 text-xs rounded-md bg-blue-600 text-white font-semibold">
             Fermer
           </button>
@@ -123,8 +123,8 @@ export default function TunelesViewer({ dark }: Props) {
           {pdfSrc && (
             <ManualPdfCanvasViewer
               pdfUrl={pdfSrc}
-              page={fiche.page}
-              pageY={fiche.y}
+              page={ouverture.page}
+              pageY={ouverture.y}
               onPageChange={() => {}}
               applyDarkInvert={false}
             />

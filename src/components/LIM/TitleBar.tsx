@@ -28,7 +28,7 @@ import { parseLtvPdf2026 } from '../../lib/ltvPdfParser'
 import ManualPdfCanvasViewer from './ManualPdfCanvasViewer'
 import ManualViewer from './ManualViewer'
 import GuiaViewer from './GuiaViewer'
-import TunelesViewer from './TunelesViewer'
+import TunelesViewer, { TUNELES_OPEN_EVENT } from './TunelesViewer'
 import DemoLoader, { type DemoData } from './DemoLoader'
 import DemoRunner from './DemoRunner'
 import DemoTouchIndicator from './DemoTouchIndicator'
@@ -5798,6 +5798,22 @@ setAutoScrollStartedOnce(next)
                 <div className="text-left">
                   <div className="font-semibold">Guia BSN</div>
                   <div className="text-[11px] opacity-70">Livret d’aide a la conduite</div>
+                </div>
+              </button>
+
+              {/* 27/10 — Document des tunnels > 1000 m : ouvert sur la fiche du tunnel
+                  où se trouve le train si la position est déterminée, sinon complet. */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (settingsDetailsRef.current) settingsDetailsRef.current.open = false
+                  window.dispatchEvent(new CustomEvent(TUNELES_OPEN_EVENT))
+                }}
+                className="w-full flex items-start justify-between gap-3 py-1 cursor-pointer select-none rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition px-0"
+              >
+                <div className="text-left">
+                  <div className="font-semibold">Tunnels</div>
+                  <div className="text-[11px] opacity-70">Évacuation — tunnels de plus de 1000 m</div>
                 </div>
               </button>
 

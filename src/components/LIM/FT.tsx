@@ -18,7 +18,7 @@ import { logTestEvent } from "../../lib/testLogger";
 import { onLtvZoneClick } from "../../lib/ltvFold";
 import { getFtFranceHhmm } from "../../data/ftFranceTimes"
 import { tunnelZoneAt, tunnelZoneAtStrict, TUNNEL_ZONES_PKINTERNAL } from "../../data/tunnelZones"
-import { useTunnelLongPress } from "../../lib/tunnelLongPress"
+import { registerTrainPkProvider } from "../../lib/trainPosition"
 import { ltvVoies } from "../../lib/ltvVoie"
 import { empiricalPkAtElapsed, isInEmpiricalZone } from "../../data/empiricalCurve"
 import { networkFromSkm, sKmFromNetworkPk } from "../../lib/gpsPkEngine"
@@ -1295,25 +1295,8 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
    * UNIQUEMENT en mise à l'échelle : hors échelle l'espacement des lignes ne
    * traduit aucune distance et la bande deviendrait illisible (choix utilisateur).
    */
-  const [tunnelBands, setTunnelBands] = useState<Array<NoteBand & { id: string }>>([]);
+  const [tunnelBands, setTunnelBands] = useState<NoteBand[]>([]);
 
-  // 27/10 — Appui long sur une bande de tunnel → fiche du document Tuneles
-  // (cf. lib/tunnelLongPress, TunelesViewer). Test dans le repère de la fiche.
-  const ftBodyScrollRef = useRef<HTMLDivElement | null>(null);
-  const tunnelBandsRef = useRef(tunnelBands);
-  tunnelBandsRef.current = tunnelBands;
-  const tunnelHitTest = useCallback((clientX: number, clientY: number) => {
-    const box = ftBodyScrollRef.current;
-    if (!box) return null;
-    const r = box.getBoundingClientRect();
-    const x = clientX - r.left - box.clientLeft + box.scrollLeft;
-    const y = clientY - r.top - box.clientTop + box.scrollTop;
-    const b = tunnelBandsRef.current.find(
-      (t) => x >= t.left && x <= t.left + t.width && y >= t.top && y <= t.top + t.height
-    );
-    return b ? b.id : null;
-  }, []);
-  const tunnelLongPress = useTunnelLongPress(tunnelHitTest);
 
   /**
    * Graduations kilométriques de la colonne KM (mode mise à l'échelle seulement).
@@ -3566,6 +3549,38 @@ useEffect(() => {
   //
   // ===== 3. SÉLECTION + ORIENTATION + TRONQUAGE DU PARCOURS ===========
   //
+  // 27/10 — Position du train pour le menu Paramètres → Tunnels (lib/trainPosition).
+  // Lue à la demande : on retrouve le pk_internal sous la flèche (trainContentYRef,
+  // repère contenu) en interpolant entre les lignes, comme le placement GPS le fait
+  // dans l'autre sens. Position non déterminée tant que le défilement auto est coupé.
+  const rawEntriesForPkRef = React.useRef<any[]>([]);
+  useEffect(() => registerTrainPkProvider({
+    isVisible: () => scrollContainerRef.current?.offsetParent != null,
+    getPkInternal: () => {
+      const container = scrollContainerRef.current;
+      const yTrain = trainContentYRef.current;
+      if (!autoScrollEnabledRef.current || !container || yTrain == null) return null;
+      const pts: { u: number; y: number }[] = [];
+      for (const tr of Array.from(container.querySelectorAll<HTMLTableRowElement>("tr.ft-row-main"))) {
+        const idx = Number(tr.getAttribute("data-ft-row"));
+        if (!Number.isFinite(idx)) continue;
+        const u = getRowU(rawEntriesForPkRef.current[idx]);
+        if (u == null) continue;
+        pts.push({ u, y: tr.offsetTop + tr.offsetHeight / 2 - 2 });
+      }
+      if (pts.length < 2) return null;
+      pts.sort((a, b) => a.y - b.y);
+      if (yTrain <= pts[0].y) return pts[0].u;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        if (yTrain >= a.y && yTrain <= b.y) {
+          return b.y === a.y ? a.u : a.u + ((yTrain - a.y) / (b.y - a.y)) * (b.u - a.u);
+        }
+      }
+      return pts[pts.length - 1].u;
+    },
+  }), []);
+
   const rawEntries = useMemo(() => {
     if (isOdd === null) {
       console.log("[FT] Pas encore de trainNumber -> aucune ligne affichée");
@@ -3743,6 +3758,7 @@ useEffect(() => {
 
     return visibleEntries;
   }, [isOdd, trainNumber, routeStart, routeEnd]);
+  rawEntriesForPkRef.current = rawEntries as any[];
 
   // #25 — Mise à l'échelle PROPORTIONNELLE par SEGMENT (mesure + espace ajouté).
   // Principe : on mesure la hauteur NATURELLE entre 2 lignes principales (PK)
@@ -4061,7 +4077,7 @@ useEffect(() => {
       const bands: NoteBand[] = [];
       const overlays: NoteOverlay[] = [];
       const ticks: Array<{ top: number; left: number; width: number; tunnel: boolean }> = [];
-      const tunnels: Array<NoteBand & { id: string }> = [];
+      const tunnels: NoteBand[] = [];
       const dansTunnel = (km: number) =>
         TUNNEL_ZONES_PKINTERNAL.some((z) => km >= z.pkIntMin && km <= z.pkIntMax);
       // ⚠️ PROTOTYPE 26/10 — Colonne LTV DESSINÉE dans la partie gauche de la
@@ -4124,7 +4140,7 @@ useEffect(() => {
               const haut = Math.min(y1, y2);
               const h = Math.round(Math.abs(y2 - y1));
               if (h <= 0) continue;
-              tunnels.push({ id: z.id, top: Math.round(haut), height: h, left: kmLeft, width: kmWidth });
+              tunnels.push({ top: Math.round(haut), height: h, left: kmLeft, width: kmWidth });
             }
           }
 
@@ -10222,7 +10238,7 @@ const vmaxClassForLtv =
             })()
           }
         >
-          <div className="ft-body-scroll" ref={ftBodyScrollRef} onClick={handleBodyClick} {...tunnelLongPress}>
+          <div className="ft-body-scroll" onClick={handleBodyClick}>
             <table className="ft-table">
               <tbody>{rows}</tbody>
             </table>
