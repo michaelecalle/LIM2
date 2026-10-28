@@ -1459,7 +1459,9 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
           window.dispatchEvent(
             new CustomEvent('ltv:parsed', {
               detail: {
-                mode: result.rows.length > 0 ? 'DISPLAY_DIRECT' : 'NO_LTV',
+                // Image reçue conservée dans le cadre LTV (cf. règle ci-dessus).
+                mode: 'NEEDS_CROP',
+                previewImageDataUrl: currentLtvImageDataUrlRef.current ?? undefined,
                 rows: result.rows,
                 source: 'ltv_image_match',
                 ltvSource: 'pdf-ltv',
@@ -1623,10 +1625,14 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     window.dispatchEvent(
       new CustomEvent('ltv:parsed', {
         detail: {
-          mode: result.rows.length > 0
-            ? 'DISPLAY_DIRECT'
-            : currentLtvImageDataUrlRef.current ? 'NEEDS_CROP' : 'NO_LTV', // 28/10 images
-          previewImageDataUrl: result.rows.length > 0 ? undefined : currentLtvImageDataUrlRef.current ?? undefined,
+          // 28/10 — DHLTV reçu en IMAGE : le cadre LTV garde TOUJOURS l'image reçue
+          // (source officielle), même quand des LTV reconstituées sont placées sur la
+          // fiche (aide à la conduite). Le bloc LTV et les fiches lisent `rows` quel que
+          // soit le mode ; seul l'affichage du bloc dépend du mode.
+          mode: currentLtvImageDataUrlRef.current
+            ? 'NEEDS_CROP'
+            : result.rows.length > 0 ? 'DISPLAY_DIRECT' : 'NO_LTV',
+          previewImageDataUrl: currentLtvImageDataUrlRef.current ?? undefined,
           rows: result.rows,
           source: 'ltv_only',
           ltvSource: 'pdf-ltv',
@@ -3509,10 +3515,14 @@ ${coords}
     window.dispatchEvent(
       new CustomEvent('ltv:parsed', {
         detail: {
-          mode: result.rows.length > 0
-            ? 'DISPLAY_DIRECT'
-            : currentLtvImageDataUrlRef.current ? 'NEEDS_CROP' : 'NO_LTV', // 28/10 images
-          previewImageDataUrl: result.rows.length > 0 ? undefined : currentLtvImageDataUrlRef.current ?? undefined,
+          // 28/10 — DHLTV reçu en IMAGE : le cadre LTV garde TOUJOURS l'image reçue
+          // (source officielle), même quand des LTV reconstituées sont placées sur la
+          // fiche (aide à la conduite). Le bloc LTV et les fiches lisent `rows` quel que
+          // soit le mode ; seul l'affichage du bloc dépend du mode.
+          mode: currentLtvImageDataUrlRef.current
+            ? 'NEEDS_CROP'
+            : result.rows.length > 0 ? 'DISPLAY_DIRECT' : 'NO_LTV',
+          previewImageDataUrl: currentLtvImageDataUrlRef.current ?? undefined,
           rows: result.rows,
           source: params.journeySource,
           ltvSource: params.ltvSource,

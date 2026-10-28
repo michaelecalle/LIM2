@@ -299,8 +299,8 @@ export default function Mode2026Modal({
           )}
           {!parsing && ltvImageFiles.length > 0 && (
             <div className="mt-2 rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-300 font-medium leading-relaxed">
-              DHLTV reçu en image : aucune LTV extraite. Recadrage manuel dans le bloc LTV,
-              pages affichées en mode secours. Les LTV ne seront pas placées sur la fiche train.
+              DHLTV reçu en image : affiché tel quel dans le bloc LTV. Les LTV sont reconnues
+              par leurs codes et placées sur la fiche si elles figurent dans le dernier PDF publié.
             </div>
           )}
           {!parsing && !parseError && pdfFile === null && ltvImageFiles.length === 0 && (
