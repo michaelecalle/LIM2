@@ -297,7 +297,7 @@ function clipAt(T){
 }
 function loadClip(i){
   if(i===curClip) return Promise.resolve();
-  resetSuivi();   // autre clip = autre cadrage : le suivi ne vaut plus rien
+  resetSuivi(true);   // autre clip = autre cadrage : le suivi ne vaut plus rien
   return new Promise((res,rej)=>{
     const on=()=>{ vid.removeEventListener('loadedmetadata',on); curClip=i; res(); };
     vid.addEventListener('loadedmetadata',on);
@@ -359,7 +359,7 @@ async function gotoTime(t){
   if(!totalDur) return;
   // Saut manuel important : la derive de cadrage entre les deux instants peut etre
   // de plusieurs centaines de pixels. Le suivi repart de la zone de reference.
-  if(Math.abs(t - curGlobalT) > 30) resetSuivi();
+  if(Math.abs(t - curGlobalT) > 30) resetSuivi(true);
   await seek(Math.max(0, Math.min(totalDur-0.05, t)));
   $('goto').value = Math.round(curGlobalT);
   $('scrub').value = Math.round(curGlobalT / totalDur * 1000);
@@ -448,15 +448,28 @@ const SUIVI_RAPPORT_REJET = 0.60;
 // analysée, dont l'échelle change avec la taille de la zone). Sert au plancher automatique
 // de hauteur de chiffre (case « Hauteur mini auto »).
 let suiviRefNative = null;
-function resetSuivi(){ roiSuivi = null; suiviEchecs = 0; suiviRefH = null; suiviRefNative = null; suiviHorsBande = []; }
+// 28/10 — MÉMOIRE D'AVANT L'ABANDON. Après six échecs on repart de la zone tracée avec une
+// référence vierge, et le PREMIER nombre reconnu devenait la pastille sans aucun contrôle de
+// taille : journal du 28/10, un « 1 » de 15 px vidéo (étiquette du cadran) adopté à 3,00 s
+// contre une pastille de 40 px, puis deux minutes de « 1 ». La dernière hauteur connue sert
+// désormais de plancher (SUIVI_RAPPORT_REJET) au premier accrochage suivant. Elle est
+// oubliée quand le cadrage change pour de bon : autre clip, saut dans la vidéo, zone
+// retracée, nouvelle extraction.
+let suiviRefPlancher = null;
+function resetSuivi(oublierPlancher){
+  if(oublierPlancher) suiviRefPlancher = null;
+  else if(suiviRefNative != null) suiviRefPlancher = suiviRefNative;
+  roiSuivi = null; suiviEchecs = 0; suiviRefH = null; suiviRefNative = null; suiviHorsBande = [];
+}
 /** Pose la zone de suivi autour de la boîte lue (coords d'analyse). TAILLE PRISE SUR LA
  *  VALEUR LISSÉE, jamais sur `refH` brute : la pastille a une taille constante, une image mal
  *  mesurée ne doit pas pouvoir redimensionner la zone à elle seule (c'est ce point précis qui
  *  armait le cliquet du 22/08). */
-function placerSuivi(box, map){
+function placerSuivi(box, map, sc){
   const s = map ? map.s : 1, ox = map ? map.ox : 0, oy = map ? map.oy : 0;
   const cx = (box.x0 + box.x1)/2, cy = (box.y0 + box.y1)/2;
-  const hw = SUIVI_DEMI_L * suiviRefH, hh = SUIVI_DEMI_H * suiviRefH;
+  // 28/10 — référence en px VIDÉO × échelle de CETTE analyse = px d'analyse (cf. refNat).
+  const hw = SUIVI_DEMI_L * suiviRefNative * (sc || 1), hh = SUIVI_DEMI_H * suiviRefNative * (sc || 1);
   roiSuivi = { x0:Math.max(0,Math.round(ox + (cx-hw)/s)),
                y0:Math.max(0,Math.round(oy + (cy-hh)/s)),
                x1:Math.min(frameCv.width-1, Math.round(ox + (cx+hw)/s)),
@@ -597,7 +610,7 @@ frameCv.addEventListener('pointerup', e=>{
   const r=roiPendantGeste(b);
   if(r.x1-r.x0<20||r.y1-r.y0<20){ annulerGeste(); return; }
   roi=r; saveRoi(); roiText();
-  resetSuivi();   // zone modifiee = le suivi repart de zero
+  resetSuivi(true);   // zone modifiee = le suivi repart de zero
   if(!running) processFrame(true); else if(paused) processFrame(false);
 });
 
@@ -1242,17 +1255,26 @@ async function processFrameInterne(interactive, learnUnknown){
   // adoptée après la reconnaissance (cf. plus bas), jamais sur un objet inconnu. Sur le
   // téléphone le 10/10, une zone posée sur l'aiguille avait donné une « pastille » de
   // 95 px (un bout d'aiguille) et tout le reste était rejeté.
-  if($('suivrePastille') && $('suivrePastille').checked && refH > 0 && suiviRefH !== null){
+  // 28/10 — TOUT EN PIXELS VIDÉO. `refH` est mesuré en pixels de l'image analysée, dont le
+  // zoom dépend de la taille de la zone (plancher 320 px de large) : dès que la zone de suivi
+  // remplace la zone tracée, le zoom change et la MÊME pastille paraît plus petite. Journal du
+  // 28/10 : 68 px dans la zone tracée, 50 px dans la zone de suivi, pour 40 px vidéo dans les
+  // deux cas → rapport 0,73 « hors bande », échec, cascade jusqu'à l'abandon. La référence
+  // (`suiviRefNative`) et chaque mesure (`refNat`) sont désormais comparées en pixels vidéo ;
+  // `suiviRefH` n'est plus qu'un reflet pour l'affichage et le journal.
+  const refNat = refH > 0 ? refH / scPass : 0;
+  if($('suivrePastille') && $('suivrePastille').checked && refH > 0 && suiviRefNative !== null){
     // Vraisemblance : la pastille garde une taille a peu pres constante. Un saut
     // brutal signifie qu'on vient d'accrocher autre chose (graduations, texte) —
     // on lit quand meme, mais on ne deplace pas la zone sur cette base.
-    const rapport = refH / suiviRefH;
+    const rapport = refNat / suiviRefNative;
     if(rapport < SUIVI_RAPPORT_REJET){
       // 10/10 — objet nettement plus petit que la pastille : ce n'est pas elle (cf. SUIVI_RAPPORT_REJET).
+      const pastilleTxt = Math.round(suiviRefNative);   // lu AVANT suiviEchec(), qui peut tout remettre à zéro
       suiviHorsBande = [];
       suiviEchec();
       $('readOut').textContent='-';
-      $('conf').innerHTML=`<span class="err">objet de ${refH} px lu pour une pastille de ${Math.round(suiviRefH)} px : pas la pastille — recherche élargie (${suiviEchecs}/${SUIVI_ECHECS_ABANDON})</span>`;
+      $('conf').innerHTML=`<span class="err">objet de ${Math.round(refNat)} px vidéo lu pour une pastille de ${pastilleTxt} px : pas la pastille — ${suiviRefNative==null ? 'suivi abandonné, retour à la zone tracée' : `recherche élargie (${suiviEchecs}/${SUIVI_ECHECS_ABANDON})`}</span>`;
       $('glyphs').innerHTML='';
       return {v:null, conf:0};
     }
@@ -1265,16 +1287,16 @@ async function processFrameInterne(interactive, learnUnknown){
       // et sous-dimensionne la zone quand la pastille grandit. Le risque d'emballement
       // qui justifiait un lissage lent a disparu : la bande en rapport interdit deja a
       // toute mesure hors de ±20-25 % d'entrer ici.
-      suiviRefH = suiviRefH*0.8 + refH*0.2;
+      suiviRefNative = suiviRefNative*0.8 + refNat*0.2;
     } else {
       // Hors bande : on ne bouge PAS la zone sur la foi de cette mesure. Mais on la
       // retient : si les suivantes disent la meme chose, c'est le cadrage qui a change
       // pour de bon et il faut bien finir par l'admettre.
-      suiviHorsBande.push(refH);
+      suiviHorsBande.push(refNat);
       const tri = suiviHorsBande.slice().sort((x,y)=>x-y), med = tri[tri.length>>1];
       const daccord = suiviHorsBande.every(h => Math.abs(h - med) <= med*0.10);
       if(suiviHorsBande.length >= SUIVI_RECALIBRE && daccord){
-        suiviRefH = med; suiviHorsBande = []; bougeable = true;
+        suiviRefNative = med; suiviHorsBande = []; bougeable = true;
       } else {
         // Et si elles ne s'accordent meme pas entre elles, le compteur d'echecs finit
         // par rendre la main a la zone tracee par l'utilisateur (SUIVI_ECHECS_ABANDON).
@@ -1283,10 +1305,11 @@ async function processFrameInterne(interactive, learnUnknown){
       }
     }
 
-    if(bougeable){ placerSuivi(box, map); }
+    if(bougeable){ placerSuivi(box, map, scPass); }
   }
 
-  if(suiviRefH != null) suiviRefNative = suiviRefH / scPass;
+  // reflet en pixels de CETTE analyse (affichage, journal) — jamais l'inverse
+  suiviRefH = suiviRefNative == null ? null : suiviRefNative * scPass;
 
   // Mesure de l'aiguille — APRES la mise a jour du suivi, pour que le pivot soit
   // celui de cette image. Quand les chiffres echouent, `roiSuivi` garde sa derniere
@@ -1322,16 +1345,25 @@ async function processFrameInterne(interactive, learnUnknown){
   }
   const v = str==='' ? null : parseInt(str,10);
   // 10/10 — première RÉFÉRENCE de taille de pastille : seulement sur un nombre reconnu.
-  if(v!=null && $('suivrePastille') && $('suivrePastille').checked && refH > 0 && suiviRefH === null && box){
-    suiviRefH = refH; suiviRefNative = refH / scPass; suiviHorsBande = []; suiviEchecs = 0;
-    placerSuivi(box, map);
+  if(v!=null && $('suivrePastille') && $('suivrePastille').checked && refH > 0 && suiviRefNative === null && box){
+    // 28/10 — après un abandon, un nombre nettement plus petit que la pastille d'avant n'est
+    // pas elle (cf. suiviRefPlancher) : rejeté, et la recherche s'élargit autour de la zone tracée.
+    if(suiviRefPlancher != null && refNat < SUIVI_RAPPORT_REJET * suiviRefPlancher){
+      suiviEchec();
+      $('readOut').textContent='-';
+      $('conf').innerHTML=`<span class="err">objet de ${Math.round(refNat)} px vidéo lu pour une pastille d'au moins ${Math.round(SUIVI_RAPPORT_REJET*suiviRefPlancher)} px (mémoire d'avant l'abandon) : pas la pastille — recherche élargie (${suiviEchecs}/${SUIVI_ECHECS_ABANDON})</span>`;
+      $('glyphs').innerHTML='';
+      return {v:null, conf:0};
+    }
+    suiviRefNative = refNat; suiviRefH = refH; suiviHorsBande = []; suiviEchecs = 0;
+    placerSuivi(box, map, scPass);
   }
   $('readOut').textContent = v==null?'-':v;
   const seuilTxt = autoTh ? ' - <span class="ok">seuil local adaptatif</span>' : '';
   $('conf').innerHTML = (v==null ? (autoTh?'<span class="ok">seuil local adaptatif</span>':'')
     : digits.length+' chiffre(s) - ecart max '+worst.toFixed(3)+' '
       + (worst<MATCH_MAX*0.5?'<span class="ok">sur</span>':'<span class="warn">a surveiller</span>')
-      + ' - hauteur chiffre '+refH+' px' + (autoMinH ? ' (mini auto '+minHEff+')' : '') + seuilTxt);
+      + ' - hauteur chiffre '+refH+' px ('+Math.round(refNat)+' px vidéo)' + (autoMinH ? ' (mini auto '+minHEff+')' : '') + seuilTxt);
   return {v, conf:1-Math.min(1,worst/MATCH_MAX), ang:aig?aig.ang:null, angC:aig?aig.contraste:null, angR:aig?aig.rMoyeu:null};
 }
 
@@ -1377,7 +1409,7 @@ $('btnRun').onclick = async () => {
   if(running) return;
   running=true; abortFlag=false; results = repriseResultats || []; repriseResultats = null;
   await prendreVerrouVeille();
-  resetSuivi();   // chaque extraction repart de la zone tracee, pas d'un suivi herite
+  resetSuivi(true);   // chaque extraction repart de la zone tracee, pas d'un suivi herite
   $('review').style.display='none';
   $('btnRun').disabled=true; $('btnStop').disabled=false; $('btnPause').disabled=false;
   paused=false; setPauseUi(); $('btnCsv').disabled=true;
@@ -1671,8 +1703,8 @@ $('btnCsv').onclick = ()=>{
   dl('courbe_vitesse.csv', lines.join('\n'), 'text/csv');
 };
 $('btnTpl').onclick = ()=> dl('modeles_chiffres.json', JSON.stringify(templates.map(t=>({digit:t.digit,data:Array.from(t.data)}))), 'application/json');
-$('btnRoi').onclick=()=>{ roi=null; saveRoi(); roiText(); resetSuivi(); drawFrame(); };
-$('suivrePastille').onchange=()=>{ resetSuivi(); if(!running||paused) processFrame(false); };
+$('btnRoi').onclick=()=>{ roi=null; saveRoi(); roiText(); resetSuivi(true); drawFrame(); };
+$('suivrePastille').onchange=()=>{ resetSuivi(true); if(!running||paused) processFrame(false); };
 roiText();
 $('btnReset').onclick = ()=>{
   if(!confirm('Effacer tous les modèles de chiffres appris ?')) return;

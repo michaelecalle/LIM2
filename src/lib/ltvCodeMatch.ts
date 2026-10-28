@@ -33,6 +33,12 @@ export type LtvCodeEngine = 'vision' | 'tesseract'
 export type LtvCodeExtraction = {
   /** Codes lus « proprement » (9 chiffres isolés) sous une ligne pertinente → nb de passes. */
   strictVotes: Map<string, number>
+  /** Codes stricts dans l'ordre de lecture, une liste par passe (encadrement par les voisins). */
+  sequences: string[][]
+  /** Vision non tentée : OCR en ligne désactivé / hors ligne ; null = tentée. */
+  visionSkipped: 'setting-off' | 'offline' | null
+  /** Tentatives Vision échouées (repli Tesseract), une entrée par image. */
+  visionFailed: Array<{ name: string; reason: string; ms: number }>
   /** Toutes les fenêtres de 9 chiffres (tolère une parenthèse lue comme un chiffre). */
   windows: Set<string>
   /** En-têtes de ligne rencontrés (ex. 050, 054). */
@@ -44,11 +50,16 @@ export type LtvCodeExtraction = {
   header050: { imageIndex: number; y: number } | null
 }
 
+/** Code inconnu de la référence, encadré par les PK de ses voisins connus (tableau trié
+ *  par PK décroissant dans chaque ligne). pkHi/pkLo = ±Infinity sans voisin de ce côté. */
+export type LtvUnknownCode = { code: string; pkHi: number; pkLo: number }
+
 export type LtvReconstruction = {
   data: NormalizedLtvFile
   matchedCodes: string[]
   missingCodes: string[]
   unknownCodes: string[]
+  unknown: LtvUnknownCode[]
   referencePublishedAt: string | null
   engine: LtvCodeEngine
   ms: number
@@ -107,10 +118,12 @@ function parseColumnText(
   relevant: Set<string> | null,
   strictVotes: Map<string, number>,
   windows: Set<string>,
-  linesSeen: Set<string>
+  linesSeen: Set<string>,
+  sequences: string[][]
 ) {
   let currentLine: string | null = null
   const strictThisPass = new Set<string>()
+  const sequence: string[] = []
   for (const rawLine of text.split(/\r?\n/)) {
     const h = rawLine.match(HEADER_RE)
     if (h) {
@@ -125,11 +138,15 @@ function parseColumnText(
       if (run.length === 9) strict = run
       // « (000177519) » lu « 1000177519) » : la parenthèse devient un 1 de tête.
       else if (run.length === 10 && run.startsWith('1') && run.slice(1).startsWith('00')) strict = run.slice(1)
-      if (strict && accept) strictThisPass.add(strict)
+      if (strict && accept) {
+        strictThisPass.add(strict)
+        if (sequence[sequence.length - 1] !== strict) sequence.push(strict)
+      }
       if (run.length >= 9) for (let i = 0; i + 9 <= run.length; i++) windows.add(run.slice(i, i + 9))
     }
   }
   for (const c of strictThisPass) strictVotes.set(c, (strictVotes.get(c) ?? 0) + 1)
+  if (sequence.length > 0) sequences.push(sequence)
 }
 
 async function ocrTesseract(canvases: HTMLCanvasElement[]): Promise<OcrPass[]> {
@@ -220,12 +237,21 @@ export async function extractLtvCodesFromImages(
   const strictVotes = new Map<string, number>()
   const windows = new Set<string>()
   const linesSeen = new Set<string>()
+  const sequences: string[][] = []
   const relevant = relevantLinesOf(reference)
   const perImage: LtvCodeExtraction['perImage'] = []
   let header050: LtvCodeExtraction['header050'] = null
   let engineUsed: LtvCodeEngine = 'tesseract'
-  const preferVision =
-    getOcrOnlineEnabled() && (typeof navigator === 'undefined' || navigator.onLine !== false)
+  // 28/10 — Pourquoi Vision n'a pas servi : journalisé (constat du 9709 à Sants, sans
+  // réseau : Tesseract 98 s sans que le journal dise pourquoi).
+  const onLine = typeof navigator === 'undefined' || navigator.onLine !== false
+  const visionSkipped: 'setting-off' | 'offline' | null = !getOcrOnlineEnabled()
+    ? 'setting-off'
+    : !onLine
+      ? 'offline'
+      : null
+  const preferVision = visionSkipped == null
+  const visionFailed: Array<{ name: string; reason: string; ms: number }> = []
 
   const ordered = sortLtvImageFiles(files)
   for (let idx = 0; idx < ordered.length; idx++) {
@@ -236,17 +262,26 @@ export async function extractLtvCodesFromImages(
     let passes: OcrPass[] = []
     let engine: LtvCodeEngine = 'tesseract'
     if (preferVision) {
+      const tv = Date.now()
       try {
         passes = await ocrVision(canvases)
         engine = 'vision'
       } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err)
         console.warn('[ltvCodeMatch] Vision indisponible, repli Tesseract', err)
+        visionFailed.push({ name: file.name, reason, ms: Date.now() - tv })
+        logTestEvent('ltv:image-match:vision-failed', {
+          image: file.name,
+          reason,
+          ms: Date.now() - tv,
+          onLine: typeof navigator === 'undefined' ? null : navigator.onLine,
+        })
       }
     }
     if (engine !== 'vision') passes = await ocrTesseract(canvases)
     engineUsed = engine
     for (const pass of passes) {
-      parseColumnText(pass.text, relevant, strictVotes, windows, linesSeen)
+      parseColumnText(pass.text, relevant, strictVotes, windows, linesSeen, sequences)
       // Position de l'en-tête LÍNEA 050 (première image où il est vu) : les passes sont
       // des colonnes partant de x = 0, agrandies ×UPSCALE → y natif = y / UPSCALE.
       if (header050 == null && pass.header050Y != null) {
@@ -257,6 +292,9 @@ export async function extractLtvCodesFromImages(
   }
   return {
     strictVotes,
+    sequences,
+    visionSkipped,
+    visionFailed,
     windows,
     linesSeen: Array.from(linesSeen),
     engine: engineUsed,
@@ -264,6 +302,63 @@ export async function extractLtvCodesFromImages(
     perImage,
     header050,
   }
+}
+
+function rowPkRange(row: Record<string, unknown>): { hi: number; lo: number } | null {
+  const a = parseFloat(String(row.kmIni ?? '').replace(',', '.'))
+  const b = parseFloat(String(row.kmFin ?? '').replace(',', '.'))
+  if (!Number.isFinite(a) && !Number.isFinite(b)) return null
+  const vals = [a, b].filter((v) => Number.isFinite(v))
+  return { hi: Math.max(...vals), lo: Math.min(...vals) }
+}
+
+/**
+ * Encadre chaque code inconnu par les PK de ses voisins connus dans l'ordre de lecture
+ * (le DHLTV est trié par PK décroissant à l'intérieur d'une ligne). Sans voisin d'un
+ * côté : borne infinie (prudence : le code reste « possiblement sur le parcours »).
+ */
+function bracketUnknownCodes(
+  unknownCodes: string[],
+  sequences: string[][],
+  pkByCode: Map<string, { hi: number; lo: number }>
+): LtvUnknownCode[] {
+  return unknownCodes.map((code) => {
+    let pkHi = Number.POSITIVE_INFINITY
+    let pkLo = Number.NEGATIVE_INFINITY
+    let found = false
+    for (const seq of sequences) {
+      const i = seq.indexOf(code)
+      if (i < 0) continue
+      let before: { hi: number; lo: number } | undefined
+      for (let j = i - 1; j >= 0 && !before; j--) before = pkByCode.get(seq[j])
+      let after: { hi: number; lo: number } | undefined
+      for (let j = i + 1; j < seq.length && !after; j++) after = pkByCode.get(seq[j])
+      const hi = before ? before.hi : Number.POSITIVE_INFINITY
+      const lo = after ? after.lo : Number.NEGATIVE_INFINITY
+      // plusieurs passes : on garde l'encadrement le plus serré
+      if (!found) {
+        pkHi = hi
+        pkLo = lo
+        found = true
+      } else {
+        pkHi = Math.min(pkHi, hi)
+        pkLo = Math.max(pkLo, lo)
+      }
+    }
+    return { code, pkHi, pkLo }
+  })
+}
+
+/** Codes inconnus dont l'encadrement croise la plage de PK du parcours (marge 2 km). */
+export function filterUnknownForRoute(
+  unknown: LtvUnknownCode[],
+  range: { minPk: number; maxPk: number } | null,
+  marginKm = 2
+): LtvUnknownCode[] {
+  if (!range || !Number.isFinite(range.minPk)) return unknown
+  const lo = range.minPk - marginKm
+  const hi = (Number.isFinite(range.maxPk) ? range.maxPk : Number.POSITIVE_INFINITY) + marginKm
+  return unknown.filter((u) => u.pkHi >= lo && u.pkLo <= hi)
 }
 
 function rowCode(row: Record<string, unknown>): string | null {
@@ -286,10 +381,13 @@ export function matchLtvCodes(
   const matchedCodes: string[] = []
   const missingCodes: string[] = []
   const known = new Set<string>()
+  const pkByCode = new Map<string, { hi: number; lo: number }>()
   for (const row of rows) {
     const code = rowCode(row as Record<string, unknown>)
     if (!code) continue
     known.add(code)
+    const pk = rowPkRange(row as Record<string, unknown>)
+    if (pk) pkByCode.set(code, pk)
     if (extraction.windows.has(code)) {
       matchedRows.push(row)
       matchedCodes.push(code)
@@ -302,6 +400,7 @@ export function matchLtvCodes(
   const unknownCodes = Array.from(extraction.strictVotes.entries())
     .filter(([c, votes]) => votes >= MIN_VOTES_UNKNOWN && c.startsWith('00') && !known.has(c))
     .map(([c]) => c)
+  const unknown = bracketUnknownCodes(unknownCodes, extraction.sequences, pkByCode)
   const referencePublishedAt =
     typeof reference.meta?.publishedAt === 'string' ? reference.meta.publishedAt : null
   const data: NormalizedLtvFile = {
@@ -319,7 +418,7 @@ export function matchLtvCodes(
       },
     } as NormalizedLtvFile['meta'],
   }
-  return { data, matchedCodes, missingCodes, unknownCodes, referencePublishedAt }
+  return { data, matchedCodes, missingCodes, unknownCodes, unknown, referencePublishedAt }
 }
 
 /**
@@ -343,6 +442,8 @@ export async function reconstructLtvFromImages(files: File[]): Promise<LtvRecons
   }
   logTestEvent('ltv:image-match', {
     engine: extraction.engine,
+    visionSkipped: extraction.visionSkipped,
+    visionFailed: extraction.visionFailed,
     ocrMs: extraction.ms,
     totalMs: result.ms,
     perImage: extraction.perImage,
@@ -354,7 +455,7 @@ export async function reconstructLtvFromImages(files: File[]): Promise<LtvRecons
     strictCodesRead: extraction.strictVotes.size,
     matched: m.matchedCodes,
     missing: m.missingCodes,
-    unknown: m.unknownCodes,
+    unknown: m.unknown,
   })
   return result
 }

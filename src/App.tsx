@@ -1087,6 +1087,11 @@ export default function App() {
   }
   onClick={(e) => {
     if ((e.target as HTMLElement)?.closest("button, a, input, img, .crop-edge")) return
+    // 28/10 — RECADRAGE EN COURS (DHLTV image) : aucun clic ne replie tant que le
+    // recadrage n'est pas validé. Sur iPad, le relâchement d'une poignée émet un clic
+    // là où se trouve le doigt ; la zone étant zoomée/déplacée pendant le glissement,
+    // ce clic retombait sur le fond du cadre et repliait tout (constat du 28/10).
+    if (document.querySelector(".ltv-body-crop")) return
     window.dispatchEvent(
       new CustomEvent("lim:infos-ltv-fold-change", { detail: { folded: true, source: "table-click" } })
     )

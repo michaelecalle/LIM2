@@ -26,7 +26,7 @@ import { APP_VERSION } from '../version'
 import { LIGNE_FT_NORMALIZED } from '../../data/normalized/ligneFT.normalized'
 import { parseLtvPdf2026 } from '../../lib/ltvPdfParser'
 import { buildLtvImageComposite } from '../../lib/ltvImages'
-import { reconstructLtvFromImages } from '../../lib/ltvCodeMatch'
+import { filterUnknownForRoute, reconstructLtvFromImages } from '../../lib/ltvCodeMatch'
 import {
   getLtvImageCurrentBand,
   publishLtvImageBand,
@@ -1441,9 +1441,30 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     // lignes par le circuit normal ; la légende du bloc LTV indique « Reconstituées
     // d'après le PDF du … ». Sinon, le recadrage manuel reste seul (lot 1).
     void reconstructLtvFromImages(ltvImageFiles)
-      .then((r) => {
+      .then(async (r) => {
         if (currentLtvImageFilesRef.current !== ltvImageFiles) return // remplacé entre-temps
         if (!r) return
+        // 28/10 — Codes inconnus : signalés seulement s'ils concernent le PARCOURS
+        // (encadrement par les PK des voisins connus ; cf. ltvCodeMatch). Le DHLTV couvre
+        // tout le corridor jusqu'à Madrid : une LTV nouvelle à 500 km n'intéresse pas le
+        // conducteur. Tout est conservé dans le journal (`ltv:image-match`).
+        try {
+          const range =
+            ctx.kind === '2026'
+              ? await waitForFtRoutePkRange(ctx.trainNumber)
+              : { minPk: 616, maxPk: Number.POSITIVE_INFINITY }
+          const kept = filterUnknownForRoute(r.unknown, range)
+          const rec = (r.data.meta as any)?.reconstructed
+          if (rec) rec.unknownCodes = kept.map((u) => u.code)
+          logTestEvent('ltv:image-match:unknown-filter', {
+            range: range ? { minPk: range.minPk, maxPk: range.maxPk } : null,
+            all: r.unknown,
+            kept: kept.map((u) => u.code),
+          })
+        } catch (err) {
+          console.warn('[ltv-images] filtre des codes inconnus impossible', err)
+        }
+        if (currentLtvImageFilesRef.current !== ltvImageFiles) return
         // 28/10 — Bande de recadrage recalée sur l'en-tête « LÍNEA 050 » (comme l'ancien
         // parseur) dès que la lecture l'a situé : l'en-tête vient en haut de la bande.
         const c = currentLtvCompositeRef.current
