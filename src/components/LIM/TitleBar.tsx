@@ -27,6 +27,12 @@ import { LIGNE_FT_NORMALIZED } from '../../data/normalized/ligneFT.normalized'
 import { parseLtvPdf2026 } from '../../lib/ltvPdfParser'
 import { buildLtvImageComposite } from '../../lib/ltvImages'
 import { reconstructLtvFromImages } from '../../lib/ltvCodeMatch'
+import {
+  getLtvImageCurrentBand,
+  publishLtvImageBand,
+  renderLtvImageBand,
+  setLtvImageBandSource,
+} from '../../lib/ltvImageBand'
 import ManualPdfCanvasViewer from './ManualPdfCanvasViewer'
 import ManualViewer from './ManualViewer'
 import GuiaViewer from './GuiaViewer'
@@ -1425,6 +1431,8 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   ) => {
     currentLtvImageFilesRef.current = ltvImageFiles
     currentLtvImageDataUrlRef.current = null
+    currentLtvCompositeRef.current = null
+    void setLtvImageBandSource(null)
     if (ltvImageFiles.length === 0) return
 
     // 28/10 — LOT 2 : reconstitution des LTV par les codes (colonne Codigo lue par OCR,
@@ -1436,6 +1444,18 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       .then((r) => {
         if (currentLtvImageFilesRef.current !== ltvImageFiles) return // remplacé entre-temps
         if (!r) return
+        // 28/10 — Bande de recadrage recalée sur l'en-tête « LÍNEA 050 » (comme l'ancien
+        // parseur) dès que la lecture l'a situé : l'en-tête vient en haut de la bande.
+        const c = currentLtvCompositeRef.current
+        if (r.header050 && c && c.height > 0) {
+          const off = c.pageOffsets[r.header050.imageIndex] ?? 0
+          const sc = c.pageScales[r.header050.imageIndex] ?? 1
+          const yComposite = off + r.header050.y * sc
+          const topPct = Math.max(0, (yComposite - 4) / c.height)
+          publishLtvImageBand(topPct)
+          logTestEvent('ui:ltv-images:band-header', { imageIndex: r.header050.imageIndex, y: Math.round(yComposite), topPct: Math.round(topPct * 1000) / 1000 })
+        }
+        if (r.matchedCodes.length === 0) return
         ltvPdfDataRef.current = r.data // ⚠️ pas de cacheLtvNormalized : ce n'est pas un import
         if (ctx.kind === '2026') {
           void dispatchLtvRowsForSource({
@@ -1461,7 +1481,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
               detail: {
                 // Image reçue conservée dans le cadre LTV (cf. règle ci-dessus).
                 mode: 'NEEDS_CROP',
-                previewImageDataUrl: currentLtvImageDataUrlRef.current ?? undefined,
+                previewImageDataUrl: getLtvImageCurrentBand() ?? currentLtvImageDataUrlRef.current ?? undefined,
                 rows: result.rows,
                 source: 'ltv_image_match',
                 ltvSource: 'pdf-ltv',
@@ -1487,16 +1507,24 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       bytes: ltvImageFiles.reduce((a, f) => a + f.size, 0),
     })
     void buildLtvImageComposite(ltvImageFiles)
-      .then((c) => {
+      .then(async (c) => {
         if (currentLtvImageFilesRef.current !== ltvImageFiles) return // remplacé entre-temps
-        currentLtvImageDataUrlRef.current = c.dataUrl
+        currentLtvCompositeRef.current = c
+        // 28/10 — Le bloc LTV ne reçoit JAMAIS la composite entière (elle débordait de
+        // l'écran) : il reçoit une BANDE, servie par ltvImageBand comme le faisait le
+        // parseur PDF, et ses flèches haut/bas la font glisser. Bande initiale en haut ;
+        // recalée sur l'en-tête LÍNEA 050 dès que la lecture des codes l'a situé.
+        await setLtvImageBandSource(c.dataUrl)
+        if (currentLtvImageFilesRef.current !== ltvImageFiles) return
+        const band = renderLtvImageBand(0) ?? c.dataUrl
+        currentLtvImageDataUrlRef.current = band
         logTestEvent('ui:ltv-images:composite', { width: c.width, height: c.height, pages: c.pages })
         window.dispatchEvent(
           new CustomEvent('ltv:parsed', {
             detail: {
               mode: 'NEEDS_CROP',
               rows: [],
-              previewImageDataUrl: c.dataUrl,
+              previewImageDataUrl: band,
               source,
               ltvSource: 'pdf-ltv',
               availableSources: [],
@@ -1632,7 +1660,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
           mode: currentLtvImageDataUrlRef.current
             ? 'NEEDS_CROP'
             : result.rows.length > 0 ? 'DISPLAY_DIRECT' : 'NO_LTV',
-          previewImageDataUrl: currentLtvImageDataUrlRef.current ?? undefined,
+          previewImageDataUrl: getLtvImageCurrentBand() ?? currentLtvImageDataUrlRef.current ?? undefined,
           rows: result.rows,
           source: 'ltv_only',
           ltvSource: 'pdf-ltv',
@@ -3399,6 +3427,8 @@ ${coords}
   // composite (data URL) servie au bloc LTV en mode recadrage (NEEDS_CROP). Vides si PDF.
   const currentLtvImageFilesRef = useRef<File[]>([])
   const currentLtvImageDataUrlRef = useRef<string | null>(null)
+  // Composite (pages empilées) : offsets/échelles des pages, pour caler la bande.
+  const currentLtvCompositeRef = useRef<import('../../lib/ltvImages').LtvImageComposite | null>(null)
   const currentPdfIdRef = useRef<string | null>(null)
   const currentPdfReplayKeyRef = useRef<string | null>(null)
 
@@ -3522,7 +3552,7 @@ ${coords}
           mode: currentLtvImageDataUrlRef.current
             ? 'NEEDS_CROP'
             : result.rows.length > 0 ? 'DISPLAY_DIRECT' : 'NO_LTV',
-          previewImageDataUrl: currentLtvImageDataUrlRef.current ?? undefined,
+          previewImageDataUrl: getLtvImageCurrentBand() ?? currentLtvImageDataUrlRef.current ?? undefined,
           rows: result.rows,
           source: params.journeySource,
           ltvSource: params.ltvSource,
@@ -3616,6 +3646,8 @@ ${coords}
       currentLtvPdfFileRef.current = null
     currentLtvImageFilesRef.current = []
     currentLtvImageDataUrlRef.current = null
+    currentLtvCompositeRef.current = null
+    void setLtvImageBandSource(null)
       currentPdfIdRef.current = null
       currentPdfReplayKeyRef.current = null
     }
@@ -4549,6 +4581,8 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
     currentLtvPdfFileRef.current = null
     currentLtvImageFilesRef.current = []
     currentLtvImageDataUrlRef.current = null
+    currentLtvCompositeRef.current = null
+    void setLtvImageBandSource(null)
     currentPdfIdRef.current = null
     currentPdfReplayKeyRef.current = null
 
@@ -5588,6 +5622,8 @@ setAutoScrollStartedOnce(next)
                   currentLtvPdfFileRef.current = null
     currentLtvImageFilesRef.current = []
     currentLtvImageDataUrlRef.current = null
+    currentLtvCompositeRef.current = null
+    void setLtvImageBandSource(null)
                   currentPdfIdRef.current = null
                   currentPdfReplayKeyRef.current = null
                   window.dispatchEvent(new CustomEvent('lim:clear-pdf'))

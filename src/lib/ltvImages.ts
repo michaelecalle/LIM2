@@ -43,6 +43,11 @@ export type LtvImageComposite = {
   width: number
   height: number
   pages: number
+  /** Ordonnée du haut de chaque page dans la composite (px), ordre des noms. */
+  pageOffsets: number[]
+  /** Facteur appliqué à chaque page (largeur composite / largeur native). */
+  pageScales: number[]
+  pageNames: string[]
 }
 
 /**
@@ -67,7 +72,11 @@ export async function buildLtvImageComposite(files: File[]): Promise<LtvImageCom
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, width, height)
   let y = 0
+  const pageOffsets: number[] = []
+  const pageScales: number[] = []
   imgs.forEach((img, i) => {
+    pageOffsets.push(y)
+    pageScales.push(width / Math.max(1, img.naturalWidth))
     ctx.drawImage(img, 0, y, width, heights[i])
     y += heights[i] + gap
   })
@@ -75,5 +84,14 @@ export async function buildLtvImageComposite(files: File[]): Promise<LtvImageCom
   const blob = await new Promise<Blob>((resolve, reject) =>
     cv.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob'))), 'image/jpeg', 0.92)
   )
-  return { dataUrl, blob, width, height, pages: imgs.length }
+  return {
+    dataUrl,
+    blob,
+    width,
+    height,
+    pages: imgs.length,
+    pageOffsets,
+    pageScales,
+    pageNames: ordered.map((f) => f.name),
+  }
 }

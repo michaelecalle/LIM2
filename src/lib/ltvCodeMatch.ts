@@ -40,6 +40,8 @@ export type LtvCodeExtraction = {
   engine: LtvCodeEngine
   ms: number
   perImage: Array<{ name: string; engine: LtvCodeEngine; ms: number }>
+  /** En-tête « LÍNEA 050 » : index de l'image (ordre des noms) et ordonnée en px natifs. */
+  header050: { imageIndex: number; y: number } | null
 }
 
 export type LtvReconstruction = {
@@ -50,6 +52,7 @@ export type LtvReconstruction = {
   referencePublishedAt: string | null
   engine: LtvCodeEngine
   ms: number
+  header050: { imageIndex: number; y: number } | null
 }
 
 // Fractions de largeur essayées pour isoler la colonne des codes (union des lectures).
@@ -89,6 +92,10 @@ function relevantLinesOf(reference: NormalizedLtvFile | null): Set<string> | nul
 }
 
 const HEADER_RE = /L[ÍI]NEA\s*0*(\d{3})/i
+const HEADER_050_RE = /L[ÍI]NEA\s*0*50\b/i
+
+/** Résultat d'une passe OCR : texte + ordonnée (px du canvas) de l'en-tête LÍNEA 050. */
+type OcrPass = { text: string; header050Y: number | null }
 
 /**
  * Parcourt le texte d'UNE passe (une colonne), ligne par ligne : les en-têtes
@@ -125,7 +132,7 @@ function parseColumnText(
   for (const c of strictThisPass) strictVotes.set(c, (strictVotes.get(c) ?? 0) + 1)
 }
 
-async function ocrTesseract(canvases: HTMLCanvasElement[]): Promise<string[]> {
+async function ocrTesseract(canvases: HTMLCanvasElement[]): Promise<OcrPass[]> {
   const mod = await import('./ocrLocalFallback')
   const w = await mod.getLocalOcrWorker()
   const { PSM } = await import('tesseract.js')
@@ -136,24 +143,35 @@ async function ocrTesseract(canvases: HTMLCanvasElement[]): Promise<string[]> {
     user_defined_dpi: '300',
   })
   try {
-    const texts: string[] = []
+    const passes: OcrPass[] = []
     for (const cv of canvases) {
       const res = await Promise.race([
-        w.recognize(cv),
+        w.recognize(cv, {}, { text: true, blocks: true }),
         new Promise<never>((_, reject) =>
           window.setTimeout(() => reject(new Error('recognize timeout')), 25_000)
         ),
       ])
-      texts.push(res?.data?.text ?? '')
+      const data: any = res?.data ?? {}
+      let header050Y: number | null = null
+      for (const b of data.blocks ?? []) {
+        for (const para of b.paragraphs ?? []) {
+          for (const line of para.lines ?? []) {
+            if (header050Y == null && HEADER_050_RE.test(String(line.text ?? ''))) {
+              header050Y = Number(line.bbox?.y0 ?? 0)
+            }
+          }
+        }
+      }
+      passes.push({ text: data.text ?? '', header050Y })
     }
-    return texts
+    return passes
   } finally {
     // Le worker est partagé avec l'OCR des fiches train : on rend les réglages par défaut.
     await w.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: PSM.AUTO })
   }
 }
 
-async function ocrVision(canvases: HTMLCanvasElement[]): Promise<string[]> {
+async function ocrVision(canvases: HTMLCanvasElement[]): Promise<OcrPass[]> {
   const apiKey = import.meta.env.VITE_GOOGLE_VISION_API_KEY as string | undefined
   if (!apiKey) throw new Error('VITE_GOOGLE_VISION_API_KEY absente')
   const requests = canvases.map((cv) => ({
@@ -168,7 +186,25 @@ async function ocrVision(canvases: HTMLCanvasElement[]): Promise<string[]> {
   if (!resp.ok) throw new Error(`Vision HTTP ${resp.status}`)
   const json = await resp.json()
   const responses = Array.isArray(json?.responses) ? json.responses : []
-  return canvases.map((_, i) => String(responses[i]?.fullTextAnnotation?.text ?? ''))
+  return canvases.map((_, i) => {
+    const ann = responses[i]?.fullTextAnnotation
+    let header050Y: number | null = null
+    for (const page of ann?.pages ?? []) {
+      for (const block of page.blocks ?? []) {
+        for (const para of block.paragraphs ?? []) {
+          const words = (para.words ?? []).map((w: any) =>
+            (w.symbols ?? []).map((sy: any) => String(sy.text ?? '')).join('')
+          )
+          const txt = words.join(' ')
+          if (header050Y == null && HEADER_050_RE.test(txt)) {
+            const ys = (para.boundingBox?.vertices ?? []).map((v: any) => Number(v.y ?? 0))
+            if (ys.length) header050Y = Math.min(...ys)
+          }
+        }
+      }
+    }
+    return { text: String(ann?.text ?? ''), header050Y }
+  })
 }
 
 /**
@@ -186,27 +222,37 @@ export async function extractLtvCodesFromImages(
   const linesSeen = new Set<string>()
   const relevant = relevantLinesOf(reference)
   const perImage: LtvCodeExtraction['perImage'] = []
+  let header050: LtvCodeExtraction['header050'] = null
   let engineUsed: LtvCodeEngine = 'tesseract'
   const preferVision =
     getOcrOnlineEnabled() && (typeof navigator === 'undefined' || navigator.onLine !== false)
 
-  for (const file of sortLtvImageFiles(files)) {
+  const ordered = sortLtvImageFiles(files)
+  for (let idx = 0; idx < ordered.length; idx++) {
+    const file = ordered[idx]
     const ti = Date.now()
     const img = await loadImage(await fileToDataUrl(file))
     const canvases = COLUMN_FRACTIONS.map((f) => cropColumn(img, f))
-    let texts: string[] = []
+    let passes: OcrPass[] = []
     let engine: LtvCodeEngine = 'tesseract'
     if (preferVision) {
       try {
-        texts = await ocrVision(canvases)
+        passes = await ocrVision(canvases)
         engine = 'vision'
       } catch (err) {
         console.warn('[ltvCodeMatch] Vision indisponible, repli Tesseract', err)
       }
     }
-    if (engine !== 'vision') texts = await ocrTesseract(canvases)
+    if (engine !== 'vision') passes = await ocrTesseract(canvases)
     engineUsed = engine
-    for (const t of texts) parseColumnText(t, relevant, strictVotes, windows, linesSeen)
+    for (const pass of passes) {
+      parseColumnText(pass.text, relevant, strictVotes, windows, linesSeen)
+      // Position de l'en-tête LÍNEA 050 (première image où il est vu) : les passes sont
+      // des colonnes partant de x = 0, agrandies ×UPSCALE → y natif = y / UPSCALE.
+      if (header050 == null && pass.header050Y != null) {
+        header050 = { imageIndex: idx, y: pass.header050Y / UPSCALE }
+      }
+    }
     perImage.push({ name: file.name, engine, ms: Date.now() - ti })
   }
   return {
@@ -216,6 +262,7 @@ export async function extractLtvCodesFromImages(
     engine: engineUsed,
     ms: Date.now() - t0,
     perImage,
+    header050,
   }
 }
 
@@ -288,7 +335,12 @@ export async function reconstructLtvFromImages(files: File[]): Promise<LtvRecons
   }
   const extraction = await extractLtvCodesFromImages(files, reference)
   const m = matchLtvCodes(extraction, reference)
-  const result: LtvReconstruction = { ...m, engine: extraction.engine, ms: Date.now() - t0 }
+  const result: LtvReconstruction = {
+    ...m,
+    engine: extraction.engine,
+    ms: Date.now() - t0,
+    header050: extraction.header050,
+  }
   logTestEvent('ltv:image-match', {
     engine: extraction.engine,
     ocrMs: extraction.ms,
@@ -298,10 +350,11 @@ export async function reconstructLtvFromImages(files: File[]): Promise<LtvRecons
     referenceLine: reference.meta?.line ?? null,
     referenceRows: reference.rows.length,
     linesSeen: extraction.linesSeen,
+    header050: extraction.header050,
     strictCodesRead: extraction.strictVotes.size,
     matched: m.matchedCodes,
     missing: m.missingCodes,
     unknown: m.unknownCodes,
   })
-  return m.matchedCodes.length > 0 ? result : null
+  return result
 }
