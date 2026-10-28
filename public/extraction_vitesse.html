@@ -876,15 +876,23 @@ function findDigits(img, thLum, minH, roi, auto, reconnect){
 // Classement + REJET DES AMBIGUS : si le 2e meilleur modele (d'un autre chiffre) est
 // presque aussi proche, on prefere demander plutot que de deviner.
 function classify(g){
-  let best=null,bd=Infinity, second=Infinity;
+  let best=null,bd=Infinity, second=Infinity, secondDigit=null;
   for(const t of templates){
     let s=0; for(let i=0;i<g.length;i++){ const d=g[i]-t.data[i]; s+=d*d; }
     const dist=s/g.length;
-    if(dist<bd){ if(best && best.digit!==t.digit) second=bd; bd=dist; best=t; }
-    else if(best && t.digit!==best.digit && dist<second) second=dist;
+    if(dist<bd){ if(best && best.digit!==t.digit){ second=bd; secondDigit=best.digit; } bd=dist; best=t; }
+    else if(best && t.digit!==best.digit && dist<second){ second=dist; secondDigit=t.digit; }
   }
   const ambiguous = best!=null && second<Infinity && (second-bd) < 0.045;
-  return {digit:best?best.digit:null, dist:bd, ambiguous};
+  return {digit:best?best.digit:null, dist:bd, ambiguous, second, secondDigit};
+}
+// 28/10 — glyphe en hexadécimal (GW×GH bits, ligne par ligne) pour le journal : permet de
+// redessiner hors ligne un chiffre refusé sans capture d'écran.
+function glyphHex(g){
+  let out='', acc=0, n=0;
+  for(let i=0;i<g.length;i++){ acc=(acc<<1)|(g[i]?1:0); n++; if(n===4){ out+=acc.toString(16); acc=0; n=0; } }
+  if(n) out+=(acc<<(4-n)).toString(16);
+  return out;
 }
 
 function drawGlyph(cx, g){
@@ -1133,9 +1141,9 @@ async function processFrame(interactive, learnUnknown){
       'refH=' + (suiviRefH==null ? '-' : Math.round(suiviRefH)) + '/' + (suiviRefNative==null ? '-' : Math.round(suiviRefNative)),
       'echecs=' + suiviEchecs,
       'v=' + (r && r.v!=null ? r.v : '-') + (r && r.manual ? '(manuel)' : ''),
-      ($('conf').innerText || '').replace(/\s+/g,' ').slice(0,110),
+      ($('conf').innerText || '').replace(/\s+/g,' ').slice(0,600),
     ].join(' | '));
-    if(journalSuivi.length > 5000) journalSuivi.splice(0, journalSuivi.length - 5000);
+    if(journalSuivi.length > 40000) journalSuivi.splice(0, journalSuivi.length - 40000);
   }catch(_){}
   return r;
 }
@@ -1325,9 +1333,22 @@ async function processFrameInterne(interactive, learnUnknown){
   for(const gl of digits){
     const c=document.createElement('canvas'); const cx=c.getContext('2d');
     drawGlyph(cx, gl.g); $('glyphs').appendChild(c);
-    let {digit,dist,ambiguous}=classify(gl.g);
+    let {digit,dist,ambiguous,second,secondDigit}=classify(gl.g);
     if(digit===null || dist>MATCH_MAX || ambiguous){
       const isUnknown = (digit===null || dist>MATCH_MAX);   // aucun modele ne matche = NOUVEAU glyphe
+      // 28/10 — REFUS JOURNALISÉ. Ce chemin rendait « rien » sans message : le journal de
+      // suivi répétait alors le texte de la lecture précédente (913 images « non lues » le
+      // 28/10 sans une seule explication). Désormais : rang du glyphe, boîte, meilleur et
+      // deuxième modèle avec leurs distances, motif (inconnu / ambigu), et le glyphe en hexa.
+      {
+        const k = digits.indexOf(gl), b = gl.box || {};
+        const bw = (b.x1!=null && b.x0!=null) ? (b.x1-b.x0+1) : '?', bh = (b.y1!=null && b.y0!=null) ? (b.y1-b.y0+1) : '?';
+        const motif = isUnknown ? (digit===null ? 'aucun modèle' : `inconnu d=${dist.toFixed(3)}>${MATCH_MAX}`)
+                                : `ambigu ${digit}/${secondDigit} d=${dist.toFixed(3)}/${(second===Infinity?NaN:second).toFixed(3)}`;
+        const lus = str===''? '' : ` déjà lu « ${str} »`;
+        $('conf').innerHTML = `<span class="err">refus glyphe ${k+1}/${digits.length} (${bw}x${bh} px @${b.x0??'?'},${b.y0??'?'}) : ${motif}${lus} — meilleur ${digit??'-'} (${dist===Infinity?'-':dist.toFixed(3)}) 2e ${secondDigit??'-'} (${second===Infinity?'-':second.toFixed(3)}) g=${glyphHex(gl.g)}</span>`;
+        $('readOut').textContent='-';
+      }
       if(interactive || (learnUnknown && isUnknown)){
         const d=await askDigit(gl.g);
         if(d===null) return {v:null,conf:0};
