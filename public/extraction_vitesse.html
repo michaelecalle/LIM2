@@ -210,6 +210,14 @@ const WORK_W = 1100;          // largeur de travail (compromis vitesse/precision
 const GW = 16, GH = 24;       // taille normalisee d'un chiffre
 const MATCH_MAX = 0.22;       // distance max acceptee (0 = identique)
 const MAX_DKMH_PER_S = 8;     // saut de vitesse juge invraisemblable
+// 28/10 — PLAFOND DE VRAISEMBLANCE. Journal 4 : « 994 », « 999 » et « 2769 » (un objet parasite
+// pris pour un 4e chiffre) ont été acceptés comme lectures, sont devenus la référence de saut et
+// ont mis à réviser 88 images parfaitement lues. Rien ne roule au-dessus de 400 km/h.
+const V_MAX_PLAUSIBLE = 400;
+// Une image VOISINE (lue en secours à ±0,2 / ±0,4 s) n'est retenue que si sa lecture est « sûre »
+// (écart max < MATCH_MAX/2, soit conf ≥ 0,5) : les trois amorces de cascade du journal 4 étaient
+// des voisines « à surveiller » (0,148 à 0,219).
+const NEIGHBOR_MIN_CONF = 0.5;
 
 let templates = [];           // {digit:'0'..'9', data:Float32Array}
 let results = [];             // {t, v, conf, flag}
@@ -1426,6 +1434,11 @@ async function processFrameInterne(interactive, learnUnknown){
     str+=digit; worst=Math.max(worst,dist);
   }
   const v = str==='' ? null : parseInt(str,10);
+  if(v!=null && v > V_MAX_PLAUSIBLE){
+    $('readOut').textContent='-';
+    $('conf').innerHTML=`<span class="err">lecture « ${str} » rejetée : ${digits.length} chiffre(s), au-dessus de ${V_MAX_PLAUSIBLE} km/h (écart max ${worst.toFixed(3)})</span>`;
+    return {v:null, conf:0};
+  }
   // 10/10 — première RÉFÉRENCE de taille de pastille : seulement sur un nombre reconnu.
   if(v!=null && $('suivrePastille') && $('suivrePastille').checked && refH > 0 && suiviRefNative === null && box){
     // 28/10 — après un abandon, un nombre nettement plus petit que la pastille d'avant n'est
@@ -1482,9 +1495,20 @@ async function readNeighbor(t, accept){
     if(t+dt < 0 || t+dt > totalDur) continue;
     await seek(t+dt);
     const r = await processFrame(false);
-    if(r.v!=null && (!accept || accept(r.v))) return r.v;
+    if(r.v!=null && r.conf >= NEIGHBOR_MIN_CONF && (!accept || accept(r.v))) return r.v;
   }
   return null;
+}
+// 28/10 — toutes les voisines sûres (jusqu'à 4), pour l'auto-guérison du contrôle de saut.
+async function readNeighbors(t){
+  const out = [];
+  for(const dt of [0.2,-0.2,0.4,-0.4]){
+    if(t+dt < 0 || t+dt > totalDur) continue;
+    await seek(t+dt);
+    const r = await processFrame(false);
+    if(r.v!=null && r.conf >= NEIGHBOR_MIN_CONF) out.push(r.v);
+  }
+  return out;
 }
 
 $('btnRun').onclick = async () => {
@@ -1530,7 +1554,9 @@ $('btnRun').onclick = async () => {
       if(fv==null){
         // 1) ORDRE CORRECT : d'abord une image VOISINE (les frames de transition, ex. 4->5,
         //    se lisent proprement a +/-0.2 s) — SANS prompt.
-        fv = await readNeighbor(t); await seek(t);
+        // 28/10 — la voisine passe le MÊME contrôle de saut que l'image principale : c'est par
+        // cette branche, sans contrôle, que « 994 » puis « 2769 » étaient devenus la référence.
+        fv = await readNeighbor(t, x=>!jumps(x,t)); await seek(t);
         if(fv==null){
           // 2) Voisines aussi muettes → image mise de côté pour la révision de fin.
           //    11/10 — plus AUCUN prompt en mode différé : la case promet « ne s'interrompt
@@ -1541,8 +1567,19 @@ $('btnRun').onclick = async () => {
           fflag='a_revoir'; toReview++;
         }
       } else if(jumps(fv,t)){                        // saut invraisemblable -> voisine plausible, sinon a revoir
-        const alt = await readNeighbor(t, x=>!jumps(x,t)); await seek(t);
-        if(alt!=null){ fv=alt; } else { sugg=fv; fv=null; fflag='a_revoir'; toReview++; }
+        // 28/10 — AUTO-GUÉRISON. Si deux voisines sûres confirment la lecture (à 1 km/h près),
+        // c'est la RÉFÉRENCE (lastGood) qui est fausse, pas la lecture : on garde la lecture,
+        // elle devient la nouvelle référence. Journal 4 : 88 images justes (195) mises à réviser
+        // une à une parce que la référence valait « 994 » puis « 999 ».
+        const vois = await readNeighbors(t); await seek(t);
+        const accord = vois.filter(x => Math.abs(x - fv) <= 1).length;
+        if(accord >= 2){
+          fflag='confirme';
+          $('conf').innerHTML += ` <span class="warn">saut vs référence ${lastGood.v} (t=${lastGood.t}) mais ${accord} voisine(s) d'accord : lecture gardée, référence remplacée</span>`;
+        } else {
+          const alt = vois.find(x => !jumps(x,t));
+          if(alt!=null){ fv=alt; } else { sugg=fv; fv=null; fflag='a_revoir'; toReview++; }
+        }
       }
     } else {
       // ---- Mode temps reel : prompts immediats (comportement historique) ----
@@ -1616,7 +1653,17 @@ function resolveTemporal(){
   let resolved = 0;
   // Fige l'ensemble des "bonnes" lectures AVANT toute interpolation : on n'utilise jamais
   // une valeur fraîchement interpolée comme ancre (pas de chaînage / dérive).
-  const good = results.map(r => r.v != null && r.flag !== 'a_revoir');
+  // 28/10 — une ancre « saut » (invraisemblable vs la dernière bonne ancre, règle de flagOutliers)
+  // n'interpole jamais : le CSV 9 portait 2769 km/h « interp » entre deux faux 2769.
+  const good = new Array(results.length).fill(false);
+  let prev = null;
+  for(let j=0; j<results.length; j++){
+    const r = results[j];
+    if(r.v == null || r.flag === 'a_revoir') continue;
+    const fiable = r.flag==='manuel' || r.flag==='confirme';
+    if(!fiable && prev && Math.abs(r.v - prev.v)/Math.max(0.001, r.t - prev.t) > MAX_DKMH_PER_S) continue;
+    good[j] = true; prev = r;
+  }
   for(let k=0; k<results.length; k++){
     if(results[k].flag !== 'a_revoir') continue;
     const r = results[k];
@@ -1673,7 +1720,9 @@ async function showReviewItem(){
 }
 function applyReview(v){
   const r=results[reviewQueue[reviewPos]];
-  if(v==null){ r.v=null; r.flag='non_lu'; } else { r.v=v; r.flag='manuel'; learnFromSpeed(v); }
+  // 28/10 — si la valeur validée est celle que l'outil avait lue (suggestion), les chiffres
+  // étaient justes : rien à apprendre (le test du 28/10 avait ajouté 61 copies de « 195 »).
+  if(v==null){ r.v=null; r.flag='non_lu'; } else { r.v=v; r.flag='manuel'; if(r.sugg==null || v!==r.sugg) learnFromSpeed(v); }
   delete r.sugg;
   reviewPos++; showReviewItem();
 }
