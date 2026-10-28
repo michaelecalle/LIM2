@@ -74,12 +74,22 @@ type LTVEventDetail = {
 
 type LtvDisplaySource = "normalized" | "adif" | "pdf" | "pdf-ltv" | "unknown"
 
+// 28/10 — LTV reconstituées par les codes d'un DHLTV reçu en image (lib/ltvCodeMatch).
+type LtvReconstructedMeta = {
+  from?: string
+  referencePublishedAt?: string | null
+  matched?: number
+  missing?: number
+  unknownCodes?: string[]
+}
+
 type LtvDisplayMeta = {
   fetchedAt?: string
   sourceUpdatedAt?: string
   displayedCount?: number
   source?: LtvDisplaySource
   availableSources: LtvDisplaySource[]
+  reconstructed?: LtvReconstructedMeta
 }
 
 function normalizeLtvDisplaySource(value?: unknown): LtvDisplaySource {
@@ -458,12 +468,17 @@ const LTV: React.FC = () => {
 
       if (mode) setLtvMode(mode)
       setRows(incomingRows)
+      const reconstructedRaw = incomingMeta.reconstructed
       setLtvDisplayMeta({
         displayedCount,
         fetchedAt,
         sourceUpdatedAt,
         source: ltvDisplaySource,
         availableSources,
+        reconstructed:
+          reconstructedRaw && typeof reconstructedRaw === "object"
+            ? (reconstructedRaw as LtvReconstructedMeta)
+            : undefined,
       })
 
       // --- DISPLAY_DIRECT : images candidates directement exploitables ---
@@ -2005,7 +2020,25 @@ const LTV: React.FC = () => {
         : 0
     const parts2026 = [`${count} LTV`]
     const date2026 = formatLtv2026Date(ltvDisplayMeta.sourceUpdatedAt)
-    if (date2026) parts2026.push(`Actualisées le ${date2026}`)
+    const rec = ltvDisplayMeta.reconstructed
+    if (rec) {
+      // 28/10 — DHLTV reçu en image : LTV reconstituées par leurs codes depuis le PDF
+      // publié. On le dit, avec la date de ce PDF, et les codes nouveaux non reconstitués.
+      const refDate = formatLtv2026Date(rec.referencePublishedAt ?? undefined) || date2026
+      parts2026.push(
+        refDate
+          ? `Reconstituées d'après le PDF du ${refDate}`
+          : "Reconstituées d'après le dernier PDF publié"
+      )
+      const unknown = Array.isArray(rec.unknownCodes) ? rec.unknownCodes : []
+      if (unknown.length > 0) {
+        parts2026.push(
+          `${unknown.length} code${unknown.length > 1 ? "s" : ""} inconnu${
+            unknown.length > 1 ? "s" : ""
+          } de ce PDF (LTV nouvelle${unknown.length > 1 ? "s" : ""} ?) : ${unknown.join(", ")}`
+        )
+      }
+    } else if (date2026) parts2026.push(`Actualisées le ${date2026}`)
     ltvCaptionText = parts2026.join(" - ")
   } else {
     const ltvCaptionParts = ["LTV"]

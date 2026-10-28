@@ -15,6 +15,7 @@ import {
   type DocRecord,
 } from './docStore'
 import { logTestEvent } from './testLogger'
+import type { NormalizedLtvFile } from '../components/LIM/titleBarLtvUtils'
 
 type ManagedDoc = { key: DocKey; dir: string; name: string; kind: 'pdf' | 'json' }
 
@@ -30,6 +31,10 @@ const MANAGED_DOCS: ManagedDoc[] = [
   { key: 'livretFtIndex', dir: 'documents', name: 'livret-ft.pages.json', kind: 'json' },
   // PDF SOURCE LTV (DHLTV) le plus récent, déposé à côté du normalisé.
   { key: 'ltvCurrent', dir: 'ltv-normalized', name: 'current.pdf', kind: 'pdf' },
+  // 28/10 — LTV NORMALISÉ PUBLIÉ (tous conducteurs confondus) : RÉFÉRENCE pour la
+  // reconstitution par les codes d'un DHLTV reçu en image (ltvCodeMatch.ts). Jamais la
+  // copie locale du dernier import du conducteur.
+  { key: 'ltvCurrentJson', dir: 'ltv-normalized', name: 'current.json', kind: 'json' },
 ]
 
 const docByKey = (key: string): ManagedDoc | undefined => MANAGED_DOCS.find((d) => d.key === key)
@@ -195,13 +200,50 @@ export async function storeSessionLtvPdf(file: File): Promise<void> {
 }
 
 /**
- * Charge les OCTETS du PDF SOURCE LTV pour le mode secours. Renvoie null si indisponible.
- * Ordre : le plus récent entre le DHLTV importé en session (stocké) et le DHLTV publié
- * dans lim-logs (stocké à la synchronisation) ; à défaut, lim-logs par le réseau.
- * On renvoie les octets (et non une iframe/URL) car le mode secours doit RENDRE le PDF
- * en images : une iframe PDF n'affiche que le haut de la 1re page sur iOS.
+ * 28/10 — DHLTV reçu en IMAGES : la composite (JPEG, pages empilées) est conservée sous
+ * la même clé `ltvSession` que le PDF importé : c'est « le DHLTV de la session », quel
+ * que soit son format. Le mode secours la reconnaît à son type MIME.
  */
+export async function storeSessionLtvImage(blob: Blob, name: string): Promise<void> {
+  const ok = await putDocRecord({
+    key: 'ltvSession',
+    path: null,
+    sha: null,
+    size: blob.size,
+    blob,
+    name,
+    fetchedAt: Date.now(),
+  })
+  logTestEvent('docs:ltv-session:stored', { name, size: blob.size, kind: 'image', ok })
+}
+
+export type LtvSecoursSource =
+  | { kind: 'pdf'; buf: ArrayBuffer; name: string | null }
+  | { kind: 'image'; blob: Blob; name: string | null }
+
+/**
+ * Source du DHLTV pour le mode secours. Renvoie null si indisponible.
+ * Ordre : le plus récent entre le DHLTV importé en session (stocké, PDF ou image) et le
+ * DHLTV publié dans lim-logs (stocké à la synchronisation) ; à défaut, lim-logs par le
+ * réseau. Un PDF est renvoyé en OCTETS car le mode secours doit le RENDRE en images :
+ * une iframe PDF n'affiche que le haut de la 1re page sur iOS.
+ */
+export async function fetchLtvSourceForSecours(): Promise<LtvSecoursSource | null> {
+  const chosen = await pickLtvSessionOrCurrent()
+  if (!chosen) return null
+  if ((chosen.blob.type || '').startsWith('image/')) {
+    return { kind: 'image', blob: chosen.blob, name: chosen.name }
+  }
+  return { kind: 'pdf', buf: await chosen.blob.arrayBuffer(), name: chosen.name }
+}
+
+/** Compatibilité : octets du PDF seulement (null si la session est une image). */
 export async function fetchLtvSourcePdfBytes(): Promise<ArrayBuffer | null> {
+  const src = await fetchLtvSourceForSecours()
+  return src && src.kind === 'pdf' ? src.buf : null
+}
+
+async function pickLtvSessionOrCurrent(): Promise<DocRecord | null> {
   const [session, current] = await Promise.all([
     getDocRecord('ltvSession'),
     getDocRecord('ltvCurrent'),
@@ -217,9 +259,41 @@ export async function fetchLtvSourcePdfBytes(): Promise<ArrayBuffer | null> {
   logTestEvent('docs:ltv-fallback:source', {
     key: chosen.key,
     name: chosen.name,
+    type: chosen.blob.type || null,
     fetchedAt: new Date(chosen.fetchedAt).toISOString(),
   })
-  return chosen.blob.arrayBuffer()
+  return chosen
+}
+
+/**
+ * 28/10 — Référence LTV publiée (lim-logs ltv-normalized/current.json). En ligne : on
+ * vérifie d'abord le SHA et on rafraîchit si besoin ; hors ligne : copie locale de la
+ * dernière synchronisation. null si rien de disponible.
+ */
+export async function fetchReferenceLtvNormalized(): Promise<NormalizedLtvFile | null> {
+  const doc = docByKey('ltvCurrentJson')
+  if (!doc) return null
+  if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+    try {
+      const listing = await listDir(doc.dir)
+      const entry = listing?.get(doc.name)
+      if (entry) {
+        const local = await getDocRecord(doc.key)
+        if (!local || local.sha !== entry.sha) await downloadAndStore(doc, entry.sha)
+      }
+    } catch {
+      // réseau capricieux : on sert la copie locale ci-dessous
+    }
+  }
+  const rec = await ensureDoc(doc)
+  if (!rec) return null
+  try {
+    const raw = JSON.parse(await rec.blob.text()) as unknown
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+    return raw as NormalizedLtvFile
+  } catch {
+    return null
+  }
 }
 
 let syncRunning: Promise<void> | null = null

@@ -20,6 +20,7 @@ export type DocKey =
   | 'livretFt'
   | 'livretFtIndex'
   | 'ltvCurrent'
+  | 'ltvCurrentJson'
   | 'ltvSession'
 
 export type DocRecord = {

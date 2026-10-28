@@ -56,7 +56,9 @@ export default defineConfig({
         // l'image du train manquait et les documents restaient vides. Le service worker
         // les télécharge à l'installation de la version et ne les retélécharge que si
         // leur empreinte change. Plafond relevé pour le Guia (5 Mo).
-        globPatterns: ['**/*.{js,css,html,svg,mjs,png,pdf,json}'],
+        // 28/10 — + gz : données de langue Tesseract (public/tess/spa.traineddata.gz) ;
+        // les noyaux wasm embarqués sont des .wasm.js (déjà couverts par js).
+        globPatterns: ['**/*.{js,css,html,svg,mjs,png,pdf,json,gz}'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         // Les visualiseurs ajoutent un paramètre d'URL au PDF (?guiaBsn=1, ?limManual=1) :
         // il doit être ignoré pour retrouver l'entrée précachée.

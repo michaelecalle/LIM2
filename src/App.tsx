@@ -62,12 +62,14 @@ import FTHorizontal from "./components/LIM/FTHorizontal"
 import ReplayOverlay from "./components/Replay/ReplayOverlay"
 import { APP_VERSION } from "./components/version"
 import {
-  fetchLtvSourcePdfBytes,
   fetchManagedDocBlobUrl,
   fetchLivretFtPageIndex,
   storeSessionLtvPdf,
   syncManagedDocs,
+  fetchLtvSourceForSecours,
+  storeSessionLtvImage,
 } from "./lib/managedDocs"
+import { buildLtvImageComposite, fileToDataUrl } from "./lib/ltvImages"
 import ManualPdfCanvasViewer from "./components/LIM/ManualPdfCanvasViewer"
 // Mentions de la version de ligne (affichées dans le cadre « prochain arrêt »).
 import { getLigneMentions } from "./data/ligneFT2026.ft.adapter"
@@ -580,6 +582,29 @@ export default function App() {
     return () => window.removeEventListener("lim:ltv-pdf-raw", handler as EventListener)
   }, [])
 
+  // 28/10 — Mode secours : DHLTV reçu en IMAGES (une par page). Elles remplacent le rendu
+  // des pages du PDF, telles quelles, dans l'ordre des noms. Conservées sur l'appareil
+  // (composite) pour un rechargement hors ligne. Pas d'ancre « LÍNEA 050 » : on ouvre en haut.
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const files = ((e as CustomEvent).detail?.files ?? []) as File[]
+      if (!Array.isArray(files) || files.length === 0) return
+      Promise.all(files.map((f) => fileToDataUrl(f)))
+        .then((urls) => {
+          ltvSessionLoadedRef.current = true
+          ltvAnchorRef.current = null
+          ltvAnchorAppliedRef.current = false
+          setLtvPageImages(urls)
+        })
+        .catch((err) => console.warn("[App] images LTV (session) illisibles", err))
+      void buildLtvImageComposite(files)
+        .then((c) => storeSessionLtvImage(c.blob, files.map((f) => f.name).join("+")))
+        .catch(() => {})
+    }
+    window.addEventListener("lim:ltv-images-raw", handler as EventListener)
+    return () => window.removeEventListener("lim:ltv-images-raw", handler as EventListener)
+  }, [])
+
   // 27/10 — SYNCHRONISATION DES DOCUMENTS EN ARRIÈRE-PLAN (manuel, Guia, tunnels,
   // livret FT + index, DHLTV publié). Lancée après le premier rendu, jamais bloquante :
   // un listing par dossier de lim-logs, téléchargement des seuls fichiers dont le SHA
@@ -598,9 +623,12 @@ export default function App() {
     if (pdfMode !== "red") return
     if (ltvSessionLoadedRef.current || ltvPageImages.length > 0) return
     let cancelled = false
-    fetchLtvSourcePdfBytes()
-      .then(async (buf) => {
-        if (!buf) return { imgs: [] as string[], anchor: null }
+    fetchLtvSourceForSecours()
+      .then(async (src) => {
+        if (!src) return { imgs: [] as string[], anchor: null }
+        // 28/10 — DHLTV en image (composite stockée) : affichée telle quelle, sans ancre.
+        if (src.kind === "image") return { imgs: [await fileToDataUrl(src.blob)], anchor: null }
+        const buf = src.buf
         const anchor = await findLinea050Anchor(buf.slice(0))
         const imgs = await renderPdfDataToImages(buf)
         return { imgs, anchor }

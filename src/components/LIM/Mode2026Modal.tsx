@@ -6,6 +6,7 @@ import type { ManualTrainOption } from './titleBarTrainUtils'
 import type { NormalizedLtvFile } from './titleBarLtvUtils'
 import { fetchStoredLtvNormalized } from './titleBarLtvUtils'
 import { parseLtvPdf2026 } from '../../lib/ltvPdfParser'
+import { isLtvImageFile, sortLtvImageFiles } from '../../lib/ltvImages'
 
 // Format dédié : "3 juin 2026 à 15h00"
 function formatStoredLtvDate(iso: string | null | undefined): string {
@@ -24,10 +25,13 @@ type Props = {
   onClose: () => void
   // ltvData/ltvPdfFile optionnels (train sans LTV).
   // ⚠️ Plus de `ftPdfFile` : la fiche train de secours vient du livret FT publié.
+  // 28/10 — ltvImageFiles : DHLTV reçu en IMAGES (une par page) au lieu du PDF. Aucune LTV
+  // extraite : affichage seul (recadrage manuel + mode secours). Vide si PDF ou rien.
   onConfirm: (
     train: ManualTrainOption,
     ltvData: NormalizedLtvFile | null,
-    ltvPdfFile: File | null
+    ltvPdfFile: File | null,
+    ltvImageFiles: File[]
   ) => void
   // ----- Mode démo guidé -----
   // Si lockedTrainNumber est fourni, seul ce train est sélectionnable.
@@ -46,7 +50,11 @@ type Props = {
   // Mode « LTV seul » : n'affiche QUE l'import du PDF LTV (pas de train ni fiche train),
   // et confirme via onConfirmLtvOnly. Défaut false → comportement mode 2026 inchangé.
   ltvOnly?: boolean
-  onConfirmLtvOnly?: (ltvData: NormalizedLtvFile | null, ltvPdfFile: File | null) => void
+  onConfirmLtvOnly?: (
+    ltvData: NormalizedLtvFile | null,
+    ltvPdfFile: File | null,
+    ltvImageFiles: File[]
+  ) => void
 }
 
 export default function Mode2026Modal({
@@ -63,6 +71,8 @@ export default function Mode2026Modal({
   useEffect(() => { setDeleteArmed(false) }, [selectedTrainNumber])
   const selectedIsSdm = !isDemo && selectedTrainNumber !== '' && sdmTrainNumbers.includes(selectedTrainNumber)
   const [pdfFile, setPdfFile] = useState<File | null>(null)
+  // 28/10 — DHLTV en images (PNG/JPEG), triées par nom = ordre des pages.
+  const [ltvImageFiles, setLtvImageFiles] = useState<File[]>([])
   const [ltvData, setLtvData] = useState<NormalizedLtvFile | null>(null)
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
@@ -98,11 +108,30 @@ export default function Mode2026Modal({
   // LTV optionnelle : il suffit d’un train sélectionné (et de ne pas être en cours de parsing).
   // Mode « LTV seul » : pas de train ; il faut un PDF LTV importé OU le dernier connu.
   const canConfirm = ltvOnly
-    ? (!parsing && (ltvData !== null || (!isDemo && storedLtv !== null)))
+    ? (!parsing && (ltvData !== null || ltvImageFiles.length > 0 || (!isDemo && storedLtv !== null)))
     : (selectedTrain !== null && !parsing)
+
+
+
+  // 28/10 — Sélection système : un PDF, OU une ou plusieurs images (jamais les deux).
+  const handleFilesSelect = (list: FileList | null) => {
+    const files = Array.from(list ?? [])
+    if (files.length === 0) return
+    const images = files.filter(isLtvImageFile)
+    if (images.length > 0) {
+      setPdfFile(null)
+      setLtvData(null)
+      setCounts(null)
+      setParseError(null)
+      setLtvImageFiles(sortLtvImageFiles(images))
+      return
+    }
+    void handlePdfSelect(files[0])
+  }
 
   const handlePdfSelect = async (file: File) => {
     setPdfFile(file)
+    setLtvImageFiles([])
     setLtvData(null)
     setCounts(null)
     setParseError(null)
@@ -125,9 +154,11 @@ export default function Mode2026Modal({
   const handleConfirm = () => {
     if (!canConfirm) return
     // Secours : aucun PDF importé (hors démo) → utiliser le dernier normalisé connu.
-    const effectiveLtv = ltvData ?? (!isDemo ? storedLtv : null)
-    if (ltvOnly) { onConfirmLtvOnly?.(effectiveLtv, pdfFile); return }
-    onConfirm(selectedTrain!, effectiveLtv, pdfFile)
+    // 28/10 — DHLTV en images : AUCUNE LTV sur la fiche (ni le dernier normalisé connu) :
+    // l'image reçue fait foi, à l'affichage seulement. Reconstitution par les codes : lot 2.
+    const effectiveLtv = ltvImageFiles.length > 0 ? null : (ltvData ?? (!isDemo ? storedLtv : null))
+    if (ltvOnly) { onConfirmLtvOnly?.(effectiveLtv, pdfFile, ltvImageFiles); return }
+    onConfirm(selectedTrain!, effectiveLtv, pdfFile, ltvImageFiles)
   }
 
   return (
@@ -223,7 +254,7 @@ export default function Mode2026Modal({
         {/* Etape 2 : import du PDF LTV */}
         <div>
           <div className="text-xs font-semibold opacity-70 mb-1">
-            2 — PDF tableau LTV <span className="opacity-60 font-normal">(optionnel)</span>
+            2 — PDF ou image(s) du tableau LTV <span className="opacity-60 font-normal">(optionnel)</span>
           </div>
           <button type="button"
             onClick={() => { if (isDemo) setLtvChooserOpen(o => !o); else fileInputRef.current?.click() }}
@@ -231,11 +262,17 @@ export default function Mode2026Modal({
             className="w-full h-10 rounded-xl border text-sm font-semibold transition hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
             style={{ borderColor: border }}
           >
-            {parsing ? 'Extraction en cours…' : pdfFile ? pdfFile.name : (isDemo ? 'Choisir le fichier LTV du ZIP…' : 'Choisir le PDF LTV…')}
+            {parsing
+              ? 'Extraction en cours…'
+              : pdfFile
+              ? pdfFile.name
+              : ltvImageFiles.length > 0
+              ? `${ltvImageFiles.length} image${ltvImageFiles.length > 1 ? 's' : ''} : ${ltvImageFiles.map(f => f.name).join(', ')}`
+              : (isDemo ? 'Choisir le fichier LTV du ZIP…' : 'Choisir le PDF ou les images LTV…')}
           </button>
           {!isDemo && (
-            <input ref={fileInputRef} type="file" accept=".pdf" style={{ display: 'none' }}
-              onChange={e => { const f = e.target.files?.[0]; if (f) void handlePdfSelect(f) }} />
+            <input ref={fileInputRef} type="file" accept=".pdf,image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" multiple style={{ display: 'none' }}
+              onChange={e => { handleFilesSelect(e.target.files); e.target.value = '' }} />
           )}
           {isDemo && ltvChooserOpen && (
             <div className="mt-1 rounded-lg border overflow-hidden" style={{ borderColor: border }}>
@@ -260,7 +297,13 @@ export default function Mode2026Modal({
               ⚠️ {parseError}
             </div>
           )}
-          {!parsing && !parseError && pdfFile === null && (
+          {!parsing && ltvImageFiles.length > 0 && (
+            <div className="mt-2 rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-300 font-medium leading-relaxed">
+              DHLTV reçu en image : aucune LTV extraite. Recadrage manuel dans le bloc LTV,
+              pages affichées en mode secours. Les LTV ne seront pas placées sur la fiche train.
+            </div>
+          )}
+          {!parsing && !parseError && pdfFile === null && ltvImageFiles.length === 0 && (
             <div className="mt-2 text-[11px] opacity-70 italic">
               {!isDemo && storedLtv
                 ? `Aucun PDF importé — le parcours démarrera avec les dernières LTV connues${

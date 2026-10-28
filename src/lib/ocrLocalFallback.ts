@@ -24,8 +24,17 @@ async function getWorker(): Promise<Worker> {
       // garde-fou : si createWorker se bloque (assets/worker), on coupe
       const CREATE_WORKER_TIMEOUT_MS = 20_000
 
+      // 28/10 — fichiers HÉBERGÉS DANS L'APP (public/tess, précachés par le service
+      // worker) : avant, worker, noyau wasm et données de langue venaient d'un CDN au
+      // premier appel → le moteur « hors ligne » ne démarrait pas sans réseau.
+      // Le worker choisit lui-même /tess/tesseract-core-{relaxedsimd|simd|}-lstm.wasm.js.
       const w = await Promise.race([
-        createWorker("spa"),
+        createWorker("spa", 1, {
+          workerPath: "/tess/worker.min.js",
+          corePath: "/tess",
+          langPath: "/tess",
+          gzip: true,
+        }),
         new Promise<Worker>((_, reject) =>
           window.setTimeout(
             () => reject(new Error("createWorker timeout (offline assets?)")),
@@ -41,6 +50,11 @@ async function getWorker(): Promise<Worker> {
   return workerPromise
 }
 
+
+/** Worker Tesseract partagé (fiches train scannées, codes LTV). */
+export async function getLocalOcrWorker(): Promise<Worker> {
+  return getWorker()
+}
 
 async function renderPageToCanvas(page: any, scale = 2.0): Promise<HTMLCanvasElement> {
   const viewport = page.getViewport({ scale })

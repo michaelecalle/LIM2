@@ -25,6 +25,8 @@ import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { APP_VERSION } from '../version'
 import { LIGNE_FT_NORMALIZED } from '../../data/normalized/ligneFT.normalized'
 import { parseLtvPdf2026 } from '../../lib/ltvPdfParser'
+import { buildLtvImageComposite } from '../../lib/ltvImages'
+import { reconstructLtvFromImages } from '../../lib/ltvCodeMatch'
 import ManualPdfCanvasViewer from './ManualPdfCanvasViewer'
 import ManualViewer from './ManualViewer'
 import GuiaViewer from './GuiaViewer'
@@ -1155,6 +1157,20 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
             : new Date(),
       })
     }
+    // 28/10 — DHLTV reçu en images : chaque page jointe au ZIP (préfixe LTV_).
+    for (const img of currentLtvImageFilesRef.current) {
+      const used = new Set(zipEntries.map((e) => e.filename))
+      let n = `LTV_${sanitizeArchiveEntryFilename(img.name)}`
+      while (used.has(n)) n = `_${n}`
+      zipEntries.push({
+        filename: n,
+        blob: img,
+        modifiedAt:
+          typeof img.lastModified === 'number' && Number.isFinite(img.lastModified)
+            ? new Date(img.lastModified)
+            : new Date(),
+      })
+    }
 
     const zipBlob = await buildZipBlob(zipEntries)
 
@@ -1398,12 +1414,110 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     setDemoArmed(true)
   }
 
+  // 28/10 — DHLTV en images : conserve les fichiers, prévient le mode secours (App) et,
+  // une fois la composite construite, (ré)initialise le bloc LTV en recadrage manuel.
+  // Le dispatch `ltv:parsed` normal (dispatchLtvRowsForSource / LTV seul) reprend aussi
+  // la composite depuis la ref s'il arrive APRÈS : les deux ordres sont couverts.
+  const applyLtvImageFiles = (
+    ltvImageFiles: File[],
+    source: string,
+    ctx: { kind: '2026'; trainNumber: string } | { kind: 'ltv' }
+  ) => {
+    currentLtvImageFilesRef.current = ltvImageFiles
+    currentLtvImageDataUrlRef.current = null
+    if (ltvImageFiles.length === 0) return
+
+    // 28/10 — LOT 2 : reconstitution des LTV par les codes (colonne Codigo lue par OCR,
+    // rapprochée du LTV normalisé PUBLIÉ). Si des codes sont reconnus, le normalisé
+    // réduit devient la donnée LTV de la session (ltvPdfDataRef) et on (re)diffuse les
+    // lignes par le circuit normal ; la légende du bloc LTV indique « Reconstituées
+    // d'après le PDF du … ». Sinon, le recadrage manuel reste seul (lot 1).
+    void reconstructLtvFromImages(ltvImageFiles)
+      .then((r) => {
+        if (currentLtvImageFilesRef.current !== ltvImageFiles) return // remplacé entre-temps
+        if (!r) return
+        ltvPdfDataRef.current = r.data // ⚠️ pas de cacheLtvNormalized : ce n'est pas un import
+        if (ctx.kind === '2026') {
+          void dispatchLtvRowsForSource({
+            ltvSource: 'pdf-ltv',
+            trainNumber: ctx.trainNumber,
+            journeySource: 'ltv_image_match',
+            activeMode: '2026',
+            reason: 'ltv_image_match',
+          }).catch((err) => console.warn('[ltv-images] diffusion des LTV reconstituées impossible', err))
+        } else {
+          const ltvOnlyRange: ManualFtRoutePkRange = {
+            trainNumber: 0,
+            firstPk: 616,
+            lastPk: Number.POSITIVE_INFINITY,
+            minPk: 616,
+            maxPk: Number.POSITIVE_INFINITY,
+            source: 'ltv-only',
+          }
+          const result = loadPdfLtvRows(r.data, ltvOnlyRange)
+          const ltvMeta = { ...result.meta, source: 'pdf-ltv' as const }
+          window.dispatchEvent(
+            new CustomEvent('ltv:parsed', {
+              detail: {
+                mode: result.rows.length > 0 ? 'DISPLAY_DIRECT' : 'NO_LTV',
+                rows: result.rows,
+                source: 'ltv_image_match',
+                ltvSource: 'pdf-ltv',
+                availableSources: getAvailableLtvSourcesForMode('ltv'),
+                trainNumber: null,
+                meta: { ...ltvMeta, reconstructed: (r.data.meta as any)?.reconstructed },
+                fetchedAt: ltvMeta.fetchedAt,
+                sourceUpdatedAt: ltvMeta.sourceUpdatedAt,
+              },
+            })
+          )
+        }
+      })
+      .catch((err) => {
+        console.warn('[ltv-images] reconstitution impossible', err)
+        logTestEvent('ltv:image-match:failed', { message: String(err?.message ?? err) })
+      })
+    window.dispatchEvent(new CustomEvent('lim:ltv-images-raw', { detail: { files: ltvImageFiles } }))
+    logTestEvent('ui:ltv-images:import', {
+      source,
+      count: ltvImageFiles.length,
+      names: ltvImageFiles.map((f) => f.name),
+      bytes: ltvImageFiles.reduce((a, f) => a + f.size, 0),
+    })
+    void buildLtvImageComposite(ltvImageFiles)
+      .then((c) => {
+        if (currentLtvImageFilesRef.current !== ltvImageFiles) return // remplacé entre-temps
+        currentLtvImageDataUrlRef.current = c.dataUrl
+        logTestEvent('ui:ltv-images:composite', { width: c.width, height: c.height, pages: c.pages })
+        window.dispatchEvent(
+          new CustomEvent('ltv:parsed', {
+            detail: {
+              mode: 'NEEDS_CROP',
+              rows: [],
+              previewImageDataUrl: c.dataUrl,
+              source,
+              ltvSource: 'pdf-ltv',
+              availableSources: [],
+              trainNumber: null,
+              meta: { source: 'pdf-ltv', displayedCount: 0 },
+            },
+          })
+        )
+      })
+      .catch((err) => {
+        console.warn('[ltv-images] composite impossible', err)
+        logTestEvent('ui:ltv-images:composite-failed', { message: String(err?.message ?? err) })
+      })
+  }
+
   const handleMode2026Confirm = (
     train: ManualTrainOption,
     ltvData: NormalizedLtvFile | null,
-    ltvPdfFile: File | null
+    ltvPdfFile: File | null,
+    ltvImageFiles: File[] = []
   ) => {
     setMode2026Open(false)
+    applyLtvImageFiles(ltvImageFiles, 'mode2026_modal', { kind: '2026', trainNumber: train.trainNumber })
     ltvPdfDataRef.current = ltvData
     // ⚠️ 14/08 — mémoriser localement le LTV qu'on vient d'extraire : c'est lui
     // qui servira de « dernières LTV connues » au prochain démarrage SANS
@@ -1467,10 +1581,12 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   // et on n'affiche que le bloc LTV (App masque Infos + fiche train via lim:ltv-only).
   const handleLtvOnlyConfirm = (
     ltvData: NormalizedLtvFile | null,
-    ltvPdfFile: File | null
+    ltvPdfFile: File | null,
+    ltvImageFiles: File[] = []
   ) => {
     setMode2026Open(false)
     setMode2026LtvOnly(false)
+    applyLtvImageFiles(ltvImageFiles, 'ltv_only_modal', { kind: 'ltv' })
 
     ltvPdfDataRef.current = ltvData
     cacheLtvNormalized(ltvData)  // idem : repli hors couverture (cf. ci-dessus)
@@ -1507,13 +1623,17 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     window.dispatchEvent(
       new CustomEvent('ltv:parsed', {
         detail: {
-          mode: result.rows.length > 0 ? 'DISPLAY_DIRECT' : 'NO_LTV',
+          mode: result.rows.length > 0
+            ? 'DISPLAY_DIRECT'
+            : currentLtvImageDataUrlRef.current ? 'NEEDS_CROP' : 'NO_LTV', // 28/10 images
+          previewImageDataUrl: result.rows.length > 0 ? undefined : currentLtvImageDataUrlRef.current ?? undefined,
           rows: result.rows,
           source: 'ltv_only',
           ltvSource: 'pdf-ltv',
           availableSources: getAvailableLtvSourcesForMode('ltv'),
           trainNumber: null,
-          meta: ltvMeta,
+          // 28/10 — LTV reconstituées depuis un DHLTV image : détail pour la légende.
+          meta: { ...ltvMeta, reconstructed: (ltvPdfDataRef.current?.meta as any)?.reconstructed },
           fetchedAt: ltvMeta.fetchedAt,
           sourceUpdatedAt: ltvMeta.sourceUpdatedAt,
         },
@@ -1562,6 +1682,13 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
       let ltvFilename = sanitizeArchiveEntryFilename(ltvPdfFile.name)
       if (used.has(ltvFilename)) ltvFilename = `LTV_${ltvFilename}`
       entries.push({ filename: ltvFilename, blob: ltvPdfFile, modifiedAt: modAt(ltvPdfFile) })
+    }
+    // 28/10 — DHLTV reçu en images : chaque page jointe (préfixe LTV_).
+    for (const img of currentLtvImageFilesRef.current) {
+      const used = new Set(entries.map((e) => e.filename))
+      let n = `LTV_${sanitizeArchiveEntryFilename(img.name)}`
+      while (used.has(n)) n = `_${n}`
+      entries.push({ filename: n, blob: img, modifiedAt: modAt(img) })
     }
 
     // Aucun PDF → on renvoie juste le log (pas de ZIP), comme avant.
@@ -3262,6 +3389,10 @@ ${coords}
   // PDF LTV importé (mode 2026) — conservé pour être inclus dans le ZIP au STOP,
   // au même titre que le PDF fiche train. Remis à null aux mêmes points de reset.
   const currentLtvPdfFileRef = useRef<File | null>(null)
+  // 28/10 — DHLTV reçu en IMAGES (une par page) : fichiers (pour le ZIP au STOP) et image
+  // composite (data URL) servie au bloc LTV en mode recadrage (NEEDS_CROP). Vides si PDF.
+  const currentLtvImageFilesRef = useRef<File[]>([])
+  const currentLtvImageDataUrlRef = useRef<string | null>(null)
   const currentPdfIdRef = useRef<string | null>(null)
   const currentPdfReplayKeyRef = useRef<string | null>(null)
 
@@ -3378,13 +3509,23 @@ ${coords}
     window.dispatchEvent(
       new CustomEvent('ltv:parsed', {
         detail: {
-          mode: result.rows.length > 0 ? 'DISPLAY_DIRECT' : 'NO_LTV',
+          mode: result.rows.length > 0
+            ? 'DISPLAY_DIRECT'
+            : currentLtvImageDataUrlRef.current ? 'NEEDS_CROP' : 'NO_LTV', // 28/10 images
+          previewImageDataUrl: result.rows.length > 0 ? undefined : currentLtvImageDataUrlRef.current ?? undefined,
           rows: result.rows,
           source: params.journeySource,
           ltvSource: params.ltvSource,
           availableSources,
           trainNumber: params.trainNumber,
-          meta: ltvMeta,
+          // 28/10 — LTV reconstituées depuis un DHLTV image : détail pour la légende.
+          meta: {
+            ...ltvMeta,
+            reconstructed:
+              params.ltvSource === 'pdf-ltv'
+                ? (ltvPdfDataRef.current?.meta as any)?.reconstructed
+                : undefined,
+          },
           fetchedAt: ltvMeta.fetchedAt,
           sourceUpdatedAt: ltvMeta.sourceUpdatedAt,
           displayedCount: ltvMeta.displayedCount,
@@ -3463,6 +3604,8 @@ ${coords}
     if (!options.keepPdf) {
       currentPdfFileRef.current = null
       currentLtvPdfFileRef.current = null
+    currentLtvImageFilesRef.current = []
+    currentLtvImageDataUrlRef.current = null
       currentPdfIdRef.current = null
       currentPdfReplayKeyRef.current = null
     }
@@ -4394,6 +4537,8 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
 
     currentPdfFileRef.current = null
     currentLtvPdfFileRef.current = null
+    currentLtvImageFilesRef.current = []
+    currentLtvImageDataUrlRef.current = null
     currentPdfIdRef.current = null
     currentPdfReplayKeyRef.current = null
 
@@ -5431,6 +5576,8 @@ setAutoScrollStartedOnce(next)
                   stopPdfLoadingGuard()
                   currentPdfFileRef.current = null
                   currentLtvPdfFileRef.current = null
+    currentLtvImageFilesRef.current = []
+    currentLtvImageDataUrlRef.current = null
                   currentPdfIdRef.current = null
                   currentPdfReplayKeyRef.current = null
                   window.dispatchEvent(new CustomEvent('lim:clear-pdf'))
