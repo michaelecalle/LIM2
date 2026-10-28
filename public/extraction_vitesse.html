@@ -117,6 +117,7 @@
     <button id="btnCsv" disabled>Exporter CSV</button>
     <button id="btnTpl">Exporter modèles</button>
     <button id="btnJrn" title="Télécharge le journal interne du suivi (une ligne par image analysée) — à envoyer pour diagnostic">Journal de suivi</button>
+    <button id="btnClean" title="Retire les modèles appris sous une mauvaise étiquette (un « 6 » qui est en fait un 2…). Fait automatiquement à chaque ouverture.">Nettoyer les modèles</button>
     <button id="btnReset">Effacer les modèles</button>
     <input type="file" id="tplIn" accept=".json" style="max-width:190px">
   </div>
@@ -262,6 +263,42 @@ try {
   if (s) for (const t of JSON.parse(s).map(toTemplate)) { if (!templates.some(e => sameTemplate(e,t))) templates.push(t); }
 } catch {}
 
+// 28/10 — NETTOYAGE DES MODÈLES MAL ÉTIQUETÉS. Journal du 28/10 : 724 refus « ambigu » sur
+// 780 images, tous dus à des modèles appris sous une mauvaise étiquette (un « 6 » qui est un 2
+// parfait, un « 8 » qui est un 1, un « 1 » qui est un 3) — saisies manuelles où la vitesse tapée
+// ne correspondait pas aux glyphes. Un modèle est retiré quand son plus proche voisin porte une
+// AUTRE étiquette, à une distance de 2 parfait (< MODELE_INTRUS_D), et nettement plus près que
+// le plus proche modèle de SA propre étiquette (ou s'il n'en a aucun). Les modèles embarqués
+// ne sont jamais retirés. Appelé au chargement, à l'import et par le bouton « Nettoyer ».
+const MODELE_INTRUS_D = 0.045;
+let dernierNettoyage = null;   // texte du dernier nettoyage (repris dans l'en-tête du journal)
+function distModeles(a, b){ let s=0; for(let i=0;i<a.length;i++){ const d=a[i]-b[i]; s+=d*d; } return s/a.length; }
+function nettoyerModeles(){
+  const n = templates.length, retires = [];
+  const embarque = t => TEMPLATES_EMBARQUES.some(e => e.digit===t.digit && t.data.length===e.data.length && t.data.every((v,i)=>v===e.data[i]));
+  const garder = new Array(n).fill(true);
+  for(let i=0;i<n;i++){
+    const t = templates[i];
+    if(embarque(t)) continue;
+    let dAutre=Infinity, autre=null, dMeme=Infinity;
+    for(let j=0;j<n;j++){
+      if(j===i) continue;
+      const d = distModeles(t.data, templates[j].data);
+      if(templates[j].digit===t.digit){ if(d<dMeme) dMeme=d; }
+      else if(d<dAutre){ dAutre=d; autre=templates[j].digit; }
+    }
+    if(dAutre < MODELE_INTRUS_D && dAutre < 0.5*dMeme){
+      garder[i]=false; retires.push(`${t.digit}→${autre} (${dAutre.toFixed(3)}/${dMeme===Infinity?'∞':dMeme.toFixed(3)})`);
+    }
+  }
+  if(retires.length){ templates = templates.filter((_,i)=>garder[i]); saveTemplates(); }
+  const compte = {}; for(const t of templates) compte[t.digit]=(compte[t.digit]||0)+1;
+  dernierNettoyage = `${retires.length} modèle(s) retiré(s) sur ${n}` + (retires.length ? ' : '+retires.join(', ') : '')
+    + ' — restants par chiffre : ' + Object.keys(compte).sort().map(d=>d+':'+compte[d]).join(' ');
+  return retires.length;
+}
+try { nettoyerModeles(); } catch(_) {}
+
 function saveTemplates(){
   try { localStorage.setItem('lim-vit-templates', JSON.stringify(templates.map(t=>({digit:t.digit,data:Array.from(t.data)})))); } catch {}
 }
@@ -277,6 +314,12 @@ function learnFromSpeed(speed){
   if(!lastGlyphs || lastGlyphs.length !== s.length) return 0;
   for(let i=0;i<lastGlyphs.length;i++) templates.push({ digit:s[i], data:Float32Array.from(lastGlyphs[i].g) });
   saveTemplates();
+  // 28/10 — chaque apprentissage manuel laisse une trace (vitesse tapée + glyphes en hexa) : c'est
+  // par là qu'entrent les modèles mal étiquetés, le journal permet de remonter à la saisie fautive.
+  try{
+    journalSuivi.push(`${(typeof curGlobalT==='number' ? curGlobalT.toFixed(2) : '?')} | apprentissage | vitesse saisie ${s} | `
+      + lastGlyphs.map((gl,i)=>`${s[i]}=g:${glyphHex(gl.g)}`).join(' '));
+  }catch(_){}
   return lastGlyphs.length;
 }
 
@@ -875,16 +918,34 @@ function findDigits(img, thLum, minH, roi, auto, reconnect){
 
 // Classement + REJET DES AMBIGUS : si le 2e meilleur modele (d'un autre chiffre) est
 // presque aussi proche, on prefere demander plutot que de deviner.
+// 28/10 — VOTE DES K PLUS PROCHES MODÈLES au lieu du seul plus proche. Avec 400 modèles, un
+// seul modèle mal étiqueté à 0,03 d'un chiffre parfait suffisait à déclarer « ambigu » (724 refus
+// le 28/10). Chaque voisin vote pour son chiffre avec un poids 1/(d+0,01) ; le chiffre élu est
+// celui qui pèse le plus. L'ambiguïté ne subsiste que si le vote est VRAIMENT partagé (le second
+// chiffre pèse ≥ 60 % du premier) ET que leurs meilleures distances se tiennent à < 0,045.
+const VOTE_K = 5;
 function classify(g){
-  let best=null,bd=Infinity, second=Infinity, secondDigit=null;
+  const near = [];
   for(const t of templates){
     let s=0; for(let i=0;i<g.length;i++){ const d=g[i]-t.data[i]; s+=d*d; }
     const dist=s/g.length;
-    if(dist<bd){ if(best && best.digit!==t.digit){ second=bd; secondDigit=best.digit; } bd=dist; best=t; }
-    else if(best && t.digit!==best.digit && dist<second){ second=dist; secondDigit=t.digit; }
+    if(near.length<VOTE_K || dist<near[near.length-1].dist){
+      near.push({digit:t.digit, dist});
+      near.sort((a,b)=>a.dist-b.dist);
+      if(near.length>VOTE_K) near.pop();
+    }
   }
-  const ambiguous = best!=null && second<Infinity && (second-bd) < 0.045;
-  return {digit:best?best.digit:null, dist:bd, ambiguous, second, secondDigit};
+  if(!near.length) return {digit:null, dist:Infinity, ambiguous:false, second:Infinity, secondDigit:null};
+  const score = {}, bestD = {};
+  for(const v of near){
+    score[v.digit] = (score[v.digit]||0) + 1/(v.dist+0.01);
+    if(bestD[v.digit]==null || v.dist<bestD[v.digit]) bestD[v.digit]=v.dist;
+  }
+  const ordre = Object.keys(score).sort((a,b)=>score[b]-score[a]);
+  const digit = ordre[0], dist = bestD[digit];
+  const secondDigit = ordre[1] ?? null, second = secondDigit!=null ? bestD[secondDigit] : Infinity;
+  const ambiguous = secondDigit!=null && score[secondDigit] >= 0.6*score[digit] && (second-dist) < 0.045;
+  return {digit, dist, ambiguous, second, secondDigit};
 }
 // 28/10 — glyphe en hexadécimal (GW×GH bits, ligne par ligne) pour le journal : permet de
 // redessiner hors ligne un chiffre refusé sans capture d'écran.
@@ -1709,7 +1770,8 @@ function dl(name, text, type){
   a.href=URL.createObjectURL(b); a.download=name; a.click();
 }
 $('btnJrn').onclick = ()=>{
-  const head = `# journal de suivi — ${new Date().toISOString()} — video ${clips[0] ? clips[0].w+'x'+clips[0].h : '?'} — zone tracee ${jrnZone(roi)} — modeles ${templates.length}`;
+  const head = `# journal de suivi — ${new Date().toISOString()} — video ${clips[0] ? clips[0].w+'x'+clips[0].h : '?'} — zone tracee ${jrnZone(roi)} — modeles ${templates.length}`
+    + (dernierNettoyage ? `\n# nettoyage des modeles : ${dernierNettoyage}` : '');
   dl('journal_suivi.txt', [head, ...journalSuivi].join(String.fromCharCode(10)), 'text/plain');
 };
 $('btnCsv').onclick = ()=>{
@@ -1735,7 +1797,11 @@ $('btnReset').onclick = ()=>{
 $('tplIn').onchange = e => {
   const f=e.target.files[0]; if(!f) return;
   const fr=new FileReader();
-  fr.onload=()=>{ try{ templates=JSON.parse(fr.result).map(t=>({digit:t.digit,data:Float32Array.from(t.data)})); saveTemplates(); $('status').textContent='Modèles importés : '+templates.length; }catch(err){ alert('Fichier de modèles illisible'); } };
+  fr.onload=()=>{ try{ templates=JSON.parse(fr.result).map(t=>({digit:t.digit,data:Float32Array.from(t.data)})); saveTemplates(); const k=nettoyerModeles(); $('status').textContent='Modèles importés : '+templates.length+(k?' ('+k+' retiré(s) au nettoyage)':''); }catch(err){ alert('Fichier de modèles illisible'); } };
   fr.readAsText(f);
+};
+$('btnClean').onclick = ()=>{
+  const k = nettoyerModeles();
+  $('status').textContent = 'Nettoyage : ' + dernierNettoyage;
 };
 </script>
