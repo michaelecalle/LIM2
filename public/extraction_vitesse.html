@@ -278,7 +278,15 @@ try {
 // AUTRE étiquette, à une distance de 2 parfait (< MODELE_INTRUS_D), et nettement plus près que
 // le plus proche modèle de SA propre étiquette (ou s'il n'en a aucun). Les modèles embarqués
 // ne sont jamais retirés. Appelé au chargement, à l'import et par le bouton « Nettoyer ».
-const MODELE_INTRUS_D = 0.045;
+// 31/10 — NETTOYAGE PAR VOTE. L'ancien critère (plus proche voisin d'une autre étiquette < 0,045
+// ET < moitié du plus proche de même étiquette) laissait passer les intrus « jumeaux » : un faux « 4 »
+// appris trois fois est son propre voisin de même étiquette, donc jamais retiré (fichier du 28/10 :
+// 6 jumeaux sur 681). Nouveau critère = le MÊME vote que la lecture (classify, VOTE_K voisins
+// pondérés 1/(d+0,01), lui-même exclu) : si ses voisins élisent un AUTRE chiffre et que le plus proche
+// de cet autre chiffre est à moins de MODELE_INTRUS_D, le modèle est un intrus. Les modèles isolés
+// (aucun voisin proche) sont laissés. Vérifié sur le fichier du 28/10 : 8 retirés, tous justifiés.
+const MODELE_INTRUS_D = 0.10;
+const NETTOYAGE_K = 5;         // = VOTE_K (déclaré plus bas, hors de portée au chargement)
 let dernierNettoyage = null;   // texte du dernier nettoyage (repris dans l'en-tête du journal)
 function distModeles(a, b){ let s=0; for(let i=0;i<a.length;i++){ const d=a[i]-b[i]; s+=d*d; } return s/a.length; }
 function nettoyerModeles(){
@@ -288,15 +296,26 @@ function nettoyerModeles(){
   for(let i=0;i<n;i++){
     const t = templates[i];
     if(embarque(t)) continue;
-    let dAutre=Infinity, autre=null, dMeme=Infinity;
+    const near = [];
     for(let j=0;j<n;j++){
       if(j===i) continue;
       const d = distModeles(t.data, templates[j].data);
-      if(templates[j].digit===t.digit){ if(d<dMeme) dMeme=d; }
-      else if(d<dAutre){ dAutre=d; autre=templates[j].digit; }
+      if(near.length<NETTOYAGE_K || d<near[near.length-1].d){
+        near.push({digit:templates[j].digit, d});
+        near.sort((a,b)=>a.d-b.d);
+        if(near.length>NETTOYAGE_K) near.pop();
+      }
     }
-    if(dAutre < MODELE_INTRUS_D && dAutre < 0.5*dMeme){
-      garder[i]=false; retires.push(`${t.digit}→${autre} (${dAutre.toFixed(3)}/${dMeme===Infinity?'∞':dMeme.toFixed(3)})`);
+    if(!near.length) continue;
+    const score = {}, bestD = {};
+    for(const v of near){
+      score[v.digit] = (score[v.digit]||0) + 1/(v.d+0.01);
+      if(bestD[v.digit]==null || v.d<bestD[v.digit]) bestD[v.digit]=v.d;
+    }
+    const elu = Object.keys(score).sort((a,b)=>score[b]-score[a])[0];
+    if(elu!==t.digit && bestD[elu] < MODELE_INTRUS_D){
+      const dMeme = bestD[t.digit];
+      garder[i]=false; retires.push(`${t.digit}→${elu} (${bestD[elu].toFixed(3)}/${dMeme==null?'∞':dMeme.toFixed(3)})`);
     }
   }
   if(retires.length){ templates = templates.filter((_,i)=>garder[i]); saveTemplates(); }
