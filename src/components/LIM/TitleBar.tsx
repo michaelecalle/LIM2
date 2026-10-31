@@ -25,7 +25,7 @@ import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { APP_VERSION } from '../version'
 import { LIGNE_FT_NORMALIZED } from '../../data/normalized/ligneFT.normalized'
 import { parseLtvPdf2026 } from '../../lib/ltvPdfParser'
-import { fetchInboxLtvPdf, deleteInboxEntry, type InboxLtvPdf } from '../../lib/managedDocs'
+import { fetchInboxDhltv, deleteInboxEntries, type InboxDhltv } from '../../lib/managedDocs'
 import { buildLtvImageComposite } from '../../lib/ltvImages'
 import { filterUnknownForRoute, reconstructLtvFromImages } from '../../lib/ltvCodeMatch'
 import {
@@ -2992,7 +2992,7 @@ ${coords}
   // le menu de démarrage n'est pas déjà ouvert : on l'ouvre avec le PDF préchargé, dans le
   // mode de démarrage mémorisé (« LTV seul » ou 2026 ; 2026 par défaut). L'entrée de la
   // boîte est retirée à la confirmation du parcours (handleMode2026Confirm / LTV seul).
-  const [inboxLtvPdf, setInboxLtvPdf] = useState<InboxLtvPdf | null>(null)
+  const [inboxLtvPdf, setInboxLtvPdf] = useState<InboxDhltv | null>(null)
   const inboxGateRef = useRef({ journey: false, modalOpen: false, checking: false })
   useEffect(() => {
     inboxGateRef.current.journey = activeStartupMode !== null
@@ -3005,11 +3005,11 @@ ${coords}
       if (g.checking || g.journey || g.modalOpen || !navigator.onLine) return
       g.checking = true
       try {
-        const found = await fetchInboxLtvPdf()
+        const found = await fetchInboxDhltv()
         if (disposed || !found) return
         const g2 = inboxGateRef.current
         if (g2.journey || g2.modalOpen) return
-        logTestEvent('inbox:ltv-pdf:proposed', { source, name: found.file.name, size: found.size })
+        logTestEvent('inbox:dhltv:proposed', { source, pdf: found.pdf?.name ?? null, images: found.images.length, entries: found.entries.length })
         setInboxLtvPdf(found)
         const mode = readStoredStartupMode()
         startupLaunchModeRef.current = mode ?? '2026'
@@ -3029,13 +3029,13 @@ ${coords}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  /** Parcours confirmé depuis le menu de démarrage : l'entrée de la boîte a été vue → retirée. */
+  /** Parcours confirmé depuis le menu de démarrage : tout ce qui attendait a été vu → retiré en bloc. */
   const consumeInboxLtvPdf = (usedFile: File | null) => {
-    const entry = inboxLtvPdf
-    if (!entry) return
+    const box = inboxLtvPdf
+    if (!box) return
     setInboxLtvPdf(null)
-    logTestEvent('inbox:ltv-pdf:consumed', { path: entry.path, used: usedFile === entry.file })
-    void deleteInboxEntry(entry)
+    logTestEvent('inbox:dhltv:consumed', { entries: box.entries.map((e) => e.path), usedPdf: usedFile !== null && usedFile === box.pdf })
+    void deleteInboxEntries(box.entries)
   }
   // Démo "armée" : ZIP chargé, en attente du clic Démarrer pour ouvrir la modale guidée
   const [demoArmed, setDemoArmed] = useState(false)
@@ -6296,7 +6296,8 @@ setAutoScrollStartedOnce(next)
               onConfirmLtvOnly={handleLtvOnlyConfirm}
               lockedTrainNumber={mode2026LockedTrain}
               demoPdfFiles={mode2026DemoPdfs.length > 0 ? mode2026DemoPdfs : undefined}
-              inboxPdfFile={inboxLtvPdf?.file ?? null}
+              inboxPdfFile={inboxLtvPdf?.pdf ?? null}
+              inboxImageFiles={inboxLtvPdf?.images}
               onSelectSdm={() => { setSdmEditing(null); setSdmOpen(true) }}
               onEditSdm={(n) => {
                 const d = sdmTrains.find((t) => t.trainNumber === n) ?? null

@@ -366,43 +366,73 @@ export function syncManagedDocs(opts?: { reason?: string }): Promise<void> {
 // ---------------------------------------------------------------------------------------
 const INBOX_DIR = 'inbox'
 
-export type InboxLtvPdf = { file: File; path: string; sha: string; size: number }
+export type InboxEntry = { path: string; sha: string; size: number }
+/** Contenu en attente : UN PDF (le plus récent) OU des images (une par page, triées par nom). */
+export type InboxDhltv = { pdf: File | null; images: File[]; entries: InboxEntry[] }
 
-/** PDF le plus récent de la boîte (noms préfixés d'un horodatage → tri par nom). null si rien. */
-export async function fetchInboxLtvPdf(): Promise<InboxLtvPdf | null> {
+const INBOX_MIME: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' }
+
+/**
+ * DHLTV en attente dans la boîte. S'il y a au moins un PDF, c'est le plus récent (noms préfixés
+ * d'un horodatage → tri par nom) ; sinon toutes les images, comme une sélection à la main dans le
+ * menu de démarrage. `entries` = TOUT ce qui attend (retiré en bloc à la confirmation). null si rien.
+ */
+export async function fetchInboxDhltv(): Promise<InboxDhltv | null> {
   const listing = await listDir(INBOX_DIR)
   if (!listing) return null // dossier absent (404) ou hors ligne : silence
-  const names = Array.from(listing.keys()).filter((n) => /\.pdf$/i.test(n)).sort()
+  const names = Array.from(listing.keys()).filter((n) => /\.(pdf|png|jpe?g)$/i.test(n)).sort()
   if (names.length === 0) return null
-  const name = names[names.length - 1]
-  const entry = listing.get(name)!
-  const path = `${INBOX_DIR}/${name}`
-  const blob = await downloadRaw(path)
-  if (!blob) {
-    logTestEvent('inbox:ltv-pdf:download-failed', { name, size: entry.size })
-    return null
+  const entries: InboxEntry[] = names.map((n) => ({ path: `${INBOX_DIR}/${n}`, sha: listing.get(n)!.sha, size: listing.get(n)!.size }))
+  const pdfs = names.filter((n) => /\.pdf$/i.test(n))
+  const wanted = pdfs.length > 0 ? [pdfs[pdfs.length - 1]] : names
+  const files: File[] = []
+  for (const name of wanted) {
+    const blob = await downloadRaw(`${INBOX_DIR}/${name}`)
+    if (!blob) {
+      logTestEvent('inbox:dhltv:download-failed', { name, size: listing.get(name)!.size })
+      return null
+    }
+    const ext = name.split('.').pop()!.toLowerCase()
+    // Nom d'origine : horodatage « AAAAMMJJ-HHMMSS- » retiré (affichage + tri des pages).
+    files.push(new File([blob], name.replace(/^\d{8}-\d{6}-/, ''), { type: INBOX_MIME[ext] ?? 'application/octet-stream' }))
   }
-  // Nom d'origine : horodatage « AAAAMMJJ-HHMMSS- » retiré pour l'affichage.
-  const displayName = name.replace(/^\d{8}-\d{6}-/, '')
-  const file = new File([blob], displayName, { type: 'application/pdf' })
-  logTestEvent('inbox:ltv-pdf:found', { name, size: entry.size, pending: names.length })
-  return { file, path, sha: entry.sha, size: entry.size }
+  const pdf = pdfs.length > 0 ? files[0] : null
+  const images = pdfs.length > 0 ? [] : files
+  logTestEvent('inbox:dhltv:found', { pdf: pdf?.name ?? null, images: images.map((f) => f.name), pending: names.length })
+  return { pdf, images, entries }
 }
 
+/** Compatibilité : l'ancien nom (PDF seul). */
+export type InboxLtvPdf = InboxEntry & { file: File }
+
 /** Retire une entrée de la boîte (après confirmation du parcours). Silencieux en cas d'échec. */
-export async function deleteInboxEntry(entry: InboxLtvPdf): Promise<boolean> {
+async function deleteInboxEntry(entry: InboxEntry): Promise<number> {
   const gh = github()
-  if (!gh) return false
+  if (!gh) return 0
   try {
     const res = await fetch(`https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${entry.path}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${gh.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: `inbox: consommé ${entry.path}`, sha: entry.sha }),
     })
-    logTestEvent('inbox:ltv-pdf:deleted', { path: entry.path, ok: res.ok, status: res.status })
-    return res.ok
+    return res.status
   } catch {
-    logTestEvent('inbox:ltv-pdf:deleted', { path: entry.path, ok: false, status: 0 })
-    return false
+    return 0
+  }
+}
+
+/**
+ * Retire EN SÉQUENCE tout ce qui attendait. Deux suppressions lancées en parallèle sur le même
+ * dépôt se heurtent (GitHub répond 409 : deux commits concurrents) — constaté au test local du
+ * 31/10 avec deux images. Une suppression à la fois, et un second essai sur 409.
+ */
+export async function deleteInboxEntries(entries: InboxEntry[]): Promise<void> {
+  for (const entry of entries) {
+    let status = await deleteInboxEntry(entry)
+    if (status === 409) {
+      await new Promise((r) => setTimeout(r, 800))
+      status = await deleteInboxEntry(entry)
+    }
+    logTestEvent('inbox:dhltv:deleted', { path: entry.path, ok: status >= 200 && status < 300, status })
   }
 }

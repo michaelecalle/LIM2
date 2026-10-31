@@ -11,9 +11,11 @@ import { timingSafeEqual } from "node:crypto";
 // d'environnement Vercel `LIM_INBOX_KEY`. Le dépôt GitHub réutilise le jeton des journaux
 // (`VITE_GITHUB_LOG_TOKEN`, également exposé à process.env côté fonctions).
 //
-// Corps accepté : le PDF brut (corps « Fichier » de l'action « Obtenir le contenu de l'URL »)
-// ou un formulaire multipart dont la première partie fichier est le PDF (corps « Formulaire »).
-// Limite Vercel : 4,5 Mo par requête (un DHLTV fait quelques centaines de Ko).
+// Corps accepté : le fichier brut (corps « Fichier » de l'action « Obtenir le contenu de l'URL »)
+// ou un formulaire multipart dont la première partie fichier est le document (corps « Formulaire »).
+// Formats : PDF, PNG ou JPEG (depuis le 28/10 le DHLTV peut arriver en images, une par page :
+// le raccourci envoie alors une requête par image). Reconnaissance par les premiers octets,
+// jamais par le nom. Limite Vercel : 4,5 Mo par requête.
 
 export const config = { api: { bodyParser: false } };
 
@@ -82,13 +84,23 @@ function extractMultipartFile(
   return null;
 }
 
-/** Nom de fichier sûr pour le dépôt : caractères simples, longueur bornée, extension .pdf. */
-function safeName(raw: string | null | undefined): string {
+type Kind = { ext: "pdf" | "png" | "jpg"; label: string };
+
+/** Type reconnu aux premiers octets (jamais au nom) : PDF, PNG ou JPEG ; null sinon. */
+function sniff(buf: Buffer): Kind | null {
+  if (buf.length >= 5 && buf.slice(0, 5).toString("latin1") === "%PDF-") return { ext: "pdf", label: "PDF" };
+  if (buf.length >= 8 && buf[0] === 0x89 && buf.slice(1, 4).toString("latin1") === "PNG") return { ext: "png", label: "image PNG" };
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { ext: "jpg", label: "image JPEG" };
+  return null;
+}
+
+/** Nom de fichier sûr pour le dépôt : caractères simples, longueur bornée, extension du type reconnu. */
+function safeName(raw: string | null | undefined, ext: Kind["ext"]): string {
   let base = (raw ?? "").replace(/[\\/]+/g, "_");
-  base = base.normalize("NFKD").replace(/[̀-ͯ]/g, ""); // accents retirés
-  base = base.replace(/\.pdf$/i, "").replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+  base = base.normalize("NFKD").replace(/[\u0300-\u036f]/g, ""); // accents retirés
+  base = base.replace(/\.(pdf|png|jpe?g)$/i, "").replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
   if (!base) base = "dhltv";
-  return `${base.slice(0, 60)}.pdf`;
+  return `${base.slice(0, 60)}.${ext}`;
 }
 
 /** Horodatage UTC compact, trié naturellement par nom : 20261031-143015. */
@@ -149,11 +161,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (pdf.length === 0) return reply(res, 400, { ok: false, message: "Aucun fichier reçu." });
   if (pdf.length > MAX_BYTES) return reply(res, 413, { ok: false, message: "Fichier trop volumineux (limite 4,5 Mo)." });
-  if (pdf.slice(0, 5).toString("latin1") !== "%PDF-") {
-    return reply(res, 415, { ok: false, message: "Ce n'est pas un PDF." });
+  const kind = sniff(pdf);
+  if (!kind) {
+    return reply(res, 415, { ok: false, message: "Format refusé : PDF, PNG ou JPEG attendu." });
   }
 
-  const name = `${stamp(new Date())}-${safeName(filename)}`;
+  const name = `${stamp(new Date())}-${safeName(filename, kind.ext)}`;
   const path = `${INBOX_DIR}/${name}`;
   const kb = Math.round(pdf.length / 1024);
 
@@ -185,6 +198,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     name,
     path,
     size: pdf.length,
-    message: `Déposé dans LIM : ${safeName(filename)} (${kb} Ko). Ouvre LIM pour démarrer avec ce DHLTV.`,
+    kind: kind.ext,
+    message: `Déposé dans LIM : ${safeName(filename, kind.ext)} (${kind.label}, ${kb} Ko). Ouvre LIM pour démarrer avec ce DHLTV.`,
   });
 }

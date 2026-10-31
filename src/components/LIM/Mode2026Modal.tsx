@@ -43,6 +43,8 @@ type Props = {
   // à l'ouverture comme un PDF choisi à la main (nom + comptage) ; l'utilisateur choisit le
   // train et confirme. Il peut toujours choisir un autre fichier.
   inboxPdfFile?: File | null
+  // 31/10 — idem en IMAGES (une par page), quand le DHLTV reçu n'est pas un PDF.
+  inboxImageFiles?: File[]
   // SDM (#27) : sélection de « SDM » dans la liste → ouvre la modale de création (gérée par le parent).
   onSelectSdm?: () => void
   // SDM (#27) : train de session fraîchement créé → à pré-sélectionner au retour.
@@ -61,9 +63,13 @@ type Props = {
   ) => void
 }
 
+// 31/10 — tableau vide STABLE (une valeur par défaut `[]` changerait à chaque rendu et
+// relancerait l'effet de préchargement de la boîte aux lettres).
+const NO_INBOX_FILES: File[] = []
+
 export default function Mode2026Modal({
   dark, trainOptions, onClose, onConfirm,
-  lockedTrainNumber = null, demoPdfFiles, inboxPdfFile = null, onSelectSdm, preselectTrainNumber = null,
+  lockedTrainNumber = null, demoPdfFiles, inboxPdfFile = null, inboxImageFiles = NO_INBOX_FILES, onSelectSdm, preselectTrainNumber = null,
   sdmTrainNumbers = [], onDeleteSdm, onEditSdm,
   ltvOnly = false, onConfirmLtvOnly,
 }: Props) {
@@ -93,11 +99,16 @@ export default function Mode2026Modal({
     if (preselectTrainNumber) setSelectedTrainNumber(preselectTrainNumber)
   }, [preselectTrainNumber])
 
-  // 31/10 — boîte aux lettres : le PDF reçu est extrait dès l'ouverture.
+  // 31/10 — boîte aux lettres : le DHLTV reçu (PDF ou images) est pris dès l'ouverture.
+  // `fromInbox` porte la mention « reçu par le raccourci » ; retombe à false dès que
+  // l'utilisateur choisit lui-même un autre fichier.
+  const [fromInbox, setFromInbox] = useState(false)
   useEffect(() => {
-    if (inboxPdfFile && !isDemo) void handlePdfSelect(inboxPdfFile)
+    if (isDemo) return
+    if (inboxPdfFile) { void handlePdfSelect(inboxPdfFile); setFromInbox(true) }
+    else if (inboxImageFiles.length > 0) { applyFiles(inboxImageFiles); setFromInbox(true) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inboxPdfFile])
+  }, [inboxPdfFile, inboxImageFiles])
 
   const [storedLtv, setStoredLtv] = useState<NormalizedLtvFile | null>(null)
   useEffect(() => {
@@ -125,7 +136,10 @@ export default function Mode2026Modal({
 
   // 28/10 — Sélection système : un PDF, OU une ou plusieurs images (jamais les deux).
   const handleFilesSelect = (list: FileList | null) => {
-    const files = Array.from(list ?? [])
+    setFromInbox(false)
+    applyFiles(Array.from(list ?? []))
+  }
+  const applyFiles = (files: File[]) => {
     if (files.length === 0) return
     const images = files.filter(isLtvImageFile)
     if (images.length > 0) {
@@ -140,6 +154,7 @@ export default function Mode2026Modal({
   }
 
   const handlePdfSelect = async (file: File) => {
+    if (file !== inboxPdfFile) setFromInbox(false)
     setPdfFile(file)
     setLtvImageFiles([])
     setLtvData(null)
@@ -302,9 +317,9 @@ export default function Mode2026Modal({
           {/* ⚠️ 14/08 — alerte RENDUE VISIBLE. Un simple texte rouge de 11 px
               passait inaperçu : l'échec d'extraction du 14/08 s'est présenté
               comme un silence. Encadré + pictogramme, on ne peut plus le rater. */}
-          {!parsing && !parseError && pdfFile !== null && inboxPdfFile !== null && pdfFile === inboxPdfFile && (
+          {!parsing && !parseError && fromInbox && (pdfFile !== null || ltvImageFiles.length > 0) && (
             <div className="mt-2 text-[11px] text-sky-600 dark:text-sky-400 font-medium">
-              DHLTV reçu par le raccourci « Envoyer vers LIM ».
+              DHLTV reçu par le raccourci « Envoyer vers LIM »{ltvImageFiles.length > 0 ? ` (${ltvImageFiles.length} image${ltvImageFiles.length > 1 ? 's' : ''})` : ''}.
             </div>
           )}
           {!parsing && parseError && (
