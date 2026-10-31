@@ -39,6 +39,10 @@ type Props = {
   // Si demoPdfFiles est fourni, les imports proposent un choix parmi ces PDF
   // (au lieu d’un sélecteur de fichier système).
   demoPdfFiles?: File[]
+  // 31/10 — DHLTV reçu par le raccourci « Envoyer vers LIM » (boîte aux lettres) : préchargé
+  // à l'ouverture comme un PDF choisi à la main (nom + comptage) ; l'utilisateur choisit le
+  // train et confirme. Il peut toujours choisir un autre fichier.
+  inboxPdfFile?: File | null
   // SDM (#27) : sélection de « SDM » dans la liste → ouvre la modale de création (gérée par le parent).
   onSelectSdm?: () => void
   // SDM (#27) : train de session fraîchement créé → à pré-sélectionner au retour.
@@ -59,7 +63,7 @@ type Props = {
 
 export default function Mode2026Modal({
   dark, trainOptions, onClose, onConfirm,
-  lockedTrainNumber = null, demoPdfFiles, onSelectSdm, preselectTrainNumber = null,
+  lockedTrainNumber = null, demoPdfFiles, inboxPdfFile = null, onSelectSdm, preselectTrainNumber = null,
   sdmTrainNumbers = [], onDeleteSdm, onEditSdm,
   ltvOnly = false, onConfirmLtvOnly,
 }: Props) {
@@ -88,6 +92,12 @@ export default function Mode2026Modal({
   useEffect(() => {
     if (preselectTrainNumber) setSelectedTrainNumber(preselectTrainNumber)
   }, [preselectTrainNumber])
+
+  // 31/10 — boîte aux lettres : le PDF reçu est extrait dès l'ouverture.
+  useEffect(() => {
+    if (inboxPdfFile && !isDemo) void handlePdfSelect(inboxPdfFile)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inboxPdfFile])
 
   const [storedLtv, setStoredLtv] = useState<NormalizedLtvFile | null>(null)
   useEffect(() => {
@@ -292,6 +302,11 @@ export default function Mode2026Modal({
           {/* ⚠️ 14/08 — alerte RENDUE VISIBLE. Un simple texte rouge de 11 px
               passait inaperçu : l'échec d'extraction du 14/08 s'est présenté
               comme un silence. Encadré + pictogramme, on ne peut plus le rater. */}
+          {!parsing && !parseError && pdfFile !== null && inboxPdfFile !== null && pdfFile === inboxPdfFile && (
+            <div className="mt-2 text-[11px] text-sky-600 dark:text-sky-400 font-medium">
+              DHLTV reçu par le raccourci « Envoyer vers LIM ».
+            </div>
+          )}
           {!parsing && parseError && (
             <div className="mt-2 rounded-lg border border-red-400 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-[12px] text-red-700 dark:text-red-300 font-medium">
               ⚠️ {parseError}

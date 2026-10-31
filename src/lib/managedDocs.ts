@@ -356,3 +356,53 @@ export function syncManagedDocs(opts?: { reason?: string }): Promise<void> {
     })
   return syncRunning
 }
+
+// ---------------------------------------------------------------------------------------
+// 31/10 — BOÎTE AUX LETTRES « Envoyer vers LIM » (dossier `inbox/` de lim-logs).
+// Le raccourci Apple de l'iPad (feuille de partage, depuis Mail) POSTe le PDF DHLTV à la
+// fonction Vercel api/inbox.ts, qui le dépose tel quel dans `inbox/`. Au lancement, LIM
+// regarde cette boîte : s'il y a un PDF, il est proposé dans le menu de démarrage comme un
+// fichier choisi à la main ; une fois le parcours confirmé, l'entrée est retirée.
+// ---------------------------------------------------------------------------------------
+const INBOX_DIR = 'inbox'
+
+export type InboxLtvPdf = { file: File; path: string; sha: string; size: number }
+
+/** PDF le plus récent de la boîte (noms préfixés d'un horodatage → tri par nom). null si rien. */
+export async function fetchInboxLtvPdf(): Promise<InboxLtvPdf | null> {
+  const listing = await listDir(INBOX_DIR)
+  if (!listing) return null // dossier absent (404) ou hors ligne : silence
+  const names = Array.from(listing.keys()).filter((n) => /\.pdf$/i.test(n)).sort()
+  if (names.length === 0) return null
+  const name = names[names.length - 1]
+  const entry = listing.get(name)!
+  const path = `${INBOX_DIR}/${name}`
+  const blob = await downloadRaw(path)
+  if (!blob) {
+    logTestEvent('inbox:ltv-pdf:download-failed', { name, size: entry.size })
+    return null
+  }
+  // Nom d'origine : horodatage « AAAAMMJJ-HHMMSS- » retiré pour l'affichage.
+  const displayName = name.replace(/^\d{8}-\d{6}-/, '')
+  const file = new File([blob], displayName, { type: 'application/pdf' })
+  logTestEvent('inbox:ltv-pdf:found', { name, size: entry.size, pending: names.length })
+  return { file, path, sha: entry.sha, size: entry.size }
+}
+
+/** Retire une entrée de la boîte (après confirmation du parcours). Silencieux en cas d'échec. */
+export async function deleteInboxEntry(entry: InboxLtvPdf): Promise<boolean> {
+  const gh = github()
+  if (!gh) return false
+  try {
+    const res = await fetch(`https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${entry.path}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${gh.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: `inbox: consommé ${entry.path}`, sha: entry.sha }),
+    })
+    logTestEvent('inbox:ltv-pdf:deleted', { path: entry.path, ok: res.ok, status: res.status })
+    return res.ok
+  } catch {
+    logTestEvent('inbox:ltv-pdf:deleted', { path: entry.path, ok: false, status: 0 })
+    return false
+  }
+}

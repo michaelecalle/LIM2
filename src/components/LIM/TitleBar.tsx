@@ -25,6 +25,7 @@ import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { APP_VERSION } from '../version'
 import { LIGNE_FT_NORMALIZED } from '../../data/normalized/ligneFT.normalized'
 import { parseLtvPdf2026 } from '../../lib/ltvPdfParser'
+import { fetchInboxLtvPdf, deleteInboxEntry, type InboxLtvPdf } from '../../lib/managedDocs'
 import { buildLtvImageComposite } from '../../lib/ltvImages'
 import { filterUnknownForRoute, reconstructLtvFromImages } from '../../lib/ltvCodeMatch'
 import {
@@ -1600,6 +1601,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
     // l'éditeur, ouvert automatiquement à la page du train courant.
     // Le PDF LTV, lui, sert uniquement à l'extraction des données LTV (déjà parsé).
     currentPdfFileRef.current = null
+    consumeInboxLtvPdf(ltvPdfFile)
 
     startNormalizedJourneyFromTrain(train, {
       source: 'mode2026_import',
@@ -1637,6 +1639,7 @@ const [gpsState, setGpsState] = useState<0 | 1 | 2>(0)
   ) => {
     setMode2026Open(false)
     setMode2026LtvOnly(false)
+    consumeInboxLtvPdf(ltvPdfFile)
     applyLtvImageFiles(ltvImageFiles, 'ltv_only_modal', { kind: 'ltv' })
 
     ltvPdfDataRef.current = ltvData
@@ -2982,6 +2985,58 @@ ${coords}
   // Mode 2026 en contexte DÉMO : train verrouillé + PDF issus du ZIP
   const [mode2026LockedTrain, setMode2026LockedTrain] = useState<string | null>(null)
   const [mode2026DemoPdfs, setMode2026DemoPdfs] = useState<File[]>([])
+
+  // 31/10 — BOÎTE AUX LETTRES « Envoyer vers LIM ». Au lancement (et à chaque retour au
+  // premier plan, l'app web installée n'étant pas remontée quand le raccourci la rouvre),
+  // si un DHLTV attend dans `inbox/` de lim-logs ET qu'aucun parcours n'est en cours ET que
+  // le menu de démarrage n'est pas déjà ouvert : on l'ouvre avec le PDF préchargé, dans le
+  // mode de démarrage mémorisé (« LTV seul » ou 2026 ; 2026 par défaut). L'entrée de la
+  // boîte est retirée à la confirmation du parcours (handleMode2026Confirm / LTV seul).
+  const [inboxLtvPdf, setInboxLtvPdf] = useState<InboxLtvPdf | null>(null)
+  const inboxGateRef = useRef({ journey: false, modalOpen: false, checking: false })
+  useEffect(() => {
+    inboxGateRef.current.journey = activeStartupMode !== null
+    inboxGateRef.current.modalOpen = mode2026Open
+  }, [activeStartupMode, mode2026Open])
+  useEffect(() => {
+    let disposed = false
+    const check = async (source: string) => {
+      const g = inboxGateRef.current
+      if (g.checking || g.journey || g.modalOpen || !navigator.onLine) return
+      g.checking = true
+      try {
+        const found = await fetchInboxLtvPdf()
+        if (disposed || !found) return
+        const g2 = inboxGateRef.current
+        if (g2.journey || g2.modalOpen) return
+        logTestEvent('inbox:ltv-pdf:proposed', { source, name: found.file.name, size: found.size })
+        setInboxLtvPdf(found)
+        const mode = readStoredStartupMode()
+        startupLaunchModeRef.current = mode ?? '2026'
+        setMode2026LtvOnly(mode === 'ltv')
+        setMode2026Open(true)
+      } finally {
+        inboxGateRef.current.checking = false
+      }
+    }
+    const t = window.setTimeout(() => { void check('startup') }, 1500)
+    const onVisible = () => { if (document.visibilityState === 'visible') void check('visible') }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      disposed = true
+      window.clearTimeout(t)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  /** Parcours confirmé depuis le menu de démarrage : l'entrée de la boîte a été vue → retirée. */
+  const consumeInboxLtvPdf = (usedFile: File | null) => {
+    const entry = inboxLtvPdf
+    if (!entry) return
+    setInboxLtvPdf(null)
+    logTestEvent('inbox:ltv-pdf:consumed', { path: entry.path, used: usedFile === entry.file })
+    void deleteInboxEntry(entry)
+  }
   // Démo "armée" : ZIP chargé, en attente du clic Démarrer pour ouvrir la modale guidée
   const [demoArmed, setDemoArmed] = useState(false)
   // Évènements GPS du log de démo en attente (injectés au démarrage du parcours)
@@ -6241,6 +6296,7 @@ setAutoScrollStartedOnce(next)
               onConfirmLtvOnly={handleLtvOnlyConfirm}
               lockedTrainNumber={mode2026LockedTrain}
               demoPdfFiles={mode2026DemoPdfs.length > 0 ? mode2026DemoPdfs : undefined}
+              inboxPdfFile={inboxLtvPdf?.file ?? null}
               onSelectSdm={() => { setSdmEditing(null); setSdmOpen(true) }}
               onEditSdm={(n) => {
                 const d = sdmTrains.find((t) => t.trainNumber === n) ?? null
