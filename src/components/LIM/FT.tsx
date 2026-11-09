@@ -341,21 +341,12 @@ export default function FT({ variant = "classic" }: FTProps) {
 
       if (s === "RED" || s === "ORANGE" || s === "GREEN" || s === "ARRET") {
         setGpsStateUi(s);
-
-        // ✅ GPS passif : l'indicateur peut passer GREEN avant Play,
-        // mais la FT ne doit utiliser la référence GPS que lorsque l'autoscroll est engagé.
-        const gpsModeAllowed = autoScrollEnabledRef.current;
-        // Garde-fou tunnel : jamais GPS en zone tunnel (même si l'event dit GREEN)
-        // 01/10 — bornes STRICTES pour le mode (la marge de 150 m basculait en horaire avant
-        // chaque entrée de tunnel). La marge reste aux garde-fous.
-        const inTunnel = tunnelZoneAtStrict(lastGpsSKmRef.current) != null;
-        const nextMode: ReferenceMode =
-          (s === "GREEN" || s === "ARRET") && gpsModeAllowed && !inTunnel ? "GPS" : "HORAIRE";
-
-        if (referenceModeRef.current !== nextMode) {
-          referenceModeRef.current = nextMode;
-          setReferenceMode(nextMode);
-        }
+        // 08/11 — ce handler ne décide PLUS du mode de référence (HORAIRE/GPS) : il colorait la
+        // pastille ET remettait GPS d'après l'état BRUT émis, pendant que le contrôle principal
+        // (état EFFECTIF) remettait HORAIRE une seconde plus tard — 214 bascules GPS→HORAIRE dans
+        // le journal du 9709 du 08/11, en phases ORANGE. Le mode est décidé aux deux seuls
+        // endroits qui travaillent sur l'état effectif (contrôle par position + chien de garde),
+        // tous deux en bornes STRICTES de tunnel depuis le 08/11 (décision du 01/10 généralisée).
       }
     };
 
@@ -2209,7 +2200,7 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
       // En zone tunnel : pas de GREEN (retour GPS fugitif = parasite).
       const effectiveNextState =
         stationArretRef.current != null && nextState === "RED" ? "GREEN"
-        : tunnelZoneAt(lastGpsSKmRef.current) != null && nextState === "GREEN" ? "ORANGE"
+        : tunnelZoneAtStrict(lastGpsSKmRef.current) != null && nextState === "GREEN" ? "ORANGE"   // 08/11 — strict (= pastille)
         : nextState;
 
       if (prevState !== effectiveNextState) {
@@ -2248,7 +2239,8 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
       // ✅ GPS passif : GREEN ne bascule la FT en GPS que si l'autoscroll est engagé.
       const gpsModeAllowed = autoScrollEnabledRef.current;
       // Garde-fou tunnel : bloquer le GPS tant que le dernier s_km connu est dans une zone tunnel
-      const inTunnelZone = tunnelZoneAt(lastGpsSKmRef.current) != null;
+      // 08/11 — bornes STRICTES pour le MODE (décision du 01/10) ; la marge de 150 m reste aux garde-fous.
+      const inTunnelZone = tunnelZoneAtStrict(lastGpsSKmRef.current) != null;
       const nextMode: ReferenceMode =
         stateNow === "GREEN" && gpsModeAllowed && !inTunnelZone ? "GPS" : "HORAIRE";
 
@@ -5559,7 +5551,7 @@ const isRelock = acceptedMode === "relock";
       // En mode ARRÊT gare : pas de RED. En zone tunnel : pas de GREEN.
       const effectiveNextState =
         stationArretRef.current != null && nextState === "RED" ? "GREEN"
-        : tunnelZoneAt(lastGpsSKmRef.current) != null && nextState === "GREEN" ? "ORANGE"
+        : tunnelZoneAtStrict(lastGpsSKmRef.current) != null && nextState === "GREEN" ? "ORANGE"   // 08/11 — strict (= pastille)
         : nextState;
 
       if (gpsStateRef.current !== effectiveNextState) {
@@ -5635,7 +5627,8 @@ const isRelock = acceptedMode === "relock";
       const stateForMode = gpsStateRef.current;
       const gpsModeAllowed = autoScrollEnabledRef.current;
       // Garde-fou tunnel : bloquer le GPS tant que le dernier s_km connu est dans une zone tunnel
-      const inTunnelZone = tunnelZoneAt(lastGpsSKmRef.current) != null;
+      // 08/11 — bornes STRICTES pour le MODE (décision du 01/10) ; la marge de 150 m reste aux garde-fous.
+      const inTunnelZone = tunnelZoneAtStrict(lastGpsSKmRef.current) != null;
       const nextMode: ReferenceMode =
         stateForMode === "GREEN" && gpsModeAllowed && !inTunnelZone ? "GPS" : "HORAIRE";
       const currentMode = referenceModeRef.current;
