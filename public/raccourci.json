@@ -1,6 +1,6 @@
 {
   "nom": "Envoyer vers LIM",
-  "icloud": "",
+  "icloud": "https://www.icloud.com/shortcuts/1586477738ec4800a610e2d8eaf3b309",
   "fichier": "/envoyer-vers-lim.shortcut",
   "_aide": "icloud = lien « Copier le lien iCloud » depuis Raccourcis (à refaire à chaque export) ; vide = bouton masqué, seule la voie fichier est proposée."
 }
