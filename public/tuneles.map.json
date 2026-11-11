@@ -1,61 +1,62 @@
 {
-  "document": "tuneles",
-  "versionPdf": "V05 du 01/10/2026",
+  "document": "guia-bsn",
+  "versionPdf": "V05 du 01/11/2026",
+  "premierePage": 41,
   "fiches": {
     "1": {
       "nom": "TORRASSA",
-      "page": 2,
-      "y": 0.0388
+      "page": 41,
+      "y": 0.0399
     },
     "2": {
       "nom": "SANTS",
-      "page": 2,
-      "y": 0.2564
+      "page": 41,
+      "y": 0.2575
     },
     "3": {
       "nom": "SAGRERA",
-      "page": 2,
-      "y": 0.4997
+      "page": 41,
+      "y": 0.5036
     },
     "4": {
       "nom": "SANT ANDREU",
-      "page": 3,
-      "y": 0.0388
+      "page": 42,
+      "y": 0.0399
     },
     "5": {
       "nom": "MONTCADA",
-      "page": 3,
-      "y": 0.2779
+      "page": 42,
+      "y": 0.279
     },
     "6": {
       "nom": "MONTMELO",
-      "page": 3,
-      "y": 0.501
+      "page": 42,
+      "y": 0.5021
     },
     "7": {
       "nom": "Túneles en sucesión (Girona)",
-      "page": 3,
-      "y": 0.7044
+      "page": 42,
+      "y": 0.7053
     },
     "8": {
       "nom": "Túneles en sucesión (KM 721 – Vilademuls)",
-      "page": 4,
-      "y": 0.0377
+      "page": 43,
+      "y": 0.0384
     },
     "9": {
       "nom": "LLOGAIA",
-      "page": 4,
-      "y": 0.2342
+      "page": 43,
+      "y": 0.2351
     },
     "10": {
       "nom": "Túneles en sucesión (Vilademuls – Pontos)",
-      "page": 4,
-      "y": 0.4149
+      "page": 43,
+      "y": 0.4159
     },
     "11": {
       "nom": "Túnel en Figueres",
-      "page": 4,
-      "y": 0.6013
+      "page": 43,
+      "y": 0.6023
     }
   },
   "tunnels": {

@@ -6,7 +6,8 @@ type Pos = { x: number; y: number };
 
 const POS_KEY = "limgpt:replayOverlayPos";
 // Vitesse accélérée supprimée (#9 refactoring) — replay x1 uniquement.
-const ZIP_FILENAME_REGEX = /^(\d+) du (\d{4}-\d{2}-\d{2}) - (\d{2})h(\d{2})\.zip$/i;
+// 11/11 — suffixe optionnel « [K7M2QX] » = identifiant d'appareil (cf. lib/deviceId.ts).
+const ZIP_FILENAME_REGEX = /^(\d+) du (\d{4}-\d{2}-\d{2}) - (\d{2})h(\d{2})(?: \[[A-Z0-9]+\])?\.zip$/i;
 
 function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));

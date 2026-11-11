@@ -38,6 +38,7 @@ import ManualPdfCanvasViewer from './ManualPdfCanvasViewer'
 import ManualViewer from './ManualViewer'
 import GuiaViewer from './GuiaViewer'
 import TunelesViewer, { TUNELES_OPEN_EVENT } from './TunelesViewer'
+import RaccourciModal from './RaccourciModal'
 import DemoLoader, { type DemoData } from './DemoLoader'
 import DemoRunner from './DemoRunner'
 import DemoTouchIndicator from './DemoTouchIndicator'
@@ -2976,6 +2977,8 @@ ${coords}
   const [manualInitialPage, setManualInitialPage] = useState(1)
   const [manualInitialTocId, setManualInitialTocId] = useState('cover')
   const [guiaOpen, setGuiaOpen] = useState(false)
+  // 11/11 — modale d'installation du raccourci Apple « Envoyer vers LIM » (menu Paramètres).
+  const [raccourciOpen, setRaccourciOpen] = useState(false)
 
   // ----- MODE 2026 -----
   const [mode2026Open, setMode2026Open] = useState(false)
@@ -3124,6 +3127,19 @@ ${coords}
     }
     window.addEventListener('lim:manual-open-page', handler as EventListener)
     return () => window.removeEventListener('lim:manual-open-page', handler as EventListener)
+  }, [])
+
+  // 11/11 — Listener externe : ouvrir la modale « Raccourci » (lien d'accueil, sous
+  // « Procédure conseillée avant la première utilisation »).
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const ce = event as CustomEvent<{ source?: string }>
+      if (settingsDetailsRef.current?.hasAttribute('open')) settingsDetailsRef.current.removeAttribute('open')
+      setRaccourciOpen(true)
+      logTestEvent('ui:raccourci:open', { source: ce.detail?.source ?? 'external_event' })
+    }
+    window.addEventListener('lim:raccourci-open', handler as EventListener)
+    return () => window.removeEventListener('lim:raccourci-open', handler as EventListener)
   }, [])
 
   useEffect(() => {
@@ -6086,6 +6102,21 @@ setAutoScrollStartedOnce(next)
                 </div>
               </button>
 
+              {/* 11/11 — Installer le raccourci Apple « Envoyer vers LIM » (lien iCloud + fichier + mode d'emploi). */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (settingsDetailsRef.current) settingsDetailsRef.current.open = false
+                  setRaccourciOpen(true)
+                }}
+                className="w-full flex items-start justify-between gap-3 py-1 cursor-pointer select-none rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition px-0"
+              >
+                <div className="text-left">
+                  <div className="font-semibold">Raccourci</div>
+                  <div className="text-[11px] opacity-70">Installer « Envoyer vers LIM » (DHLTV depuis Mail)</div>
+                </div>
+              </button>
+
               <div className="h-px bg-zinc-200/80 dark:bg-zinc-700/80 my-2" />
 
               <button
@@ -6270,6 +6301,7 @@ setAutoScrollStartedOnce(next)
 
                     <GuiaViewer open={guiaOpen} dark={dark} onClose={() => setGuiaOpen(false)} />
           <TunelesViewer dark={dark} />
+          <RaccourciModal open={raccourciOpen} dark={dark} onClose={() => setRaccourciOpen(false)} />
 
           {mode2026Open && (
             <Mode2026Modal

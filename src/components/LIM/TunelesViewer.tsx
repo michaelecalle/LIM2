@@ -1,12 +1,18 @@
 // src/components/LIM/TunelesViewer.tsx
-// 27/10 — Document ADIF « Túneles de longitud sup. 1000 metros » (évacuation des
-// voyageurs en cas d'arrêt inopiné en tunnel), ouvert depuis le menu Paramètres.
+// 27/10 — Fiches ADIF « Túneles de longitud sup. 1000 metros » (évacuation des
+// voyageurs en cas d'arrêt inopiné en tunnel), ouvertes depuis le menu Paramètres.
+//
+// 10/11 — Les fiches sont désormais INTÉGRÉES AU GUIA BSN (V05 du 01/11/2026,
+// pages 41-43) : le document séparé « tuneles.pdf » est abandonné (il n'avait été
+// créé qu'en attendant ce Guia, les mises à jour futures ne se feront que dans le
+// Guia). On ouvre donc le même PDF que GuiaViewer (lim-logs, sinon copie livrée).
 //
 // Si la position du train est déterminée (GPS ou estimation horaire, cf.
 // lib/trainPosition) et tombe dans un tunnel qui a une fiche → ouverture sur cette
-// fiche. Sinon (position inconnue, hors tunnel, tunnel sans fiche) → document
-// complet, page 1 (schéma). Correspondance tunnel → fiche → page/hauteur dans
-// public/tuneles.map.json (modifiable sans toucher au code).
+// fiche. Sinon (position inconnue, hors tunnel, tunnel sans fiche) → première page
+// des fiches (`premierePage`). Correspondance tunnel → fiche → page/hauteur dans
+// public/tuneles.map.json (modifiable sans toucher au code ; à remesurer à chaque
+// nouvelle version du Guia, cf. `versionPdf`).
 //
 // L'appui long sur les bandes de tunnel (essayé le 27/10) a été abandonné au
 // profit de ce menu : accès rare, pas besoin qu'il soit sur la fiche train.
@@ -17,8 +23,11 @@ import { fetchManagedDocBlobUrl } from '../../lib/managedDocs'
 import { TUNNEL_ZONES_PKINTERNAL } from '../../data/tunnelZones'
 import { getCurrentTrainPkInternal } from '../../lib/trainPosition'
 
-const TUNELES_PDF_URL = '/tuneles.pdf'
+// Même PDF que GuiaViewer (copie livrée avec l'app, repli si lim-logs indisponible).
+const GUIA_PDF_URL = '/guia-bsn.pdf?guiaBsn=1'
 const TUNELES_MAP_URL = '/tuneles.map.json'
+// Première page des fiches dans le Guia, si la table ne la donne pas.
+const PREMIERE_PAGE_DEFAUT = 41
 
 /** Événement d'ouverture (menu Paramètres). */
 export const TUNELES_OPEN_EVENT = 'lim:tuneles-open'
@@ -29,7 +38,7 @@ export const TUNELES_OPEN_EVENT = 'lim:tuneles-open'
 const MARGE_TUNNEL_KM = 0.3
 
 type Fiche = { nom: string; page: number; y: number }
-type TunelesMap = { fiches: Record<string, Fiche>; tunnels: Record<string, number> }
+type TunelesMap = { premierePage?: number; fiches: Record<string, Fiche>; tunnels: Record<string, number> }
 type Ouverture = { page: number; y: number; titre: string; detail: string }
 
 type Props = { dark: boolean }
@@ -61,17 +70,18 @@ export default function TunelesViewer({ dark }: Props) {
         } catch (err) {
           console.warn('[TunelesViewer] correspondance indisponible', err)
         }
+        const premierePage = map?.premierePage ?? PREMIERE_PAGE_DEFAUT
         const complet = (detail: string) =>
-          setOuverture({ page: 1, y: 0, titre: 'Túneles de longitud sup. 1000 metros', detail })
+          setOuverture({ page: premierePage, y: 0, titre: 'Túneles de longitud sup. 1000 metros', detail })
 
         const pk = getCurrentTrainPkInternal()
-        if (pk == null) return complet('Position du train non déterminée : document complet')
+        if (pk == null) return complet('Position du train non déterminée : toutes les fiches (Guia BSN)')
         const id = tunnelProche(pk)
-        if (id == null) return complet('Train hors tunnel : document complet')
+        if (id == null) return complet('Train hors tunnel : toutes les fiches (Guia BSN)')
         const n = map?.tunnels?.[id]
         const f = n != null ? map?.fiches?.[String(n)] : undefined
-        if (!f) return complet('Tunnel sans fiche (moins de 1000 m ou hors zone ADIF) : document complet')
-        setOuverture({ page: f.page, y: f.y, titre: f.nom, detail: 'Tunnel actuel — Túneles de longitud sup. 1000 metros' })
+        if (!f) return complet('Tunnel sans fiche (moins de 1000 m ou hors zone ADIF) : toutes les fiches (Guia BSN)')
+        setOuverture({ page: f.page, y: f.y, titre: f.nom, detail: 'Tunnel actuel — Túneles de longitud sup. 1000 metros (Guia BSN)' })
       })()
     }
     window.addEventListener(TUNELES_OPEN_EVENT, h)
@@ -85,11 +95,11 @@ export default function TunelesViewer({ dark }: Props) {
     let cancelled = false
     let objectUrl: string | null = null
     void (async () => {
-      // 1) Version publiée par l'éditeur (lim-logs) ; 2) sinon copie livrée avec l'app.
-      const managed = await fetchManagedDocBlobUrl('tuneles')
+      // 1) Guia publié par l'éditeur (lim-logs) ; 2) sinon copie livrée avec l'app.
+      const managed = await fetchManagedDocBlobUrl('guia')
       if (cancelled) { if (managed) URL.revokeObjectURL(managed); return }
       objectUrl = managed
-      setPdfSrc(managed ?? TUNELES_PDF_URL)
+      setPdfSrc(managed ?? GUIA_PDF_URL)
     })()
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [open])

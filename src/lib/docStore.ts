@@ -16,7 +16,6 @@
 export type DocKey =
   | 'manuel'
   | 'guia'
-  | 'tuneles'
   | 'livretFt'
   | 'livretFtIndex'
   | 'ltvCurrent'

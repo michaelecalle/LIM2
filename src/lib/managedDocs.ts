@@ -23,8 +23,8 @@ type ManagedDoc = { key: DocKey; dir: string; name: string; kind: 'pdf' | 'json'
 const MANAGED_DOCS: ManagedDoc[] = [
   { key: 'manuel', dir: 'documents', name: 'manuel-utilisateur.pdf', kind: 'pdf' },
   { key: 'guia', dir: 'documents', name: 'guia-bsn.pdf', kind: 'pdf' },
-  // Túneles de longitud sup. 1000 metros (ADIF), ouvert par appui long sur un tunnel.
-  { key: 'tuneles', dir: 'documents', name: 'tuneles.pdf', kind: 'pdf' },
+  // 10/11 — « tuneles.pdf » (fiches tunnels séparées) abandonné : les fiches sont
+  // dans le Guia BSN V05 (pages 41-43), cf. TunelesViewer.
   // Livret FT complet (tous les trains à la suite), pour le mode secours, + son index
   // de pages (n° de train espagnol → 1re page, 1-indexée).
   { key: 'livretFt', dir: 'documents', name: 'livret-ft.pdf', kind: 'pdf' },

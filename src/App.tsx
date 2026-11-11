@@ -921,6 +921,23 @@ export default function App() {
                 Procédure conseillée avant la première utilisation
               </button>
 
+              {/* 11/11 — Installer le raccourci Apple « Envoyer vers LIM » : ouvre la modale
+                  Raccourci (lien iCloud + fichier + mode d'emploi), aussi dans Paramètres. */}
+              <button
+                type="button"
+                className="mt-2 text-center text-[16px] leading-tight italic underline underline-offset-4 transition-opacity hover:opacity-100 opacity-70"
+                style={{
+                  color: isDark ? "#d4d4d8" : "#52525b",
+                }}
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("lim:raccourci-open", { detail: { source: "startup-screen" } })
+                  )
+                }}
+              >
+                Installer le raccourci « Envoyer vers LIM »
+              </button>
+
               <div
                 className="mt-10 text-7xl italic tracking-wide"
                 style={{

@@ -1,5 +1,6 @@
 // src/lib/testLogger.ts
 import { BUILD_TIME } from '../buildInfo'
+import { getDeviceIdSync } from './deviceId'
 
 export type TestLogEvent = {
   t: string // horodatage ISO
@@ -38,6 +39,7 @@ export function startTestSession(label?: string): void {
     build: BUILD_TIME,
     sessionId: currentSessionId,
     label: label ?? null,
+    device: getDeviceIdSync(), // 11/11 — identifiant d'appareil anonyme (cf. lib/deviceId.ts)
   })
 }
 
@@ -97,6 +99,7 @@ export function buildTestLogFile(): {
   const headerLines: string[] = []
   headerLines.push(`# LIM test log`)
   headerLines.push(`# sessionId=${sessionId}`)
+  headerLines.push(`# device=${getDeviceIdSync()}`) // 11/11 — appareil (anonyme), cf. lib/deviceId.ts
   headerLines.push(`# build=${BUILD_TIME}`) // 11/10 — build qui tournait (BUILD_TIME de src/buildInfo.ts)
   headerLines.push(`# startedAt=${events[0]?.t ?? ''}`)
   headerLines.push(`# endedAt=${events[events.length - 1]?.t ?? ''}`)
@@ -480,14 +483,17 @@ function buildFriendlyExportNaming(
   const trainNumber = extractTrainNumberFromEvents(events) ?? 'train_inconnu'
   const datePart = formatLocalDateForFilename(startedDate)
   const timePart = formatLocalTimeForFilename(startedDate)
+  // 11/11 — suffixe « [K7M2QX] » = identifiant d'appareil anonyme (ReplayOverlay tolère
+  // les noms avec ou sans ce suffixe).
+  const device = getDeviceIdSync()
 
   return {
     trainNumber,
     datePart,
     timePart,
-    logFilename: `${trainNumber} du ${datePart} - ${timePart}.log`,
+    logFilename: `${trainNumber} du ${datePart} - ${timePart} [${device}].log`,
     pdfFilename: `${trainNumber} du ${datePart}.pdf`,
-    zipFilename: `${trainNumber} du ${datePart} - ${timePart}.zip`,
+    zipFilename: `${trainNumber} du ${datePart} - ${timePart} [${device}].zip`,
   }
 }
 

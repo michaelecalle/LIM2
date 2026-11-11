@@ -10,6 +10,9 @@ import './index.css'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BUILD_TIME, BUILD_HASH } from './buildInfo'
+// 11/11 — identifiant d'appareil anonyme (journaux) : réconciliation des deux copies au démarrage.
+import { initDeviceId } from './lib/deviceId'
+void initDeviceId()
 
 const buildLabel = BUILD_HASH && BUILD_HASH.trim().length > 0
   ? `${BUILD_TIME} (${BUILD_HASH})`
