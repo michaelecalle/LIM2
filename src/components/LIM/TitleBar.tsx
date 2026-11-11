@@ -1962,7 +1962,7 @@ ${coords}
           }
         }
 
-        const proj = projectGpsToPk(lat, lon, { nowMs: simTs })
+        const proj = projectGpsToPk(lat, lon, { nowMs: simTs, accuracyM: typeof accuracy === 'number' ? accuracy : undefined })
         const projOk = !!proj
 
         const pk = proj?.pk ?? null
@@ -3982,7 +3982,7 @@ ${coords}
           const lon = pos.coords.longitude
           const accuracy = pos.coords.accuracy
 
-          const proj = projectGpsToPk(lat, lon)
+          const proj = projectGpsToPk(lat, lon, { accuracyM: typeof accuracy === 'number' ? accuracy : undefined })
           if (!proj) {
             setAutoResolved({
               available: false,
@@ -4411,7 +4411,8 @@ if (autoScrollRef.current || autoScrollStartedOnceRef.current) {
           return
         }
 
-        const proj = projectGpsToPk(latitude, longitude)
+        // 11/11 — précision transmise au moteur : une position > 150 m ne touche plus la mémoire PK.
+        const proj = projectGpsToPk(latitude, longitude, { accuracyM: typeof accuracy === 'number' ? accuracy : undefined })
         if (!proj) {
           console.log(
             `[GPS] lat=${latitude.toFixed(6)} lon=${longitude.toFixed(6)} → hors ruban (proj=null)`

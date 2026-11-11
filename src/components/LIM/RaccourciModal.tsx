@@ -83,7 +83,7 @@ export default function RaccourciModal({ open, dark, onClose }: Props) {
             <p className="opacity-70">Chargement…</p>
           ) : icloud ? (
             <>
-              <p className="mb-2">Appuie sur le bouton : l'app Raccourcis s'ouvre sur le raccourci. Appuie ensuite sur « Ajouter le raccourci ».</p>
+              <p className="mb-2">Appuie sur le bouton : l'app Raccourcis s'ouvre sur le raccourci. Appuie ensuite sur « Ajouter le raccourci ». Si Raccourcis s'ouvre sans rien proposer, reviens dans LIM et appuie une seconde fois sur le bouton.</p>
               <a href={icloud} target="_blank" rel="noopener noreferrer" className={btnPrimary}>Ajouter le raccourci</a>
               <p className="mt-4 mb-2 opacity-80">Si le bouton ne donne rien, utilise le fichier :</p>
             </>

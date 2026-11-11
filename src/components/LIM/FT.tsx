@@ -1898,6 +1898,11 @@ if (referenceMode === "GPS" && standbyLockedRowRef.current === null) {
 
   // Dernière position GPS reçue (mémorisée pour les futurs calculs)
   const lastGpsPositionRef = React.useRef<GpsPosition | null>(null);
+  // 11/11 — la recherche de gare proche (findNearestCommercialStopRowIndex) vit dans l'effet
+  // GPS ; le filet du premier Play (autre effet) y accède par cette référence.
+  const findNearestStopRef = React.useRef<
+    ((pk: number, maxDeltaKm: number, opts?: { includeDepartureOnly?: boolean }) => { rowIndex: number; deltaKm: number } | null) | null
+  >(null);
   // ===== DEBUG: suivre la vraie "ligne active" utilisée par le scroll =====
   useEffect(() => {
     const w = window as any;
@@ -2470,15 +2475,29 @@ const orangeToRedStartedAtRef = React.useRef<number | null>(null);
                 return;
               }
 
+              // 11/11 — Ligne du stand-by : la GARE OÙ EST LE TRAIN d'après le GPS (à moins
+              // de STATION_PROX_KM, origine comprise), et seulement à défaut la ligne
+              // d'origine. 9712 du 11/11 : Play train arrêté à Figueres après un
+              // redémarrage de l'application → stand-by posé sur Perpignan.
+              const pkNow = lastGpsPositionRef.current?.pk;
+              const gare =
+                findNearestStopRef.current && typeof pkNow === "number" && Number.isFinite(pkNow)
+                  ? findNearestStopRef.current(pkNow, STATION_PROX_KM, { includeDepartureOnly: true })
+                  : null;
+              const rowStandby = gare ? gare.rowIndex : idx;
               logTestEvent("ui:standby:filet-declenche", {
-                rowIndex: idx,
+                rowIndex: rowStandby,
+                origineRow: idx,
+                gareRow: gare?.rowIndex ?? null,
+                gareDeltaKm: gare?.deltaKm ?? null,
+                pkNow: typeof pkNow === "number" ? pkNow : null,
                 delaiMs: FILET_STANDBY_MS,
                 sKmAuPlay,
                 sKmNow,
                 gpsState: gpsStateRef.current,
               });
-              setSelectedRowIndex(idx);
-              standbyLockedRowRef.current = idx;
+              setSelectedRowIndex(rowStandby);
+              standbyLockedRowRef.current = rowStandby;
               skipInitialStandbyRecalibrationRef.current = true;
               inStandbyRef.current = true;
               window.dispatchEvent(
@@ -3012,6 +3031,15 @@ const computeFixedDelay = (now: Date, ftMinutes: number) => {
         detail: { firstHoraMin: base.firstHoraMin, realMinFloat: base.realMinFloat },
       }));
     };
+
+    // 11/11 — Un recalage de DÉPART GPS en attente (recalibrateAtTimeRef posé par
+    // gps:arret:departure-confirmed) ne doit JAMAIS être avalé par l'état « premier Play » :
+    // 9712 du 11/11, Play train arrêté à Figueres → filet → stand-by initial → départ GPS à
+    // 13:33:36 → ce bloc consommait le drapeau sans exécuter le recalage ; l'heure 13:33:21
+    // est restée en attente et a servi de base au départ de Girona à 13:53 (− 20 min).
+    if (skipInitialStandbyRecalibrationRef.current && recalibrateAtTimeRef.current != null) {
+      skipInitialStandbyRecalibrationRef.current = false;
+    }
 
     // Bug 1 fix : au premier Play (stand-by initial), on ne calcule aucun delta.
     // Le delta sera calculé quand l'utilisateur tapera sur la ligne pour valider le départ.
@@ -4849,6 +4877,7 @@ function findRowIndexFromPk(targetPk: number | null): number | null {
 
       return { rowIndex: bestRow, deltaKm: bestDelta };
     };
+    findNearestStopRef.current = findNearestCommercialStopRowIndex; // 11/11 — pour le filet
 
     const handler = (e: Event) => {
       const ce = e as CustomEvent<any>;
@@ -6618,6 +6647,9 @@ const isRelock = acceptedMode === "relock";
                       fixedDelay,
                       deltaSec,
                     };
+                    // 11/11 — un recalage réussi rend caduque toute heure de départ en attente
+                    // (elle ne doit pas ressortir à une reprise de stand-by ultérieure).
+                    recalibrateAtTimeRef.current = null;
 
                     // Sync vers useTrainDist (FTHorizontal)
                     window.dispatchEvent(new CustomEvent("ft:delta:base-sync", {

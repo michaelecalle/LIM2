@@ -21,6 +21,7 @@ export type GpsPkProjection = {
       | "fallback_lastAccepted"
       | "rejected_jump"
       | "rejected_direction"
+      | "poor_accuracy"
 
     // ✅ DEBUG : permet de distinguer un accepted "normal" d'un accepted "relock"
     acceptedMode?: "normal" | "relock"
@@ -68,6 +69,15 @@ let lastAcceptedIdx: number | null = null
 // ===== Relock automatique après trop de rejected_jump =====
 let rejectStreakStartMs: number | null = null
 const RELOCK_AFTER_MS = 15000 // 15s de rejets continus => on accepte une nouvelle base
+
+// 11/11 — Précision au-delà de laquelle une position ne compte PAS pour le PK : ni avancée,
+// ni mémoire anti-saut. Perthus, 9712 du 11/11 : deux positions à 1,9 et 2,2 km de précision,
+// tombées par hasard à 50 m du ruban près de la tête nord, avaient été acceptées comme
+// « dernier PK » ; la vraie position à la sortie sud (7,7 km plus loin) a ensuite été refusée
+// 15 s comme un saut, et le train affiché à la tête nord. Le seuil est volontairement large
+// (150 m) : en marche normale la précision est de 3 à 20 m, et le filtre ORANGE de FT.tsx
+// (GPS_MAX_ACCURACY_M) s'applique bien avant.
+const POOR_ACCURACY_M = 150
 
 // ===== direction attendue (source train ou override manuel) =====
 // +1 => PK croissants ; -1 => PK décroissants
@@ -547,6 +557,9 @@ type ProjectOptions = {
    * - replay : fournir la date du log (ex: Date.parse(obj.t))
    */
   nowMs?: number
+  /** Précision horizontale annoncée par l'iPad (m). Au-delà de POOR_ACCURACY_M, la position
+   *  ne touche pas à la mémoire PK (cf. 11/11). Absente : comportement inchangé. */
+  accuracyM?: number
 }
 
 /**
@@ -740,6 +753,39 @@ export function projectGpsToPk(
   const nearest = RIBBON_POINTS[bestIdx]
   const s_km = nearest.s_km
   const distance_m = bestDist
+
+  // ===== 11/11 — Mauvaise précision : projection rendue (s_km, distance) mais AUCUNE
+  // mise à jour de la mémoire (dernier PK accepté, index, série de rejets, référence PK).
+  // Le PK rendu est le dernier accepté, comme pour un saut refusé.
+  const accuracyM = options?.accuracyM
+  if (typeof accuracyM === "number" && Number.isFinite(accuracyM) && accuracyM > POOR_ACCURACY_M) {
+    return {
+      pk: lastAcceptedPk?.pk ?? null,
+      s_km,
+      distance_m,
+      pkCandidate: null,
+      pkDecision: {
+        reason: "poor_accuracy",
+        acceptedMode: undefined,
+        deltaIdx:
+          lastAcceptedIdx != null && Number.isFinite(lastAcceptedIdx)
+            ? Math.abs(bestIdx - lastAcceptedIdx)
+            : null,
+        lastAcceptedPk: lastAcceptedPk?.pk ?? null,
+        lastAcceptedAtMs: lastAcceptedPk?.atMs ?? null,
+        expectedDirection: expectedDirection ?? null,
+        expectedDirectionSource: expectedDirectionSource ?? null,
+        expectedDirectionTrain: expectedDirectionTrain ?? null,
+        dtMs: null,
+        allowedJumpKm: null,
+        jumpKm: null,
+        dir: null,
+      },
+      nearestIdx: bestIdx,
+      nearestLat: nearest.lat,
+      nearestLon: nearest.lon,
+    }
+  }
 
   // ===== Transition ref : confirmation par 3 points consécutifs (si proche ruban) =====
   const ribbonTravelDir = getRibbonTravelDir(bestIdx, lastAcceptedIdx)
