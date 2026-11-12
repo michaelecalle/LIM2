@@ -21,8 +21,18 @@ export const TUNNEL_ZONE_MARGIN_KM = 0.15
 
 // [sKmMin, sKmMax] log-dérivés (T1 = pk−616 car GPS perdu dès le départ Barcelone).
 export const TUNNEL_ZONES: TunnelZone[] = [
-  { id: "T1",  sKmMin: 0.624,   sKmMax: 10.750 }, // 2 tunnels réels (coupure Sants 621) : volontairement d'un seul tenant ici, cf. TUNNEL_ZONES_PKINTERNAL
-  { id: "T2",  sKmMin: 12.375,  sKmMax: 14.026 },
+  // 12/11 — début recalé sur le document ADIF (Torrassa, PK 616.124 → s_km 0.194 par sKmFromNetworkPk),
+  // comme TUNNEL_ZONES_PKINTERNAL l'était depuis le 27/10. 39819 du 12/11 : positions fantômes à s_km 0.225
+  // (31 m dans le tunnel) prises pour un arrêt à ciel ouvert → VERT, mode GPS, affichage renvoyé à l'entrée.
+  // 12/11 (suite) — T1, SAGRERA et T2 FUSIONNÉS en une seule zone : d'après le document ADIF le
+  // souterrain est continu de la sortie de Sants (621.215) à la fin de Sant Andreu (629.827).
+  // L'ancienne liste laissait un trou 10.750–12.375 (La Sagrera, PK 626.75–628.2) : 9709 du 12/11,
+  // 09:37:35 et 09:38:00, fantômes à 49/65 m au PK 627.6 pris pour un arrêt → mode GPS, courbe
+  // ré-ancrée. Une seule zone (pas trois qui se chevauchent) pour la même raison qu'en 26/10 :
+  // la marge de fin d'une zone ne doit pas tomber dans la suivante. Conséquence : aucun arrêt GPS
+  // armable de Torrassa à Sant Andreu (déjà le cas à Sants), l'application s'y repose sur l'horaire.
+  // Bornes = sKmFromNetworkPk('ADIF', 616.124) = 0.194 et ('ADIF', 629.827) = 13.994.
+  { id: "T1",  sKmMin: 0.194,   sKmMax: 13.994 }, // Torrassa + Sants + Sagrera + Sant Andreu, cf. TUNNEL_ZONES_PKINTERNAL (T1a, T1b, SAGRERA, T2)
   { id: "T3",  sKmMin: 15.152,  sKmMax: 15.570 },
   { id: "T4",  sKmMin: 16.173,  sKmMax: 20.137 },
   { id: "T5",  sKmMin: 23.794,  sKmMax: 24.037 },
